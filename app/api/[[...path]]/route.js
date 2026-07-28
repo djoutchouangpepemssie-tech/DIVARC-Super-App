@@ -276,6 +276,27 @@ async function ensureMarketSeed(db) {
   })))
 }
 
+async function getSponsored(db) {
+  const camps = await db.collection('campaigns').find({ status: 'active' }).toArray()
+  return camps.filter((c) => (c.spentCents || 0) < c.budgetCents).slice(0, 3).map((c) => ({
+    id: 'ad-' + c.id, sponsored: true, campaignId: c.id,
+    author: { id: c.ownerId, name: c.brand || 'Annonceur', handle: c.brandHandle || '@annonceur', initials: (c.brand || 'AD').slice(0, 2).toUpperCase(), avatarColor: c.color || '#4353F0', verified: true },
+    caption: `${c.creative?.headline || c.name}\n${c.creative?.body || ''}`.trim(),
+    hashtags: [], likes: 0, comments: 0, saves: 0, views: c.impressions || 0,
+    product: c.creative?.priceCents ? { title: c.creative?.cta || 'Découvrir', priceCents: c.creative.priceCents, emoji: c.creative?.emoji || '🛍️' } : null,
+    aiGenerated: false, liked: false, saved: false, following: false,
+    cta: c.creative?.cta || 'En savoir plus', color: c.color || '#4353F0', emoji: c.creative?.emoji || '📣',
+    mediaUrl: c.creative?.mediaUrl || null, reason: 'Sponsorisé', createdAt: new Date(),
+  }))
+}
+function injectAds(out, ads) {
+  if (!ads.length) return out
+  const merged = [...out]
+  let pos = 1
+  for (const ad of ads) { if (pos <= merged.length) { merged.splice(pos, 0, ad); pos += 4 } }
+  return merged
+}
+
 // ---------------- Router ----------------
 async function handleRoute(request, { params }) {
   const { path = [] } = await params
@@ -595,7 +616,8 @@ async function handleRoute(request, { params }) {
         reason: mode === 'chrono' ? 'Ordre chronologique' : p.reason,
         createdAt: p.createdAt,
       }))
-      return ok(out)
+      const sponsored = mode === 'chrono' ? [] : await getSponsored(db)
+      return ok(injectAds(out, sponsored))
     }
 
     if (route === '/social/posts' && method === 'POST') {
@@ -763,6 +785,73 @@ async function handleRoute(request, { params }) {
       const selling = await db.collection('listings').find({ sellerId: me.id }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray()
       const orders = await db.collection('orders').find({ buyerId: me.id }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray()
       return ok({ selling, purchases: orders })
+    }
+
+    /* ===================== ADS MANAGER ===================== */
+    if (route === '/ads/campaigns' && method === 'POST') {
+      const budgetCents = Math.round(body.budgetCents || 0)
+      if (budgetCents <= 0) return err('Budget invalide')
+      const wallet = await db.collection('wallets').findOne({ userId: me.id })
+      if (!wallet || wallet.balanceCents < budgetCents) return err('Solde insuffisant pour financer la campagne', 402)
+      await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: -budgetCents } })
+      const camp = {
+        id: uuidv4(), ownerId: me.id, name: body.name || 'Campagne', objective: body.objective || 'Notoriété',
+        brand: body.brand || me.name, brandHandle: me.handle,
+        audience: body.audience || { interests: [], age: 'Tous', locations: ['France'] },
+        budgetCents, spentCents: 0, impressions: 0, clicks: 0,
+        creative: {
+          headline: body.creative?.headline || 'Découvre DIVARC', body: body.creative?.body || '',
+          cta: body.creative?.cta || 'En savoir plus', emoji: body.creative?.emoji || '📣',
+          mediaUrl: body.creative?.mediaUrl || null, priceCents: body.creative?.priceCents || null,
+        },
+        color: body.color || '#4353F0', status: 'active', createdAt: new Date(),
+      }
+      await db.collection('campaigns').insertOne(camp)
+      await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: `Budget pub : ${camp.name}`, category: 'Publicité', amountCents: -budgetCents, carbonKg: 0, icon: '📣', route: null, createdAt: new Date() })
+      const updated = await db.collection('wallets').findOne({ userId: me.id }, { projection: { _id: 0 } })
+      const { _id, ...clean } = camp
+      return ok({ campaign: clean, balanceCents: updated.balanceCents })
+    }
+
+    if (route === '/ads/campaigns' && method === 'GET') {
+      const camps = await db.collection('campaigns').find({ ownerId: me.id }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray()
+      return ok(camps.map((c) => ({ ...c, ctr: c.impressions ? +(c.clicks / c.impressions * 100).toFixed(1) : 0 })))
+    }
+
+    if (route.startsWith('/ads/campaigns/') && path.length === 3 && method === 'GET') {
+      const c = await db.collection('campaigns').findOne({ id: path[2], ownerId: me.id }, { projection: { _id: 0 } })
+      if (!c) return err('Campagne introuvable', 404)
+      return ok({ ...c, ctr: c.impressions ? +(c.clicks / c.impressions * 100).toFixed(1) : 0 })
+    }
+
+    if (route.startsWith('/ads/campaigns/') && path.length === 3 && method === 'PATCH') {
+      const c = await db.collection('campaigns').findOne({ id: path[2], ownerId: me.id })
+      if (!c) return err('Campagne introuvable', 404)
+      const status = body.status
+      if (status === 'ended' && c.status !== 'ended') {
+        const refund = Math.max(0, c.budgetCents - (c.spentCents || 0))
+        if (refund > 0) {
+          await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: refund } })
+          await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: `Remboursement pub : ${c.name}`, category: 'Publicité', amountCents: refund, carbonKg: 0, icon: '↩️', route: null, createdAt: new Date() })
+        }
+      }
+      await db.collection('campaigns').updateOne({ id: c.id }, { $set: { status } })
+      const updated = await db.collection('campaigns').findOne({ id: c.id }, { projection: { _id: 0 } })
+      return ok(updated)
+    }
+
+    if (route.startsWith('/ads/campaigns/') && path[3] === 'track' && method === 'POST') {
+      const c = await db.collection('campaigns').findOne({ id: path[2] })
+      if (!c || c.status !== 'active') return ok({ ok: false })
+      const type = body.type === 'click' ? 'click' : 'impression'
+      const cost = type === 'click' ? 25 : 3
+      const newSpent = (c.spentCents || 0) + cost
+      const capped = Math.min(newSpent, c.budgetCents)
+      const set = { spentCents: capped }
+      if (capped >= c.budgetCents) set.status = 'ended'
+      const inc = type === 'click' ? { clicks: 1 } : { impressions: 1 }
+      await db.collection('campaigns').updateOne({ id: c.id }, { $set: set, $inc: inc })
+      return ok({ ok: true })
     }
 
     return err(`Route ${route} introuvable`, 404)

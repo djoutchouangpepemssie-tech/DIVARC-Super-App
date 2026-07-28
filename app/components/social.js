@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
 import {
   Heart, MessageCircle, Bookmark, Share2, Volume2, VolumeX, Plus, X, ArrowLeft,
-  ShoppingBag, Info, BadgeCheck, Sparkles, Check, UserPlus, UserCheck, EyeOff, Send as SendIcon, Gift, Cpu
+  ShoppingBag, Info, BadgeCheck, Sparkles, Check, UserPlus, UserCheck, EyeOff, Send as SendIcon, Gift, Cpu, ChevronRight
 } from 'lucide-react'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -140,12 +140,14 @@ function PostCard({ p, muted, setMuted, onLike, onSave, onFollow, onComments, on
     const el = cardRef.current
     const obs = new IntersectionObserver((entries) => {
       entries.forEach((e) => {
+        const active = e.isIntersecting && e.intersectionRatio > 0.7
         const v = vidRef.current
-        if (!v) return
-        if (e.isIntersecting && e.intersectionRatio > 0.7) {
-          v.play().catch(() => {})
-          if (!viewed.current) { viewed.current = true; api(`/social/posts/${p.id}/view`, { method: 'POST' }) }
-        } else { v.pause() }
+        if (v) { active ? v.play().catch(() => {}) : v.pause() }
+        if (active && !viewed.current) {
+          viewed.current = true
+          if (p.sponsored) api(`/ads/campaigns/${p.campaignId}/track`, { method: 'POST', body: JSON.stringify({ type: 'impression' }) })
+          else api(`/social/posts/${p.id}/view`, { method: 'POST' })
+        }
       })
     }, { threshold: [0, 0.7, 1] })
     if (el) obs.observe(el)
@@ -162,7 +164,13 @@ function PostCard({ p, muted, setMuted, onLike, onSave, onFollow, onComments, on
   return (
     <div ref={cardRef} className="relative h-full w-full snap-start snap-always overflow-hidden bg-black">
       <video ref={vidRef} src={p.mediaUrl} muted={muted} loop playsInline preload="metadata"
-        className="absolute inset-0 w-full h-full object-cover" onClick={dblLike} onDoubleClick={dblLike} />
+        className={cx('absolute inset-0 w-full h-full object-cover', p.sponsored && 'hidden')} onClick={dblLike} onDoubleClick={dblLike} />
+      {p.sponsored && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-10 text-center" style={{ background: `linear-gradient(160deg, ${p.color}, #14162B)` }}>
+          <div className="text-7xl mb-5 float-slow">{p.emoji}</div>
+          <div className="font-display text-3xl leading-tight">{(p.caption || '').split('\n')[0]}</div>
+        </div>
+      )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30 pointer-events-none" />
 
       {/* floating hearts */}
@@ -203,11 +211,18 @@ function PostCard({ p, muted, setMuted, onLike, onSave, onFollow, onComments, on
         <div className="flex items-center gap-2 mb-1.5">
           <span className="font-semibold">{p.author?.handle}</span>
           {p.author?.verified && <BadgeCheck size={15} className="text-sky-300" />}
+          {p.sponsored && <span className="text-[10px] uppercase tracking-wide bg-white/25 px-2 py-0.5 rounded-full">Sponsorisé</span>}
         </div>
         <p className="text-sm mb-2 leading-snug drop-shadow">{p.caption}</p>
         <div className="flex flex-wrap gap-1.5 mb-2">
           {p.hashtags?.map((h) => <span key={h} className="text-xs text-white/85 font-medium">{h}</span>)}
         </div>
+        {p.sponsored && (
+          <button onClick={() => api(`/ads/campaigns/${p.campaignId}/track`, { method: 'POST', body: JSON.stringify({ type: 'click' }) }).then(() => showToast('Merci de ton intérêt ! 🙌'))}
+            className="press mb-2 inline-flex items-center gap-2 bg-white text-ink rounded-2xl px-4 py-2 font-semibold text-sm shadow-lg">
+            {p.cta} <ChevronRight size={16} />
+          </button>
+        )}
 
         {/* Why this video */}
         <button onClick={() => setShowWhy((s) => !s)} className="press inline-flex items-center gap-1.5 text-xs bg-white/15 backdrop-blur px-2.5 py-1 rounded-full mb-2">
