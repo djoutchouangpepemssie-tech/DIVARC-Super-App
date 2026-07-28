@@ -208,6 +208,47 @@ async function postLedger(db, entries) {
   return batch
 }
 
+async function creditWallet(db, userId, amt) {
+  const r = await db.collection('wallets').updateOne({ userId }, { $inc: { balanceCents: amt } })
+  if (r.matchedCount === 0) {
+    await db.collection('wallets').insertOne({ id: uuidv4(), userId, balanceCents: amt, currency: 'EUR', sepaInstant: true, carbonMonthKg: 0, createdAt: new Date() })
+  }
+}
+
+const VIDS = [
+  'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+  'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+  'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+  'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+  'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
+  'https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+  'https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
+  'https://storage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
+]
+async function ensureSocialSeed(db) {
+  const count = await db.collection('posts').countDocuments()
+  if (count > 0) return
+  await ensureDemoUsers(db)
+  const seed = [
+    { a: 'bot-lena', cap: 'Coucher de soleil sur Paris 🌇 Cette ville me fait vibrer.', tags: ['#paris', '#lifestyle'], likes: 1240, views: 18400, comments: 87 },
+    { a: 'bot-yanis', cap: 'Recette express : pâtes truffe 🍝✨ (ça change la vie)', tags: ['#food', '#recette'], likes: 3420, views: 51200, comments: 210, product: { title: 'Huile de truffe artisanale', priceCents: 1490, emoji: '🫒' } },
+    { a: 'bot-marie', cap: 'Mon setup créateur 2025 💻 Question ? Je réponds !', tags: ['#tech', '#setup'], likes: 890, views: 12300, comments: 64, product: { title: 'Micro podcast USB', priceCents: 8900, emoji: '🎙️' }, ai: true },
+    { a: 'bot-sofia', cap: 'Routine sport du matin 🏃‍♀️ On se motive ensemble ?', tags: ['#sport', '#motivation'], likes: 2110, views: 33100, comments: 143 },
+    { a: 'bot-thomas', cap: 'Voyage Lisbonne en 60 secondes 🇵🇹 Sauvegarde pour plus tard !', tags: ['#voyage', '#lisbonne'], likes: 5600, views: 98000, comments: 320 },
+    { a: 'bot-lena', cap: 'DIY déco : transformer un mur en 3 étapes 🎨', tags: ['#diy', '#deco'], likes: 760, views: 9800, comments: 41, product: { title: 'Kit peinture éco', priceCents: 3200, emoji: '🎨' } },
+    { a: 'bot-marie', cap: 'Le meilleur café de Paris est ici ☕ (adresse en com)', tags: ['#paris', '#food'], likes: 1980, views: 27600, comments: 176 },
+    { a: 'bot-sofia', cap: 'Concert hier soir 🎶 Ambiance incroyable !', tags: ['#musique', '#live'], likes: 4300, views: 62000, comments: 258 },
+  ]
+  const now = Date.now()
+  const docs = seed.map((s, i) => ({
+    id: uuidv4(), authorId: s.a, caption: s.cap, mediaUrl: VIDS[i % VIDS.length], mediaType: 'video',
+    poster: null, hashtags: s.tags, product: s.product || null, aiGenerated: !!s.ai,
+    likes: s.likes, comments: s.comments, saves: Math.floor(s.likes * 0.12), views: s.views,
+    earningsCents: 0, createdAt: new Date(now - i * 3600000 * 5),
+  }))
+  await db.collection('posts').insertMany(docs)
+}
+
 // ---------------- Router ----------------
 async function handleRoute(request, { params }) {
   const { path = [] } = await params
@@ -474,6 +515,148 @@ async function handleRoute(request, { params }) {
       if (!had) reactions.push({ userId: me.id, emoji })
       await db.collection('messages').updateOne({ id: mid }, { $set: { reactions } })
       return ok({ reactions })
+    }
+
+    /* ===================== DIVARC SOCIAL ===================== */
+    await ensureSocialSeed(db)
+
+    if (route === '/social/feed' && method === 'GET') {
+      const mode = url.searchParams.get('mode') || 'foryou'
+      const scope = url.searchParams.get('scope') || 'all'
+      const interests = (await db.collection('interests').findOne({ userId: me.id }))?.topics || []
+      const follows = (await db.collection('follows').find({ followerId: me.id }).toArray()).map((f) => f.authorId)
+      const liked = new Set((await db.collection('post_likes').find({ userId: me.id }).toArray()).map((x) => x.postId))
+      const saved = new Set((await db.collection('post_saves').find({ userId: me.id }).toArray()).map((x) => x.postId))
+      const ni = new Set((await db.collection('social_events').find({ userId: me.id, type: 'notinterested' }).toArray()).map((x) => x.postId))
+      let posts = await db.collection('posts').find({}, { projection: { _id: 0 } }).toArray()
+      posts = posts.filter((p) => !ni.has(p.id))
+      if (scope === 'following') posts = posts.filter((p) => follows.includes(p.authorId))
+
+      const authors = {}
+      for (const p of posts) {
+        if (!authors[p.authorId]) authors[p.authorId] = await db.collection('users').findOne({ id: p.authorId }, { projection: { _id: 0, email: 0 } })
+      }
+      const now = Date.now()
+      const scored = posts.map((p) => {
+        const ageH = (now - new Date(p.createdAt).getTime()) / 3600000
+        const freshness = Math.max(0, 1 - ageH / 72)
+        const eng = ((p.likes || 0) + (p.comments || 0) * 2 + (p.saves || 0) * 1.5) / ((p.views || 0) + 12)
+        const tagMatch = (p.hashtags || []).filter((h) => interests.includes(h)).length
+        const interestMatch = interests.length ? Math.min(1, tagMatch / 1) : 0
+        const followBoost = follows.includes(p.authorId) ? 1 : 0
+        const explore = Math.random() * 0.3
+        const factors = {
+          'Tu suis ce créateur': 2 * followBoost,
+          [`Basé sur ton intérêt ${(p.hashtags || []).find((h) => interests.includes(h)) || ''}`]: 2.5 * interestMatch,
+          'Populaire en ce moment': 3 * eng,
+          'Fraîchement publié': 1.8 * freshness,
+          'Une découverte pour toi': explore,
+        }
+        const score = Object.values(factors).reduce((a, b) => a + b, 0)
+        const reason = Object.entries(factors).sort((a, b) => b[1] - a[1])[0][0]
+        return { ...p, score, reason }
+      })
+      if (mode === 'chrono') scored.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      else scored.sort((a, b) => b.score - a.score)
+
+      const out = scored.map((p) => ({
+        id: p.id, caption: p.caption, mediaUrl: p.mediaUrl, mediaType: p.mediaType, poster: p.poster,
+        hashtags: p.hashtags, likes: p.likes, comments: p.comments, saves: p.saves, views: p.views,
+        product: p.product || null, aiGenerated: !!p.aiGenerated,
+        author: authors[p.authorId] ? { id: authors[p.authorId].id, name: authors[p.authorId].name, handle: authors[p.authorId].handle, initials: authors[p.authorId].initials, avatarColor: authors[p.authorId].avatarColor, verified: authors[p.authorId].verified } : null,
+        liked: liked.has(p.id), saved: saved.has(p.id), following: follows.includes(p.authorId),
+        reason: mode === 'chrono' ? 'Ordre chronologique' : p.reason,
+        createdAt: p.createdAt,
+      }))
+      return ok(out)
+    }
+
+    if (route === '/social/posts' && method === 'POST') {
+      const post = {
+        id: uuidv4(), authorId: me.id, caption: body.caption || '', mediaUrl: body.mediaUrl,
+        mediaType: body.mediaType || 'video', poster: body.poster || null,
+        hashtags: (body.hashtags || []).map((h) => h.startsWith('#') ? h : '#' + h),
+        product: body.product || null, aiGenerated: !!body.aiGenerated,
+        likes: 0, comments: 0, saves: 0, views: 0, earningsCents: 0, createdAt: new Date(),
+      }
+      await db.collection('posts').insertOne(post)
+      const { _id, ...clean } = post
+      return ok(clean)
+    }
+
+    if (route.startsWith('/social/posts/') && path[3] === 'like' && method === 'POST') {
+      const pid = path[2]
+      const ex = await db.collection('post_likes').findOne({ postId: pid, userId: me.id })
+      if (ex) { await db.collection('post_likes').deleteOne({ postId: pid, userId: me.id }); await db.collection('posts').updateOne({ id: pid }, { $inc: { likes: -1 } }) }
+      else { await db.collection('post_likes').insertOne({ postId: pid, userId: me.id, createdAt: new Date() }); await db.collection('posts').updateOne({ id: pid }, { $inc: { likes: 1 } }) }
+      const p = await db.collection('posts').findOne({ id: pid })
+      return ok({ liked: !ex, likes: p.likes })
+    }
+    if (route.startsWith('/social/posts/') && path[3] === 'save' && method === 'POST') {
+      const pid = path[2]
+      const ex = await db.collection('post_saves').findOne({ postId: pid, userId: me.id })
+      if (ex) { await db.collection('post_saves').deleteOne({ postId: pid, userId: me.id }); await db.collection('posts').updateOne({ id: pid }, { $inc: { saves: -1 } }) }
+      else { await db.collection('post_saves').insertOne({ postId: pid, userId: me.id, createdAt: new Date() }); await db.collection('posts').updateOne({ id: pid }, { $inc: { saves: 1 } }) }
+      const p = await db.collection('posts').findOne({ id: pid })
+      return ok({ saved: !ex, saves: p.saves })
+    }
+    if (route.startsWith('/social/posts/') && path[3] === 'notinterested' && method === 'POST') {
+      await db.collection('social_events').insertOne({ userId: me.id, postId: path[2], type: 'notinterested', createdAt: new Date() })
+      return ok({ ok: true })
+    }
+    if (route.startsWith('/social/posts/') && path[3] === 'view' && method === 'POST') {
+      await db.collection('posts').updateOne({ id: path[2] }, { $inc: { views: 1 } })
+      return ok({ ok: true })
+    }
+    if (route.startsWith('/social/posts/') && path[3] === 'comments' && method === 'GET') {
+      const comments = await db.collection('comments').find({ postId: path[2] }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).limit(100).toArray()
+      return ok(comments)
+    }
+    if (route.startsWith('/social/posts/') && path[3] === 'comments' && method === 'POST') {
+      const text = String(body.text || '').trim()
+      if (!text) return err('Commentaire vide')
+      const c = { id: uuidv4(), postId: path[2], userId: me.id, name: me.name, initials: me.initials, avatarColor: me.avatarColor, text, createdAt: new Date() }
+      await db.collection('comments').insertOne(c)
+      await db.collection('posts').updateOne({ id: path[2] }, { $inc: { comments: 1 } })
+      const { _id, ...clean } = c
+      return ok(clean)
+    }
+    if (route.startsWith('/social/follow/') && method === 'POST') {
+      const authorId = path[2]
+      const ex = await db.collection('follows').findOne({ followerId: me.id, authorId })
+      if (ex) await db.collection('follows').deleteOne({ followerId: me.id, authorId })
+      else await db.collection('follows').insertOne({ followerId: me.id, authorId, createdAt: new Date() })
+      return ok({ following: !ex })
+    }
+    if (route.startsWith('/social/posts/') && (path[3] === 'buy' || path[3] === 'tip') && method === 'POST') {
+      const pid = path[2]
+      const post = await db.collection('posts').findOne({ id: pid })
+      if (!post) return err('Publication introuvable', 404)
+      const isTip = path[3] === 'tip'
+      const amount = isTip ? Number(body.amountCents) : (post.product?.priceCents || 0)
+      if (!amount || amount <= 0) return err('Montant invalide')
+      const wallet = await db.collection('wallets').findOne({ userId: me.id })
+      if (!wallet || wallet.balanceCents < amount) return err('Solde insuffisant', 402)
+      await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: -amount } })
+      await creditWallet(db, post.authorId, amount)
+      await db.collection('posts').updateOne({ id: pid }, { $inc: { earningsCents: amount, ...(isTip ? {} : { sales: 1 }) } })
+      const author = await db.collection('users').findOne({ id: post.authorId })
+      await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: isTip ? `Pourboire à ${author?.name || 'créateur'}` : `Achat : ${post.product?.title || 'article'}`, category: 'Social', amountCents: -amount, carbonKg: 0, icon: isTip ? '💛' : '🛍️', route: null, createdAt: new Date() })
+      await postLedger(db, [{ account: `user:${me.id}`, direction: 'debit', amountCents: amount }, { account: `user:${post.authorId}`, direction: 'credit', amountCents: amount }])
+      const updated = await db.collection('wallets').findOne({ userId: me.id }, { projection: { _id: 0 } })
+      return ok({ ok: true, balanceCents: updated.balanceCents, amountCents: amount })
+    }
+    if (route === '/social/interests' && method === 'POST') {
+      await db.collection('interests').updateOne({ userId: me.id }, { $set: { userId: me.id, topics: body.topics || [] } }, { upsert: true })
+      return ok({ ok: true, topics: body.topics || [] })
+    }
+    if (route === '/social/creator' && method === 'GET') {
+      const posts = await db.collection('posts').find({ authorId: me.id }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray()
+      const followers = await db.collection('follows').countDocuments({ authorId: me.id })
+      const earnings = posts.reduce((a, p) => a + (p.earningsCents || 0), 0)
+      const views = posts.reduce((a, p) => a + (p.views || 0), 0)
+      const likes = posts.reduce((a, p) => a + (p.likes || 0), 0)
+      return ok({ posts, followers, earningsCents: earnings, views, likes })
     }
 
     return err(`Route ${route} introuvable`, 404)

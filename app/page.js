@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { api, getToken, setToken, clearToken } from '@/lib/api'
 import Messaging from './components/messaging'
+import Social from './components/social'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 
 /* ============================= helpers ============================= */
@@ -294,7 +295,7 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab }) {
         </div>
 
         {/* social teaser */}
-        <button onClick={() => onTab('discover')} className="press w-full text-left">
+        <button onClick={() => onTab('social')} className="press w-full text-left">
           <Glass sheen className="p-5 flex items-center gap-4 relative overflow-hidden">
             <div className="w-12 h-12 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#F15BB5,#9B5DE5)' }}><Play size={20} /></div>
             <div className="flex-1">
@@ -729,7 +730,7 @@ const MINIAPPS = [
   { id: 'health', name: 'Santé', cat: 'Santé', icon: HeartPulse, grad: 'linear-gradient(135deg,#EF476F,#FF8FA8)', why: 'RDV & téléconsultation' },
   { id: 'assistant', name: 'Assistant', cat: 'IA', icon: Sparkles, grad: 'linear-gradient(135deg,#2C39C7,#4353F0)', why: 'Copilote qui agit' },
 ]
-function Discover() {
+function Discover({ onTab }) {
   const [why, setWhy] = useState(null)
   const cats = ['Tout', 'Repas', 'Transport', 'Shopping', 'Événements', 'Santé']
   const [cat, setCat] = useState('Tout')
@@ -765,7 +766,7 @@ function Discover() {
             </div>
           ))}
         </div>
-        <SocialTeaser />
+        <button onClick={() => onTab && onTab('social')} className="press w-full text-left"><SocialTeaser /></button>
       </div>
 
       <AnimatePresence>
@@ -1063,12 +1064,13 @@ function App() {
           {tab === 'wallet' && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
           {tab === 'messages' && <Messaging me={user} />}
           {tab === 'qr' && <QRScreen user={user} />}
-          {tab === 'discover' && <Discover />}
+          {tab === 'discover' && <Discover onTab={goTab} />}
           {tab === 'profile' && <Profile user={user} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}
+          {tab === 'social' && <Social me={user} onBack={() => setTab('hub')} />}
         </motion.div>
       </AnimatePresence>
 
-      <TabBar active={tab === 'wallet' ? 'hub' : tab} onChange={goTab} />
+      {tab !== 'social' && <TabBar active={tab === 'wallet' ? 'hub' : tab} onChange={goTab} />}
 
       <AnimatePresence>
         {overlay === 'send' && <SendSheet contacts={contacts} wallet={wallet} onClose={() => setOverlay(null)} onSent={() => load()} />}

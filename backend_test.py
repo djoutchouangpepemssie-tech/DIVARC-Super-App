@@ -1,740 +1,607 @@
 #!/usr/bin/env python3
 """
-DIVARC PHASE 2 Backend API Test Suite
-Tests multi-user auth, messaging, friendship mechanics, and wallet isolation
+DIVARC Social Backend Test Suite - PHASE 3
+Tests all social feed, posts, like, comment, follow, buy, tip endpoints
 """
 import requests
 import json
-import time
+import sys
 
-# Base URL from .env
+# Base URL from environment
 BASE_URL = "https://divarc-hub.preview.emergentagent.com/api"
 
-def log_test(name, passed, details=""):
-    status = "✅ PASS" if passed else "❌ FAIL"
-    print(f"\n{status} - {name}")
-    if details:
-        print(f"  {details}")
-    return passed
+def print_test(num, desc):
+    print(f"\n{'='*80}")
+    print(f"TEST {num}: {desc}")
+    print('='*80)
 
-def test_auth_flow():
-    """Test 1-4: AUTH FLOW - OTP send/verify, negative cases, /me endpoint"""
-    print("\n" + "="*80)
-    print("TEST 1-4: AUTH FLOW")
-    print("="*80)
-    
-    results = []
-    
-    # Test 1: POST /api/auth/otp/send for new user
-    try:
-        email = "userA@divarc.fr"
-        resp = requests.post(f"{BASE_URL}/auth/otp/send", json={"email": email}, timeout=10)
-        data = resp.json()
-        
-        passed = (
-            resp.status_code == 200 and
-            data.get("ok") == True and
-            data.get("isNew") == True and
-            "previewCode" in data and
-            data.get("delivery") == "preview"
-        )
-        
-        preview_code = data.get("previewCode", "")
-        results.append(log_test(
-            "1) POST /auth/otp/send (new user)",
-            passed,
-            f"isNew={data.get('isNew')}, previewCode={preview_code}, delivery={data.get('delivery')}"
-        ))
-        
-        if not passed:
-            print(f"  Response: {json.dumps(data, indent=2)}")
-            return results
-            
-    except Exception as e:
-        results.append(log_test("1) POST /auth/otp/send", False, f"Exception: {e}"))
-        return results
-    
-    # Test 2: POST /api/auth/otp/verify with correct code
-    try:
-        resp = requests.post(f"{BASE_URL}/auth/otp/verify", json={
-            "email": email,
-            "code": preview_code,
-            "name": "User A"
-        }, timeout=10)
-        data = resp.json()
-        
-        passed = (
-            resp.status_code == 200 and
-            "token" in data and
-            "user" in data and
-            data.get("isNew") == True and
-            data["user"].get("handle") and
-            data["user"].get("initials")
-        )
-        
-        token_a = data.get("token", "")
-        user_a = data.get("user", {})
-        results.append(log_test(
-            "2) POST /auth/otp/verify (correct code)",
-            passed,
-            f"token={token_a[:16]}..., handle={user_a.get('handle')}, initials={user_a.get('initials')}, isNew={data.get('isNew')}"
-        ))
-        
-        if not passed:
-            print(f"  Response: {json.dumps(data, indent=2)}")
-            return results
-            
-    except Exception as e:
-        results.append(log_test("2) POST /auth/otp/verify", False, f"Exception: {e}"))
-        return results
-    
-    # Test 3: Negative cases - wrong code and no auth header
-    try:
-        # Wrong code
-        resp = requests.post(f"{BASE_URL}/auth/otp/send", json={"email": "test@wrong.com"}, timeout=10)
-        wrong_resp = requests.post(f"{BASE_URL}/auth/otp/verify", json={
-            "email": "test@wrong.com",
-            "code": "000000"
-        }, timeout=10)
-        
-        wrong_code_fail = wrong_resp.status_code == 400
-        
-        # No auth header
-        no_auth_resp = requests.get(f"{BASE_URL}/auth/me", timeout=10)
-        no_auth_fail = no_auth_resp.status_code == 401
-        
-        # With auth header
-        with_auth_resp = requests.get(f"{BASE_URL}/auth/me", headers={
-            "Authorization": f"Bearer {token_a}"
-        }, timeout=10)
-        with_auth_data = with_auth_resp.json()
-        with_auth_pass = with_auth_resp.status_code == 200 and with_auth_data.get("id")
-        
-        passed = wrong_code_fail and no_auth_fail and with_auth_pass
-        results.append(log_test(
-            "3) Negative cases",
-            passed,
-            f"Wrong code -> {wrong_resp.status_code}, No auth -> {no_auth_resp.status_code}, With auth -> {with_auth_resp.status_code}"
-        ))
-        
-    except Exception as e:
-        results.append(log_test("3) Negative cases", False, f"Exception: {e}"))
-    
-    # Test 4: Existing user login
-    try:
-        # Send OTP again for same email
-        resp = requests.post(f"{BASE_URL}/auth/otp/send", json={"email": email}, timeout=10)
-        data = resp.json()
-        code2 = data.get("previewCode", "")
-        
-        is_existing = data.get("isNew") == False
-        
-        # Verify again
-        verify_resp = requests.post(f"{BASE_URL}/auth/otp/verify", json={
-            "email": email,
-            "code": code2
-        }, timeout=10)
-        verify_data = verify_resp.json()
-        
-        passed = (
-            is_existing and
-            verify_resp.status_code == 200 and
-            "token" in verify_data and
-            verify_data.get("isNew") == False
-        )
-        
-        results.append(log_test(
-            "4) Existing user login",
-            passed,
-            f"isNew={data.get('isNew')} on send, isNew={verify_data.get('isNew')} on verify"
-        ))
-        
-    except Exception as e:
-        results.append(log_test("4) Existing user login", False, f"Exception: {e}"))
-    
-    # Store token for next tests
-    return results, token_a, user_a
+def print_pass(msg):
+    print(f"✅ PASS: {msg}")
 
-def test_user_provisioning(token):
-    """Test 5: USER PROVISIONING - wallet setup and welcome transaction"""
-    print("\n" + "="*80)
-    print("TEST 5: USER PROVISIONING")
-    print("="*80)
+def print_fail(msg):
+    print(f"❌ FAIL: {msg}")
     
-    results = []
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    try:
-        # GET /api/wallet
-        wallet_resp = requests.get(f"{BASE_URL}/wallet", headers=headers, timeout=10)
-        wallet_data = wallet_resp.json()
-        
-        wallet_ok = (
-            wallet_resp.status_code == 200 and
-            wallet_data.get("balanceCents") == 480000 and
-            wallet_data.get("currency") == "EUR" and
-            len(wallet_data.get("coffres", [])) == 2
-        )
-        
-        # GET /api/transactions
-        tx_resp = requests.get(f"{BASE_URL}/transactions", headers=headers, timeout=10)
-        tx_data = tx_resp.json()
-        
-        has_welcome = any("Bienvenue" in tx.get("label", "") for tx in tx_data)
-        welcome_tx = next((tx for tx in tx_data if "Bienvenue" in tx.get("label", "")), {})
-        welcome_amount = welcome_tx.get("amountCents") == 480000
-        
-        passed = wallet_ok and has_welcome and welcome_amount
-        
-        results.append(log_test(
-            "5) User provisioning",
-            passed,
-            f"Balance={wallet_data.get('balanceCents')}, Currency={wallet_data.get('currency')}, Coffres={len(wallet_data.get('coffres', []))}, Welcome tx={has_welcome} ({welcome_tx.get('amountCents')}c)"
-        ))
-        
-        return results, wallet_data
-        
-    except Exception as e:
-        results.append(log_test("5) User provisioning", False, f"Exception: {e}"))
-        return results, {}
+def print_info(msg):
+    print(f"ℹ️  INFO: {msg}")
 
-def test_messaging_friendship(token):
-    """Test 6-9: MESSAGING + FRIENDSHIP - conversations, messages, XP, reactions"""
-    print("\n" + "="*80)
-    print("TEST 6-9: MESSAGING + FRIENDSHIP")
-    print("="*80)
+# Auth helper
+def auth_user(email, name=None):
+    """Authenticate user via OTP preview mode"""
+    # Send OTP
+    r = requests.post(f"{BASE_URL}/auth/otp/send", json={"email": email})
+    if r.status_code != 200:
+        print_fail(f"OTP send failed: {r.status_code} {r.text}")
+        return None
+    data = r.json()
+    code = data.get('previewCode')
+    if not code:
+        print_fail("No preview code returned")
+        return None
     
-    results = []
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    # Test 6: GET /api/conversations - welcome DM with Marie
-    try:
-        resp = requests.get(f"{BASE_URL}/conversations", headers=headers, timeout=10)
-        convos = resp.json()
-        
-        marie_dm = next((c for c in convos if c.get("type") == "dm" and c.get("other", {}).get("handle") == "@marie"), None)
-        
-        has_friendship = marie_dm and "friendship" in marie_dm
-        friendship = marie_dm.get("friendship", {}) if marie_dm else {}
-        
-        passed = (
-            resp.status_code == 200 and
-            marie_dm is not None and
-            has_friendship and
-            "xp" in friendship and
-            "level" in friendship and
-            "name" in friendship and
-            "emoji" in friendship and
-            "pct" in friendship
-        )
-        
-        conv_id = marie_dm.get("id") if marie_dm else None
-        
-        results.append(log_test(
-            "6) GET /conversations (welcome DM with Marie)",
-            passed,
-            f"Found Marie DM: {marie_dm is not None}, Friendship: streak={friendship.get('streak')}, xp={friendship.get('xp')}, level={friendship.get('level')}, name={friendship.get('name')}, emoji={friendship.get('emoji')}"
-        ))
-        
-        if not passed or not conv_id:
-            print(f"  Conversations: {json.dumps(convos, indent=2)[:500]}")
-            return results
-            
-    except Exception as e:
-        results.append(log_test("6) GET /conversations", False, f"Exception: {e}"))
-        return results
-    
-    # Test 7: GET /api/conversations/<id>/messages
-    try:
-        resp = requests.get(f"{BASE_URL}/conversations/{conv_id}/messages", headers=headers, timeout=10)
-        data = resp.json()
-        
-        conv = data.get("conversation", {})
-        messages = data.get("messages", [])
-        friendship = conv.get("friendship", {})
-        
-        has_welcome_msg = any("Bienvenue" in m.get("text", "") or "bienvenue" in m.get("text", "") for m in messages)
-        
-        passed = (
-            resp.status_code == 200 and
-            "friendship" in conv and
-            len(messages) > 0 and
-            has_welcome_msg
-        )
-        
-        results.append(log_test(
-            "7) GET /conversations/<id>/messages",
-            passed,
-            f"Friendship: {friendship}, Messages: {len(messages)}, Welcome msg: {has_welcome_msg}"
-        ))
-        
-        initial_xp = friendship.get("xp", 0)
-        
-    except Exception as e:
-        results.append(log_test("7) GET /conversations/<id>/messages", False, f"Exception: {e}"))
-        return results
-    
-    # Test 8: POST /api/conversations/<id>/messages - send messages and verify XP increase
-    try:
-        # Send first message
-        resp1 = requests.post(f"{BASE_URL}/conversations/{conv_id}/messages", 
-                             headers=headers, 
-                             json={"text": "Coucou"}, 
-                             timeout=10)
-        data1 = resp1.json()
-        friendship1 = data1.get("friendship", {})
-        xp1 = friendship1.get("xp", 0)
-        level1 = friendship1.get("name", "")
-        
-        time.sleep(1)  # Wait for bot reply
-        
-        # Send more messages to increase XP
-        messages_sent = 1
-        for i in range(5):
-            resp = requests.post(f"{BASE_URL}/conversations/{conv_id}/messages", 
-                               headers=headers, 
-                               json={"text": f"Message {i+2}"}, 
-                               timeout=10)
-            messages_sent += 1
-            time.sleep(0.5)
-        
-        # Get final state
-        resp_final = requests.get(f"{BASE_URL}/conversations/{conv_id}/messages", headers=headers, timeout=10)
-        data_final = resp_final.json()
-        friendship_final = data_final.get("conversation", {}).get("friendship", {})
-        xp_final = friendship_final.get("xp", 0)
-        level_final = friendship_final.get("name", "")
-        
-        # Check messages for bot auto-reply
-        messages_final = data_final.get("messages", [])
-        has_bot_reply = any(m.get("senderId") == "bot-marie" for m in messages_final)
-        
-        xp_increased = xp_final > initial_xp
-        level_changed = level_final != level1 if xp_final >= 100 else True
-        
-        passed = (
-            resp1.status_code == 200 and
-            "friendship" in data1 and
-            xp_increased and
-            has_bot_reply
-        )
-        
-        results.append(log_test(
-            "8) POST /conversations/<id>/messages (XP increase)",
-            passed,
-            f"Initial XP: {initial_xp}, After 1st msg: {xp1} ({level1}), Final XP: {xp_final} ({level_final}), Bot reply: {has_bot_reply}"
-        ))
-        
-    except Exception as e:
-        results.append(log_test("8) POST messages (XP)", False, f"Exception: {e}"))
-    
-    # Test 9: POST /api/messages/<mid>/react - reactions toggle
-    try:
-        # Get a message to react to
-        resp = requests.get(f"{BASE_URL}/conversations/{conv_id}/messages", headers=headers, timeout=10)
-        messages = resp.json().get("messages", [])
-        
-        if len(messages) > 0:
-            msg_id = messages[0].get("id")
-            
-            # React with emoji
-            react_resp1 = requests.post(f"{BASE_URL}/messages/{msg_id}/react", 
-                                       headers=headers, 
-                                       json={"emoji": "🔥"}, 
-                                       timeout=10)
-            reactions1 = react_resp1.json().get("reactions", [])
-            has_reaction = any(r.get("emoji") == "🔥" for r in reactions1)
-            
-            # React again to toggle off
-            react_resp2 = requests.post(f"{BASE_URL}/messages/{msg_id}/react", 
-                                       headers=headers, 
-                                       json={"emoji": "🔥"}, 
-                                       timeout=10)
-            reactions2 = react_resp2.json().get("reactions", [])
-            reaction_removed = not any(r.get("emoji") == "🔥" for r in reactions2)
-            
-            passed = (
-                react_resp1.status_code == 200 and
-                has_reaction and
-                react_resp2.status_code == 200 and
-                reaction_removed
-            )
-            
-            results.append(log_test(
-                "9) POST /messages/<id>/react (toggle)",
-                passed,
-                f"First react: {len(reactions1)} reactions (has 🔥: {has_reaction}), Second react: {len(reactions2)} reactions (removed: {reaction_removed})"
-            ))
-        else:
-            results.append(log_test("9) POST /messages/<id>/react", False, "No messages to react to"))
-            
-    except Exception as e:
-        results.append(log_test("9) POST /messages/<id>/react", False, f"Exception: {e}"))
-    
-    return results
+    # Verify OTP
+    payload = {"email": email, "code": code}
+    if name:
+        payload["name"] = name
+    r = requests.post(f"{BASE_URL}/auth/otp/verify", json=payload)
+    if r.status_code != 200:
+        print_fail(f"OTP verify failed: {r.status_code} {r.text}")
+        return None
+    data = r.json()
+    return data.get('token')
 
-def test_groups_communities(token):
-    """Test 10-12: GROUP and COMMUNITIES - create group, join community, DM dedupe"""
-    print("\n" + "="*80)
-    print("TEST 10-12: GROUPS & COMMUNITIES")
-    print("="*80)
-    
-    results = []
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    # Test 10: POST /api/conversations (group)
-    try:
-        resp = requests.post(f"{BASE_URL}/conversations", 
-                           headers=headers, 
-                           json={
-                               "type": "group",
-                               "name": "Team",
-                               "memberHandles": ["@thomas", "@lena"]
-                           }, 
-                           timeout=10)
-        data = resp.json()
-        group_id = data.get("id")
-        
-        # Verify group appears in conversations
-        convos_resp = requests.get(f"{BASE_URL}/conversations", headers=headers, timeout=10)
-        convos = convos_resp.json()
-        group_conv = next((c for c in convos if c.get("id") == group_id), None)
-        
-        passed = (
-            resp.status_code == 200 and
-            group_id and
-            group_conv is not None and
-            group_conv.get("memberCount") == 3
-        )
-        
-        results.append(log_test(
-            "10) POST /conversations (group)",
-            passed,
-            f"Group ID: {group_id}, Member count: {group_conv.get('memberCount') if group_conv else 'N/A'}"
-        ))
-        
-    except Exception as e:
-        results.append(log_test("10) POST /conversations (group)", False, f"Exception: {e}"))
-    
-    # Test 11: GET /api/communities and join
-    try:
-        # Get communities
-        resp = requests.get(f"{BASE_URL}/communities", headers=headers, timeout=10)
-        communities = resp.json()
-        
-        paris_comm = next((c for c in communities if c.get("id") == "comm-paris"), None)
-        initially_joined = paris_comm.get("joined") if paris_comm else None
-        
-        # Join community
-        join_resp = requests.post(f"{BASE_URL}/conversations/comm-paris/join", 
-                                 headers=headers, 
-                                 json={}, 
-                                 timeout=10)
-        
-        # Verify joined
-        resp2 = requests.get(f"{BASE_URL}/communities", headers=headers, timeout=10)
-        communities2 = resp2.json()
-        paris_comm2 = next((c for c in communities2 if c.get("id") == "comm-paris"), None)
-        now_joined = paris_comm2.get("joined") if paris_comm2 else None
-        
-        # Verify in conversations
-        convos_resp = requests.get(f"{BASE_URL}/conversations", headers=headers, timeout=10)
-        convos = convos_resp.json()
-        has_paris = any(c.get("id") == "comm-paris" for c in convos)
-        
-        passed = (
-            resp.status_code == 200 and
-            paris_comm is not None and
-            join_resp.status_code == 200 and
-            now_joined == True and
-            has_paris
-        )
-        
-        results.append(log_test(
-            "11) GET /communities and join",
-            passed,
-            f"Paris community found: {paris_comm is not None}, Initially joined: {initially_joined}, After join: {now_joined}, In conversations: {has_paris}"
-        ))
-        
-    except Exception as e:
-        results.append(log_test("11) GET /communities and join", False, f"Exception: {e}"))
-    
-    # Test 12: DM dedupe
-    try:
-        # Create DM with @thomas
-        resp1 = requests.post(f"{BASE_URL}/conversations", 
-                            headers=headers, 
-                            json={
-                                "type": "dm",
-                                "memberHandles": ["@thomas"]
-                            }, 
-                            timeout=10)
-        data1 = resp1.json()
-        dm_id1 = data1.get("id")
-        
-        # Create again
-        resp2 = requests.post(f"{BASE_URL}/conversations", 
-                            headers=headers, 
-                            json={
-                                "type": "dm",
-                                "memberHandles": ["@thomas"]
-                            }, 
-                            timeout=10)
-        data2 = resp2.json()
-        dm_id2 = data2.get("id")
-        is_existing = data2.get("existing")
-        
-        passed = (
-            resp1.status_code == 200 and
-            resp2.status_code == 200 and
-            dm_id1 == dm_id2 and
-            is_existing == True
-        )
-        
-        results.append(log_test(
-            "12) DM dedupe",
-            passed,
-            f"First DM: {dm_id1}, Second DM: {dm_id2}, existing={is_existing}, Same ID: {dm_id1 == dm_id2}"
-        ))
-        
-    except Exception as e:
-        results.append(log_test("12) DM dedupe", False, f"Exception: {e}"))
-    
-    return results
-
-def test_multi_user_isolation():
-    """Test 13: MULTI-USER ISOLATION - create second user and verify separation"""
-    print("\n" + "="*80)
-    print("TEST 13: MULTI-USER ISOLATION")
-    print("="*80)
-    
-    results = []
-    
-    try:
-        # Create userB
-        email_b = "userB@divarc.fr"
-        send_resp = requests.post(f"{BASE_URL}/auth/otp/send", json={"email": email_b}, timeout=10)
-        code_b = send_resp.json().get("previewCode")
-        
-        verify_resp = requests.post(f"{BASE_URL}/auth/otp/verify", json={
-            "email": email_b,
-            "code": code_b,
-            "name": "User B"
-        }, timeout=10)
-        token_b = verify_resp.json().get("token")
-        
-        headers_b = {"Authorization": f"Bearer {token_b}"}
-        
-        # Check userB wallet
-        wallet_resp = requests.get(f"{BASE_URL}/wallet", headers=headers_b, timeout=10)
-        wallet_b = wallet_resp.json()
-        
-        wallet_independent = wallet_b.get("balanceCents") == 480000
-        
-        # Check userB conversations
-        convos_resp = requests.get(f"{BASE_URL}/conversations", headers=headers_b, timeout=10)
-        convos_b = convos_resp.json()
-        
-        # UserB should NOT see userA's "Team" group
-        has_team_group = any(c.get("title") == "Team" or c.get("name") == "Team" for c in convos_b)
-        
-        # UserB should have welcome DM with Marie
-        has_marie = any(c.get("type") == "dm" and c.get("other", {}).get("handle") == "@marie" for c in convos_b)
-        
-        passed = (
-            verify_resp.status_code == 200 and
-            wallet_independent and
-            not has_team_group and
-            has_marie
-        )
-        
-        results.append(log_test(
-            "13) Multi-user isolation",
-            passed,
-            f"UserB balance: {wallet_b.get('balanceCents')}, Has Team group: {has_team_group}, Has Marie DM: {has_marie}"
-        ))
-        
-        return results, token_b
-        
-    except Exception as e:
-        results.append(log_test("13) Multi-user isolation", False, f"Exception: {e}"))
-        return results, None
-
-def test_wallet_under_auth(token):
-    """Test 14-15: RE-VERIFY WALLET - send and enveloppe under auth"""
-    print("\n" + "="*80)
-    print("TEST 14-15: WALLET UNDER AUTH")
-    print("="*80)
-    
-    results = []
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    # Test 14: POST /api/send with idempotency
-    try:
-        # Get initial balance
-        wallet_resp = requests.get(f"{BASE_URL}/wallet", headers=headers, timeout=10)
-        initial_balance = wallet_resp.json().get("balanceCents")
-        
-        # Send money
-        send_resp = requests.post(f"{BASE_URL}/send", 
-                                 headers=headers, 
-                                 json={
-                                     "toHandle": "@thomas",
-                                     "toName": "Thomas",
-                                     "amountCents": 2000,
-                                     "idempotencyKey": "k1"
-                                 }, 
-                                 timeout=10)
-        send_data = send_resp.json()
-        new_balance = send_data.get("balanceCents")
-        
-        balance_debited = new_balance == initial_balance - 2000
-        
-        # Repeat with same idempotencyKey
-        send_resp2 = requests.post(f"{BASE_URL}/send", 
-                                  headers=headers, 
-                                  json={
-                                      "toHandle": "@thomas",
-                                      "toName": "Thomas",
-                                      "amountCents": 2000,
-                                      "idempotencyKey": "k1"
-                                  }, 
-                                  timeout=10)
-        send_data2 = send_resp2.json()
-        is_idempotent = send_data2.get("idempotent")
-        
-        # Verify balance unchanged
-        wallet_resp2 = requests.get(f"{BASE_URL}/wallet", headers=headers, timeout=10)
-        final_balance = wallet_resp2.json().get("balanceCents")
-        
-        balance_unchanged = final_balance == new_balance
-        
-        passed = (
-            send_resp.status_code == 200 and
-            balance_debited and
-            send_resp2.status_code == 200 and
-            is_idempotent == True and
-            balance_unchanged
-        )
-        
-        results.append(log_test(
-            "14) POST /send with idempotency",
-            passed,
-            f"Initial: {initial_balance}, After send: {new_balance} (debited: {balance_debited}), After repeat: {final_balance} (idempotent: {is_idempotent}, unchanged: {balance_unchanged})"
-        ))
-        
-    except Exception as e:
-        results.append(log_test("14) POST /send with idempotency", False, f"Exception: {e}"))
-    
-    # Test 15: POST /api/enveloppe/create - verify share sum
-    try:
-        # Create enveloppe
-        env_resp = requests.post(f"{BASE_URL}/enveloppe/create", 
-                                headers=headers, 
-                                json={
-                                    "totalCents": 3333,
-                                    "count": 5
-                                }, 
-                                timeout=10)
-        env_data = env_resp.json()
-        enveloppe = env_data.get("enveloppe", {})
-        shares = enveloppe.get("shares", [])
-        
-        share_sum = sum(s.get("amountCents", 0) for s in shares)
-        sum_exact = share_sum == 3333
-        
-        # Test insufficient balance
-        huge_resp = requests.post(f"{BASE_URL}/enveloppe/create", 
-                                 headers=headers, 
-                                 json={
-                                     "totalCents": 99999999,
-                                     "count": 1
-                                 }, 
-                                 timeout=10)
-        
-        insufficient_error = huge_resp.status_code == 402
-        
-        passed = (
-            env_resp.status_code == 200 and
-            len(shares) == 5 and
-            sum_exact and
-            insufficient_error
-        )
-        
-        results.append(log_test(
-            "15) POST /enveloppe/create (share sum)",
-            passed,
-            f"Shares: {len(shares)}, Sum: {share_sum} (expected 3333, exact: {sum_exact}), Insufficient balance error: {insufficient_error} (status {huge_resp.status_code})"
-        ))
-        
-    except Exception as e:
-        results.append(log_test("15) POST /enveloppe/create", False, f"Exception: {e}"))
-    
-    return results
+def get_wallet_balance(token):
+    """Get current wallet balance"""
+    r = requests.get(f"{BASE_URL}/wallet", headers={"Authorization": f"Bearer {token}"})
+    if r.status_code != 200:
+        return None
+    return r.json().get('balanceCents')
 
 def main():
     print("\n" + "="*80)
-    print("DIVARC PHASE 2 BACKEND API TEST SUITE")
-    print("="*80)
-    print(f"Base URL: {BASE_URL}")
-    print(f"Testing: Auth, Messaging, Friendship, Multi-user, Wallet isolation")
+    print("DIVARC SOCIAL BACKEND TEST SUITE - PHASE 3")
     print("="*80)
     
-    all_results = []
+    # Setup: Create BUYER user
+    print_test("SETUP", "Create BUYER user buyer@divarc.fr")
+    buyer_token = auth_user("buyer@divarc.fr", "Buyer User")
+    if not buyer_token:
+        print_fail("Failed to create buyer user")
+        sys.exit(1)
+    print_pass(f"Buyer authenticated, token: {buyer_token[:20]}...")
     
-    # Test 1-4: Auth flow
-    auth_results = test_auth_flow()
-    if isinstance(auth_results, tuple):
-        results, token_a, user_a = auth_results
-        all_results.extend(results)
-    else:
-        all_results.extend(auth_results)
-        print("\n❌ Auth flow failed, cannot continue")
-        return
+    buyer_balance = get_wallet_balance(buyer_token)
+    print_info(f"Buyer wallet balance: {buyer_balance} cents")
+    if buyer_balance != 480000:
+        print_fail(f"Expected 480000 cents, got {buyer_balance}")
+        sys.exit(1)
+    print_pass("Buyer wallet has 480000 cents")
     
-    # Test 5: User provisioning
-    prov_results = test_user_provisioning(token_a)
-    if isinstance(prov_results, tuple):
-        results, wallet = prov_results
-        all_results.extend(results)
-    else:
-        all_results.extend(prov_results)
+    headers_buyer = {"Authorization": f"Bearer {buyer_token}"}
     
-    # Test 6-9: Messaging + Friendship
-    msg_results = test_messaging_friendship(token_a)
-    all_results.extend(msg_results)
+    # TEST 1: GET feed foryou mode
+    print_test(1, "GET /api/social/feed?mode=foryou&scope=all")
+    try:
+        r = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            posts = r.json()
+            print_info(f"Received {len(posts)} posts")
+            if len(posts) != 8:
+                print_fail(f"Expected 8 posts, got {len(posts)}")
+            else:
+                print_pass("Received 8 seeded posts")
+            
+            # Verify first post structure
+            if posts:
+                p = posts[0]
+                required_fields = ['id', 'author', 'caption', 'mediaUrl', 'hashtags', 'likes', 'comments', 'saves', 'views', 'liked', 'saved', 'following', 'reason']
+                missing = [f for f in required_fields if f not in p]
+                if missing:
+                    print_fail(f"Missing fields: {missing}")
+                else:
+                    print_pass("All required fields present")
+                
+                # Check author structure
+                if 'author' in p and p['author']:
+                    author = p['author']
+                    author_fields = ['id', 'name', 'handle', 'verified']
+                    missing_author = [f for f in author_fields if f not in author]
+                    if missing_author:
+                        print_fail(f"Missing author fields: {missing_author}")
+                    else:
+                        print_pass(f"Author structure correct: {author['name']} ({author['handle']}) verified={author['verified']}")
+                
+                # Check reason is non-empty
+                if p.get('reason'):
+                    print_pass(f"Reason present: '{p['reason']}'")
+                else:
+                    print_fail("Reason is empty")
+                
+                # Check for product in some posts
+                posts_with_product = [p for p in posts if p.get('product')]
+                print_info(f"Posts with product: {len(posts_with_product)}")
+                if posts_with_product:
+                    prod = posts_with_product[0]['product']
+                    if 'title' in prod and 'priceCents' in prod and 'emoji' in prod:
+                        print_pass(f"Product structure correct: {prod['title']} - {prod['priceCents']}c {prod['emoji']}")
+                    else:
+                        print_fail(f"Product missing fields: {prod}")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
     
-    # Test 10-12: Groups & Communities
-    group_results = test_groups_communities(token_a)
-    all_results.extend(group_results)
+    # TEST 2: GET feed chrono mode
+    print_test(2, "GET /api/social/feed?mode=chrono&scope=all")
+    try:
+        r = requests.get(f"{BASE_URL}/social/feed?mode=chrono&scope=all", headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            posts = r.json()
+            print_info(f"Received {len(posts)} posts")
+            
+            # Check chronological order
+            if len(posts) >= 2:
+                dates = [p['createdAt'] for p in posts]
+                is_desc = all(dates[i] >= dates[i+1] for i in range(len(dates)-1))
+                if is_desc:
+                    print_pass("Posts sorted by createdAt desc")
+                else:
+                    print_fail("Posts NOT in chronological order")
+            
+            # Check reason
+            if posts and posts[0].get('reason') == "Ordre chronologique":
+                print_pass("Reason is 'Ordre chronologique'")
+            else:
+                print_fail(f"Reason is '{posts[0].get('reason') if posts else 'N/A'}', expected 'Ordre chronologique'")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
     
-    # Test 13: Multi-user isolation
-    isolation_results = test_multi_user_isolation()
-    if isinstance(isolation_results, tuple):
-        results, token_b = isolation_results
-        all_results.extend(results)
-    else:
-        all_results.extend(isolation_results)
+    # Get a post ID for subsequent tests
+    r = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers_buyer)
+    posts = r.json()
+    if not posts:
+        print_fail("No posts available for testing")
+        sys.exit(1)
     
-    # Test 14-15: Wallet under auth
-    wallet_results = test_wallet_under_auth(token_a)
-    all_results.extend(wallet_results)
+    test_post_id = posts[0]['id']
+    original_likes = posts[0]['likes']
+    original_saves = posts[0]['saves']
+    original_comments = posts[0]['comments']
     
-    # Summary
+    # TEST 3: LIKE toggle
+    print_test(3, f"POST /api/social/posts/{test_post_id}/like (toggle)")
+    try:
+        # First like
+        r = requests.post(f"{BASE_URL}/social/posts/{test_post_id}/like", headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            data = r.json()
+            if data.get('liked') == True and data.get('likes') == original_likes + 1:
+                print_pass(f"Liked: {data['liked']}, likes: {data['likes']} (was {original_likes})")
+            else:
+                print_fail(f"Expected liked=True, likes={original_likes+1}, got {data}")
+        
+        # Unlike
+        r = requests.post(f"{BASE_URL}/social/posts/{test_post_id}/like", headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            data = r.json()
+            if data.get('liked') == False and data.get('likes') == original_likes:
+                print_pass(f"Unliked: {data['liked']}, likes back to {data['likes']}")
+            else:
+                print_fail(f"Expected liked=False, likes={original_likes}, got {data}")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+    
+    # TEST 4: SAVE toggle
+    print_test(4, f"POST /api/social/posts/{test_post_id}/save (toggle)")
+    try:
+        # First save
+        r = requests.post(f"{BASE_URL}/social/posts/{test_post_id}/save", headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            data = r.json()
+            if data.get('saved') == True and data.get('saves') == original_saves + 1:
+                print_pass(f"Saved: {data['saved']}, saves: {data['saves']} (was {original_saves})")
+            else:
+                print_fail(f"Expected saved=True, saves={original_saves+1}, got {data}")
+        
+        # Unsave
+        r = requests.post(f"{BASE_URL}/social/posts/{test_post_id}/save", headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            data = r.json()
+            if data.get('saved') == False and data.get('saves') == original_saves:
+                print_pass(f"Unsaved: {data['saved']}, saves back to {data['saves']}")
+            else:
+                print_fail(f"Expected saved=False, saves={original_saves}, got {data}")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+    
+    # TEST 5: COMMENTS
+    print_test(5, f"POST /api/social/posts/{test_post_id}/comments")
+    try:
+        # Post comment
+        r = requests.post(f"{BASE_URL}/social/posts/{test_post_id}/comments", 
+                         json={"text": "Super!"}, headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            comment = r.json()
+            if 'id' in comment and comment.get('text') == "Super!":
+                print_pass(f"Comment created: id={comment['id']}, name={comment.get('name')}")
+            else:
+                print_fail(f"Comment structure incorrect: {comment}")
+        
+        # Get comments
+        r = requests.get(f"{BASE_URL}/social/posts/{test_post_id}/comments", headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            comments = r.json()
+            found = any(c.get('text') == "Super!" for c in comments)
+            if found:
+                print_pass(f"Comment 'Super!' found in {len(comments)} comments")
+            else:
+                print_fail("Comment not found in GET response")
+        
+        # Verify post comments count incremented
+        r = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers_buyer)
+        posts = r.json()
+        post = next((p for p in posts if p['id'] == test_post_id), None)
+        if post and post['comments'] == original_comments + 1:
+            print_pass(f"Post comments count incremented: {original_comments} -> {post['comments']}")
+        else:
+            print_fail(f"Comments count not incremented correctly: expected {original_comments+1}, got {post['comments'] if post else 'N/A'}")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+    
+    # TEST 6: FOLLOW
+    print_test(6, "POST /api/social/follow/{authorId} and feed filtering")
+    try:
+        # Get an author ID
+        r = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers_buyer)
+        posts = r.json()
+        author_id = posts[0]['author']['id']
+        author_name = posts[0]['author']['name']
+        
+        # Follow
+        r = requests.post(f"{BASE_URL}/social/follow/{author_id}", headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            data = r.json()
+            if data.get('following') == True:
+                print_pass(f"Following {author_name}: {data['following']}")
+            else:
+                print_fail(f"Expected following=True, got {data}")
+        
+        # Get feed with scope=following
+        r = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=following", headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            following_posts = r.json()
+            if following_posts:
+                all_from_author = all(p['author']['id'] == author_id for p in following_posts)
+                if all_from_author:
+                    print_pass(f"Feed scope=following includes only posts by {author_name} ({len(following_posts)} posts)")
+                else:
+                    print_fail("Feed scope=following includes posts from other authors")
+            else:
+                print_fail("Feed scope=following returned no posts")
+        
+        # Unfollow
+        r = requests.post(f"{BASE_URL}/social/follow/{author_id}", headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            data = r.json()
+            if data.get('following') == False:
+                print_pass(f"Unfollowed {author_name}: {data['following']}")
+            else:
+                print_fail(f"Expected following=False, got {data}")
+        
+        # Verify feed scope=following excludes author
+        r = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=following", headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            following_posts = r.json()
+            if len(following_posts) == 0:
+                print_pass("Feed scope=following now empty after unfollow")
+            else:
+                print_fail(f"Feed scope=following still has {len(following_posts)} posts after unfollow")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+    
+    # TEST 7: NOT INTERESTED
+    print_test(7, "POST /api/social/posts/{id}/notinterested")
+    try:
+        # Get a different post
+        r = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers_buyer)
+        posts = r.json()
+        if len(posts) < 2:
+            print_fail("Not enough posts for notinterested test")
+        else:
+            ni_post_id = posts[1]['id']
+            ni_post_caption = posts[1]['caption']
+            
+            # Mark not interested
+            r = requests.post(f"{BASE_URL}/social/posts/{ni_post_id}/notinterested", headers=headers_buyer)
+            if r.status_code != 200:
+                print_fail(f"Status {r.status_code}: {r.text}")
+            else:
+                print_pass("Marked post as not interested")
+            
+            # Verify post excluded from feed
+            r = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers_buyer)
+            posts_after = r.json()
+            found = any(p['id'] == ni_post_id for p in posts_after)
+            if not found:
+                print_pass(f"Post '{ni_post_caption[:30]}...' excluded from feed")
+            else:
+                print_fail("Post still appears in feed after marking not interested")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+    
+    # TEST 8: BUY (money flow - CRITICAL)
+    print_test(8, "POST /api/social/posts/{id}/buy (money flow)")
+    try:
+        # Find a post with product
+        r = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers_buyer)
+        posts = r.json()
+        product_posts = [p for p in posts if p.get('product')]
+        
+        if not product_posts:
+            print_fail("No posts with products found")
+        else:
+            buy_post = product_posts[0]
+            buy_post_id = buy_post['id']
+            product = buy_post['product']
+            price = product['priceCents']
+            creator_id = buy_post['author']['id']
+            
+            print_info(f"Buying: {product['title']} for {price}c from {buy_post['author']['name']}")
+            
+            # Get buyer balance before
+            balance_before = get_wallet_balance(buyer_token)
+            print_info(f"Buyer balance before: {balance_before}c")
+            
+            # Buy
+            r = requests.post(f"{BASE_URL}/social/posts/{buy_post_id}/buy", headers=headers_buyer)
+            if r.status_code != 200:
+                print_fail(f"Status {r.status_code}: {r.text}")
+            else:
+                data = r.json()
+                if data.get('ok') == True and data.get('amountCents') == price:
+                    print_pass(f"Buy successful: amountCents={data['amountCents']}")
+                else:
+                    print_fail(f"Buy response incorrect: {data}")
+                
+                # Verify buyer balance
+                balance_after = data.get('balanceCents')
+                expected_balance = balance_before - price
+                if balance_after == expected_balance:
+                    print_pass(f"Buyer balance correct: {balance_before} - {price} = {balance_after}")
+                else:
+                    print_fail(f"Buyer balance incorrect: expected {expected_balance}, got {balance_after}")
+            
+            # Verify transaction created
+            r = requests.get(f"{BASE_URL}/transactions", headers=headers_buyer)
+            if r.status_code != 200:
+                print_fail(f"Failed to get transactions: {r.status_code}")
+            else:
+                txs = r.json()
+                social_tx = next((t for t in txs if t.get('category') == 'Social' and t.get('amountCents') == -price), None)
+                if social_tx:
+                    print_pass(f"Transaction created: {social_tx['label']} {social_tx['amountCents']}c")
+                else:
+                    print_fail("No Social transaction found for purchase")
+            
+            # For creator wallet verification, we need to create a real creator user
+            # Since bot users don't have accessible wallets, create a second user as creator
+            print_info("Creating second user as creator to verify wallet credit...")
+            creator_token = auth_user("creator@divarc.fr", "Creator User")
+            if not creator_token:
+                print_fail("Failed to create creator user")
+            else:
+                headers_creator = {"Authorization": f"Bearer {creator_token}"}
+                creator_balance_before = get_wallet_balance(creator_token)
+                print_info(f"Creator balance before: {creator_balance_before}c")
+                
+                # Creator posts a shoppable post
+                r = requests.post(f"{BASE_URL}/social/posts", 
+                                json={
+                                    "caption": "Test product post",
+                                    "mediaUrl": "https://example.com/video.mp4",
+                                    "hashtags": ["#test"],
+                                    "product": {
+                                        "title": "Test Product",
+                                        "priceCents": 1500,
+                                        "emoji": "🎁"
+                                    }
+                                }, headers=headers_creator)
+                if r.status_code != 200:
+                    print_fail(f"Creator post failed: {r.status_code} {r.text}")
+                else:
+                    creator_post = r.json()
+                    creator_post_id = creator_post['id']
+                    print_pass(f"Creator posted shoppable item: {creator_post_id}")
+                    
+                    # Buyer buys from creator
+                    r = requests.post(f"{BASE_URL}/social/posts/{creator_post_id}/buy", headers=headers_buyer)
+                    if r.status_code != 200:
+                        print_fail(f"Buy from creator failed: {r.status_code} {r.text}")
+                    else:
+                        print_pass("Buyer purchased from creator")
+                        
+                        # Verify creator earnings
+                        r = requests.get(f"{BASE_URL}/social/creator", headers=headers_creator)
+                        if r.status_code != 200:
+                            print_fail(f"Creator dashboard failed: {r.status_code}")
+                        else:
+                            creator_data = r.json()
+                            earnings = creator_data.get('earningsCents', 0)
+                            if earnings >= 1500:
+                                print_pass(f"Creator earningsCents: {earnings}c (>= 1500c)")
+                            else:
+                                print_fail(f"Creator earningsCents: {earnings}c (expected >= 1500c)")
+                        
+                        # Verify creator wallet increased
+                        creator_balance_after = get_wallet_balance(creator_token)
+                        if creator_balance_after == creator_balance_before + 1500:
+                            print_pass(f"Creator wallet increased: {creator_balance_before} + 1500 = {creator_balance_after}")
+                        else:
+                            print_fail(f"Creator wallet incorrect: expected {creator_balance_before + 1500}, got {creator_balance_after}")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+    
+    # TEST 9: TIP
+    print_test(9, "POST /api/social/posts/{id}/tip")
+    try:
+        # Get creator post
+        r = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers_buyer)
+        posts = r.json()
+        # Use the creator's post from previous test
+        creator_token = auth_user("creator@divarc.fr", "Creator User")
+        headers_creator = {"Authorization": f"Bearer {creator_token}"}
+        
+        r = requests.get(f"{BASE_URL}/social/creator", headers=headers_creator)
+        creator_posts = r.json().get('posts', [])
+        if not creator_posts:
+            print_fail("No creator posts found")
+        else:
+            tip_post_id = creator_posts[0]['id']
+            tip_amount = 200
+            
+            # Get balances before
+            buyer_balance_before = get_wallet_balance(buyer_token)
+            creator_balance_before = get_wallet_balance(creator_token)
+            creator_earnings_before = r.json().get('earningsCents', 0)
+            
+            print_info(f"Buyer balance before tip: {buyer_balance_before}c")
+            print_info(f"Creator balance before tip: {creator_balance_before}c")
+            print_info(f"Creator earnings before tip: {creator_earnings_before}c")
+            
+            # Tip
+            r = requests.post(f"{BASE_URL}/social/posts/{tip_post_id}/tip", 
+                            json={"amountCents": tip_amount}, headers=headers_buyer)
+            if r.status_code != 200:
+                print_fail(f"Status {r.status_code}: {r.text}")
+            else:
+                data = r.json()
+                if data.get('ok') == True:
+                    print_pass(f"Tip successful: {tip_amount}c")
+                else:
+                    print_fail(f"Tip response incorrect: {data}")
+            
+            # Verify buyer balance
+            buyer_balance_after = get_wallet_balance(buyer_token)
+            if buyer_balance_after == buyer_balance_before - tip_amount:
+                print_pass(f"Buyer balance decreased: {buyer_balance_before} - {tip_amount} = {buyer_balance_after}")
+            else:
+                print_fail(f"Buyer balance incorrect: expected {buyer_balance_before - tip_amount}, got {buyer_balance_after}")
+            
+            # Verify creator earnings
+            r = requests.get(f"{BASE_URL}/social/creator", headers=headers_creator)
+            creator_data = r.json()
+            creator_earnings_after = creator_data.get('earningsCents', 0)
+            if creator_earnings_after >= creator_earnings_before + tip_amount:
+                print_pass(f"Creator earnings increased: {creator_earnings_before} + {tip_amount} = {creator_earnings_after}")
+            else:
+                print_fail(f"Creator earnings incorrect: expected >= {creator_earnings_before + tip_amount}, got {creator_earnings_after}")
+            
+            # Verify creator wallet
+            creator_balance_after = get_wallet_balance(creator_token)
+            if creator_balance_after == creator_balance_before + tip_amount:
+                print_pass(f"Creator wallet increased: {creator_balance_before} + {tip_amount} = {creator_balance_after}")
+            else:
+                print_fail(f"Creator wallet incorrect: expected {creator_balance_before + tip_amount}, got {creator_balance_after}")
+            
+            # Verify Pourboire transaction
+            r = requests.get(f"{BASE_URL}/transactions", headers=headers_buyer)
+            txs = r.json()
+            tip_tx = next((t for t in txs if 'Pourboire' in t.get('label', '') and t.get('amountCents') == -tip_amount), None)
+            if tip_tx:
+                print_pass(f"Pourboire transaction created: {tip_tx['label']}")
+            else:
+                print_fail("No Pourboire transaction found")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+    
+    # TEST 10: INSUFFICIENT BALANCE
+    print_test(10, "POST /api/social/posts/{id}/tip with insufficient balance (402)")
+    try:
+        r = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers_buyer)
+        posts = r.json()
+        if posts:
+            huge_amount = 99999999
+            r = requests.post(f"{BASE_URL}/social/posts/{posts[0]['id']}/tip", 
+                            json={"amountCents": huge_amount}, headers=headers_buyer)
+            if r.status_code == 402:
+                print_pass(f"Insufficient balance returns 402: {r.json().get('error')}")
+            else:
+                print_fail(f"Expected 402, got {r.status_code}: {r.text}")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+    
+    # TEST 11: CREATE POST
+    print_test(11, "POST /api/social/posts (create new post)")
+    try:
+        r = requests.post(f"{BASE_URL}/social/posts", 
+                         json={
+                             "caption": "hi",
+                             "mediaUrl": "u",
+                             "hashtags": ["#x"]
+                         }, headers=headers_buyer)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            post = r.json()
+            if 'id' in post and post.get('caption') == 'hi' and post.get('likes') == 0:
+                print_pass(f"Post created: id={post['id']}, likes={post['likes']}")
+            else:
+                print_fail(f"Post structure incorrect: {post}")
+            
+            # Verify it appears in feed (chrono first)
+            r = requests.get(f"{BASE_URL}/social/feed?mode=chrono&scope=all", headers=headers_buyer)
+            posts = r.json()
+            if posts and posts[0]['id'] == post['id']:
+                print_pass("New post appears first in chrono feed")
+            else:
+                print_fail("New post not first in chrono feed")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+    
+    # TEST 12: GET CREATOR DASHBOARD
+    print_test(12, "GET /api/social/creator")
+    try:
+        creator_token = auth_user("creator@divarc.fr", "Creator User")
+        headers_creator = {"Authorization": f"Bearer {creator_token}"}
+        
+        r = requests.get(f"{BASE_URL}/social/creator", headers=headers_creator)
+        if r.status_code != 200:
+            print_fail(f"Status {r.status_code}: {r.text}")
+        else:
+            data = r.json()
+            required_fields = ['posts', 'followers', 'earningsCents', 'views', 'likes']
+            missing = [f for f in required_fields if f not in data]
+            if missing:
+                print_fail(f"Missing fields: {missing}")
+            else:
+                print_pass(f"Creator dashboard: {len(data['posts'])} posts, {data['followers']} followers, {data['earningsCents']}c earnings, {data['views']} views, {data['likes']} likes")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+    
     print("\n" + "="*80)
-    print("TEST SUMMARY")
-    print("="*80)
-    passed = sum(1 for r in all_results if r)
-    total = len(all_results)
-    print(f"\nTotal: {passed}/{total} tests passed")
-    
-    if passed == total:
-        print("\n✅ ALL TESTS PASSED")
-    else:
-        print(f"\n❌ {total - passed} test(s) failed")
-    
-    return passed == total
+    print("PHASE 3 BACKEND TESTS COMPLETE")
+    print("="*80 + "\n")
 
 if __name__ == "__main__":
-    success = main()
-    exit(0 if success else 1)
+    main()
