@@ -14,6 +14,7 @@ import {
 import { api, getToken, setToken, clearToken } from '@/lib/api'
 import Messaging from './components/messaging'
 import Social from './components/social'
+import Marketplace from './components/marketplace'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 
 /* ============================= helpers ============================= */
@@ -757,15 +758,23 @@ function Discover({ onTab }) {
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-4">
           {list.map((m) => (
             <div key={m.id} className="flex flex-col items-center gap-2">
-              <div className="press w-full aspect-square rounded-3xl grid place-items-center text-white shadow-lg relative" style={{ background: m.grad }}>
+              <div onClick={() => { if (m.id === 'shops') onTab && onTab('market'); else if (m.id === 'messages') onTab && onTab('messages'); else if (m.id === 'wallet') onTab && onTab('wallet'); else setWhy(m) }}
+                className="press cursor-pointer w-full aspect-square rounded-3xl grid place-items-center text-white shadow-lg relative" style={{ background: m.grad }}>
                 <m.icon size={28} />
-                <button onClick={() => setWhy(m)} aria-label="Pourquoi cette app"
+                <button onClick={(e) => { e.stopPropagation(); setWhy(m) }} aria-label="Pourquoi cette app"
                   className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-card border border-border grid place-items-center text-[10px] font-bold text-primary shadow">?</button>
               </div>
               <span className="text-[11px] font-medium">{m.name}</span>
             </div>
           ))}
         </div>
+        <button onClick={() => onTab && onTab('market')} className="press w-full text-left">
+          <Glass sheen className="p-5 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#9B5DE5,#4353F0)' }}><ShoppingBag size={20} /></div>
+            <div className="flex-1"><div className="font-semibold">Marketplace</div><div className="text-xs text-muted-foreground">Vends & achète · paiement au wallet</div></div>
+            <ChevronRight size={18} className="text-muted-foreground" />
+          </Glass>
+        </button>
         <button onClick={() => onTab && onTab('social')} className="press w-full text-left"><SocialTeaser /></button>
       </div>
 
@@ -1058,8 +1067,8 @@ function App() {
 
   return (
     <div className="font-body text-foreground">
-      <AnimatePresence mode="wait">
-        <motion.div key={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+      <AnimatePresence initial={false}>
+        <motion.div key={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
           {tab === 'hub' && <Hub user={user} wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} onTab={goTab} />}
           {tab === 'wallet' && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
           {tab === 'messages' && <Messaging me={user} />}
@@ -1067,6 +1076,7 @@ function App() {
           {tab === 'discover' && <Discover onTab={goTab} />}
           {tab === 'profile' && <Profile user={user} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}
           {tab === 'social' && <Social me={user} onBack={() => setTab('hub')} />}
+          {tab === 'market' && <Marketplace me={user} onWalletRefresh={load} />}
         </motion.div>
       </AnimatePresence>
 

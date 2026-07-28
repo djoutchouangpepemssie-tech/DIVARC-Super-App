@@ -249,6 +249,33 @@ async function ensureSocialSeed(db) {
   await db.collection('posts').insertMany(docs)
 }
 
+const MARKET_IMGS = {
+  fashion: 'https://images.unsplash.com/photo-1731505583021-16c3a17339cd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHw0fHxmYXNoaW9ufGVufDB8fHx8MTc4NTI3MDU2M3ww&ixlib=rb-4.1.0&q=85',
+  sneakers: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwxfHxzbmVha2Vyc3xlbnwwfHx8fDE3ODUyMzAwODN8MA&ixlib=rb-4.1.0&q=85',
+  furniture: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHw0fHxmdXJuaXR1cmV8ZW58MHx8fHwxNzg1MjcwNTYzfDA&ixlib=rb-4.1.0&q=85',
+  bicycle: 'https://images.unsplash.com/photo-1618762044398-ec1e7e048bbd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxiaWN5Y2xlfGVufDB8fHx8MTc4NTI3MDU2M3ww&ixlib=rb-4.1.0&q=85',
+  smartphone: 'https://images.unsplash.com/photo-1634403665481-74948d815f03?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDR8MHwxfHNlYXJjaHw0fHxzbWFydHBob25lfGVufDB8fHx8MTc4NTI3MDU2M3ww&ixlib=rb-4.1.0&q=85',
+  plant: 'https://images.unsplash.com/photo-1592150621744-aca64f48394a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwyfHxob3VzZXBsYW50fGVufDB8fHx8MTc4NTI3MDU2M3ww&ixlib=rb-4.1.0&q=85',
+}
+async function ensureMarketSeed(db) {
+  if (await db.collection('listings').countDocuments() > 0) return
+  await ensureDemoUsers(db)
+  const seed = [
+    { s: 'bot-lena', t: 'Veste en jean vintage', d: 'Taille M, très bon état, portée quelques fois. Coupe oversize tendance.', p: 3500, cat: 'Mode', cond: 'Très bon état', type: 'item', img: MARKET_IMGS.fashion, loc: 'Paris 11e' },
+    { s: 'bot-yanis', t: 'Sneakers rétro (42)', d: 'Édition running, semelle nickel, boîte incluse.', p: 6900, cat: 'Chaussures', cond: 'Bon état', type: 'item', img: MARKET_IMGS.sneakers, loc: 'Lyon' },
+    { s: 'bot-thomas', t: 'Fauteuil design scandinave', d: 'Fauteuil en tissu, structure bois. Parfait pour un salon cosy.', p: 12000, cat: 'Maison', cond: 'Très bon état', type: 'item', img: MARKET_IMGS.furniture, loc: 'Bordeaux' },
+    { s: 'bot-sofia', t: 'Vélo de ville', d: 'Vélo léger, 7 vitesses, freins révisés. Idéal trajets quotidiens.', p: 18500, cat: 'Vélo', cond: 'Bon état', type: 'item', img: MARKET_IMGS.bicycle, loc: 'Nantes' },
+    { s: 'bot-marie', t: 'Smartphone 128 Go', d: 'Débloqué tout opérateur, batterie 92%, avec chargeur.', p: 29900, cat: 'Tech', cond: 'Très bon état', type: 'item', img: MARKET_IMGS.smartphone, loc: 'Paris 9e' },
+    { s: 'bot-lena', t: 'Monstera en pot', d: 'Belle plante d\u2019intérieur, ~80cm. À récupérer sur place.', p: 2500, cat: 'Jardin', cond: 'Neuf', type: 'ad', img: MARKET_IMGS.plant, loc: 'Paris 20e' },
+  ]
+  const now = Date.now()
+  await db.collection('listings').insertMany(seed.map((x, i) => ({
+    id: uuidv4(), sellerId: x.s, title: x.t, description: x.d, priceCents: x.p, category: x.cat,
+    condition: x.cond, type: x.type, images: [x.img], location: x.loc, status: 'active',
+    favorites: Math.floor(Math.random() * 40), views: Math.floor(Math.random() * 300), createdAt: new Date(now - i * 3600000 * 8),
+  })))
+}
+
 // ---------------- Router ----------------
 async function handleRoute(request, { params }) {
   const { path = [] } = await params
@@ -657,6 +684,85 @@ async function handleRoute(request, { params }) {
       const views = posts.reduce((a, p) => a + (p.views || 0), 0)
       const likes = posts.reduce((a, p) => a + (p.likes || 0), 0)
       return ok({ posts, followers, earningsCents: earnings, views, likes })
+    }
+
+    /* ===================== MARKETPLACE ===================== */
+    await ensureMarketSeed(db)
+
+    if (route === '/market/listings' && method === 'GET') {
+      const q = (url.searchParams.get('q') || '').toLowerCase()
+      const cat = url.searchParams.get('cat') || ''
+      const sort = url.searchParams.get('sort') || 'recent'
+      let items = await db.collection('listings').find({ status: 'active' }, { projection: { _id: 0 } }).toArray()
+      if (cat && cat !== 'Tout') items = items.filter((i) => i.category === cat)
+      if (q) items = items.filter((i) => i.title.toLowerCase().includes(q) || i.description.toLowerCase().includes(q))
+      if (sort === 'price_asc') items.sort((a, b) => a.priceCents - b.priceCents)
+      else if (sort === 'price_desc') items.sort((a, b) => b.priceCents - a.priceCents)
+      else items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      const favs = new Set((await db.collection('market_favorites').find({ userId: me.id }).toArray()).map((f) => f.listingId))
+      const out = []
+      for (const i of items) {
+        const seller = await db.collection('users').findOne({ id: i.sellerId }, { projection: { _id: 0, email: 0 } })
+        out.push({ ...i, favorited: favs.has(i.id), seller: seller ? { id: seller.id, name: seller.name, handle: seller.handle, initials: seller.initials, avatarColor: seller.avatarColor, verified: seller.verified } : null })
+      }
+      return ok(out)
+    }
+
+    if (route === '/market/listings' && method === 'POST') {
+      const listing = {
+        id: uuidv4(), sellerId: me.id, title: body.title || 'Article', description: body.description || '',
+        priceCents: Math.max(0, Math.round(body.priceCents || 0)), category: body.category || 'Autre',
+        condition: body.condition || 'Bon état', type: body.type || 'item',
+        images: body.images && body.images.length ? body.images : [], emoji: body.emoji || '📦',
+        color: body.color || '#4353F0', location: body.location || 'France', status: 'active',
+        favorites: 0, views: 0, createdAt: new Date(),
+      }
+      await db.collection('listings').insertOne(listing)
+      const { _id, ...clean } = listing
+      return ok(clean)
+    }
+
+    if (route.startsWith('/market/listings/') && path.length === 3 && method === 'GET') {
+      const l = await db.collection('listings').findOne({ id: path[2] }, { projection: { _id: 0 } })
+      if (!l) return err('Annonce introuvable', 404)
+      await db.collection('listings').updateOne({ id: path[2] }, { $inc: { views: 1 } })
+      const seller = await db.collection('users').findOne({ id: l.sellerId }, { projection: { _id: 0, email: 0 } })
+      const favs = new Set((await db.collection('market_favorites').find({ userId: me.id }).toArray()).map((f) => f.listingId))
+      return ok({ ...l, favorited: favs.has(l.id), seller })
+    }
+
+    if (route.startsWith('/market/listings/') && path[3] === 'favorite' && method === 'POST') {
+      const lid = path[2]
+      const ex = await db.collection('market_favorites').findOne({ listingId: lid, userId: me.id })
+      if (ex) { await db.collection('market_favorites').deleteOne({ listingId: lid, userId: me.id }); await db.collection('listings').updateOne({ id: lid }, { $inc: { favorites: -1 } }) }
+      else { await db.collection('market_favorites').insertOne({ listingId: lid, userId: me.id }); await db.collection('listings').updateOne({ id: lid }, { $inc: { favorites: 1 } }) }
+      const l = await db.collection('listings').findOne({ id: lid })
+      return ok({ favorited: !ex, favorites: l.favorites })
+    }
+
+    if (route.startsWith('/market/listings/') && path[3] === 'buy' && method === 'POST') {
+      const l = await db.collection('listings').findOne({ id: path[2] })
+      if (!l) return err('Annonce introuvable', 404)
+      if (l.status !== 'active') return err('Déjà vendu', 410)
+      if (l.sellerId === me.id) return err('Tu ne peux pas acheter ta propre annonce')
+      const wallet = await db.collection('wallets').findOne({ userId: me.id })
+      if (!wallet || wallet.balanceCents < l.priceCents) return err('Solde insuffisant', 402)
+      await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: -l.priceCents } })
+      await creditWallet(db, l.sellerId, l.priceCents)
+      await db.collection('listings').updateOne({ id: l.id }, { $set: { status: 'sold', buyerId: me.id, soldAt: new Date() } })
+      const order = { id: uuidv4(), listingId: l.id, title: l.title, buyerId: me.id, sellerId: l.sellerId, priceCents: l.priceCents, createdAt: new Date() }
+      await db.collection('orders').insertOne(order)
+      const seller = await db.collection('users').findOne({ id: l.sellerId })
+      await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: `Achat : ${l.title}`, category: 'Marketplace', amountCents: -l.priceCents, carbonKg: 0, icon: '🛍️', route: null, createdAt: new Date() })
+      await postLedger(db, [{ account: `user:${me.id}`, direction: 'debit', amountCents: l.priceCents }, { account: `user:${l.sellerId}`, direction: 'credit', amountCents: l.priceCents }])
+      const updated = await db.collection('wallets').findOne({ userId: me.id }, { projection: { _id: 0 } })
+      return ok({ ok: true, order: { id: order.id }, balanceCents: updated.balanceCents })
+    }
+
+    if (route === '/market/mine' && method === 'GET') {
+      const selling = await db.collection('listings').find({ sellerId: me.id }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray()
+      const orders = await db.collection('orders').find({ buyerId: me.id }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray()
+      return ok({ selling, purchases: orders })
     }
 
     return err(`Route ${route} introuvable`, 404)

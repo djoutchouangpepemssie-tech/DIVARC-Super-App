@@ -247,6 +247,21 @@ backend:
         -comment: "✅ ALL PHASE 3 TESTS PASSED (12/12). Comprehensive social backend testing completed: (1) GET feed foryou mode - 8 posts with all required fields (author{id,name,handle,verified}, caption, mediaUrl, hashtags, likes/comments/saves/views, liked/saved/following booleans, non-empty reason), product structure verified. (2) GET feed chrono mode - posts sorted by createdAt desc, reason='Ordre chronologique'. (3) LIKE toggle - liked:true/false, counts +1/-1 correctly. (4) SAVE toggle - saved:true/false, counts +1/-1 correctly. (5) COMMENTS - POST creates comment with id/name, GET retrieves it, post comments count incremented. (6) FOLLOW - POST toggles following:true/false, feed scope=following filters correctly (only followed author's posts), unfollow excludes posts. (7) NOT INTERESTED - POST marks post, subsequent feed excludes it. (8) BUY (CRITICAL money flow) - buyer wallet 480000->478510 (-1490c), creator wallet 480000->481500 (+1500c), Social transaction created, creator earningsCents tracked correctly. (9) TIP - buyer wallet -200c, creator wallet +200c, creator earnings +200c, Pourboire transaction created. (10) INSUFFICIENT - huge tip (99999999c) returns 402. (11) CREATE POST - POST creates post with id, authorId=me, likes=0, appears first in chrono feed. (12) GET creator dashboard - returns posts[], followers, earningsCents, views, likes. NO CRITICAL ISSUES FOUND."
 
 
+  - task: "Marketplace listings/favorite/buy/mine [PHASE4]"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "GET /market/listings?q=&cat=&sort= (6 seeded with images, seller info, favorited flag). POST /market/listings create. GET /market/listings/:id (views++). POST /market/listings/:id/favorite toggle. POST /market/listings/:id/buy -> debit buyer, credit seller, mark sold, order + tx + ledger; 402 insufficient; 410 already sold; cannot buy own. GET /market/mine (selling + purchases)."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ ALL PHASE 4 MARKETPLACE TESTS PASSED (9/9). Comprehensive testing with buyer4@divarc.fr (480000c) and seller4@divarc.fr (480000c): (1) GET /market/listings - 6 seeded listings verified with all required fields (seller{name,handle,verified}, priceCents, images[] non-empty, favorited:false, status:'active'). (2) FILTERS - Category filter (cat=Tech) returns 1 Tech listing ✓. Search with accent (q=vélo) matches bike ✓. Sort price_asc (2500->29900c) and price_desc (29900->2500c) verified ✓. Minor: search without accent (q=velo) doesn't match 'Vélo' - not critical. (3) CREATE - Seller POST /market/listings creates 'Guitare' (5000c), returns id, sellerId matches seller, appears in listings ✓. (4) FAVORITE - Toggle works: favorited:true (favorites:1), toggle again favorited:false (favorites:0) ✓. (5) DETAIL - GET /market/listings/:id returns listing with seller, views increment 0->1 ✓. (6) BUY CRITICAL MONEY FLOW - Buyer buys Guitare: buyer 480000->475000c (-5000c) ✓, seller 480000->485000c (+5000c) ✓, buyer transaction created (category:'Marketplace', amount:-5000c) ✓, listing status:'sold' ✓, buying again returns 410 'Déjà vendu' ✓. (7) OWN LISTING - Seller cannot buy own listing: 400 'Tu ne peux pas acheter ta propre annonce' ✓. (8) INSUFFICIENT - Buyer tries expensive listing (99999999c): 402 'Solde insuffisant' ✓. (9) MINE - Buyer GET /market/mine includes Guitare purchase ✓, seller GET /market/mine includes 3 listings with Guitare marked 'sold' ✓. NO CRITICAL ISSUES FOUND. Money flow verified with concrete before/after balances for both buyer and seller."
+
 frontend:
   - task: "Foundation UI (Onboarding, Hub, Wallet, QR, Discover, Profile, Messages, Send, Enveloppe)"
     implemented: true
@@ -268,7 +283,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "DIVARC Social feed/posts/like/comment/follow/buy/tip [PHASE3]"
+    - "Marketplace listings/favorite/buy/mine [PHASE4]"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -284,3 +299,5 @@ agent_communication:
     -message: "✅ ALL PHASE 2 BACKEND TESTS PASSED (15/15). Comprehensive multi-user testing completed: AUTH FLOW (4 tests): OTP send/verify with preview mode, negative cases (wrong code->400, no auth->401), existing user login. USER PROVISIONING (1 test): wallet 480000c, 2 coffres, welcome tx verified. MESSAGING+FRIENDSHIP (4 tests): conversations with Marie DM, friendship mechanics (XP 0->120, level Connaissance->Ami·e), bot auto-reply, reactions toggle. GROUPS+COMMUNITIES (3 tests): group creation (3 members), Paris community join, DM dedupe. MULTI-USER ISOLATION (1 test): userB independent wallet, no access to userA's groups. WALLET AUTH-SCOPED (2 tests): send idempotency verified, enveloppe share sum exact (3333c), 402 errors correct. NO CRITICAL ISSUES FOUND. All endpoints working correctly with Bearer authentication."
     -agent: "testing"
     -message: "✅ ALL PHASE 3 BACKEND TESTS PASSED (12/12). Comprehensive social backend testing completed with concrete evidence: (1) Feed foryou - 8 posts with all required fields verified. (2) Feed chrono - sorted desc, reason correct. (3) Like toggle - counts +1/-1. (4) Save toggle - counts +1/-1. (5) Comments - create/retrieve/count increment. (6) Follow - toggle working, feed filtering by scope=following verified. (7) Not interested - post exclusion working. (8) BUY CRITICAL - buyer 480000->478510c (-1490), creator 480000->481500c (+1500), Social transaction created, earnings tracked. (9) TIP - buyer -200c, creator +200c wallet & earnings, Pourboire transaction created. (10) Insufficient balance - 402 returned. (11) Create post - appears first in chrono. (12) Creator dashboard - all fields present. Money flow verified with before/after balances for both buyer and creator. NO CRITICAL ISSUES FOUND. Backend ready for production."
+    -agent: "testing"
+    -message: "✅ ALL PHASE 4 MARKETPLACE BACKEND TESTS PASSED (9/9). Comprehensive testing with buyer4@divarc.fr and seller4@divarc.fr (both 480000c initial balance): (1) GET /market/listings - 6 seeded listings with all required fields verified. (2) FILTERS - Category (cat=Tech), search (q=vélo), sorting (price_asc/desc) all working. Minor: search without accent (q=velo) doesn't match 'Vélo' - not critical. (3) CREATE - Seller creates 'Guitare' (5000c), appears in listings. (4) FAVORITE - Toggle working (favorited:true/false, count +1/-1). (5) DETAIL - Views increment correctly. (6) BUY CRITICAL MONEY FLOW - Buyer 480000->475000c (-5000), Seller 480000->485000c (+5000), transaction created, listing marked 'sold', buying again returns 410 'Déjà vendu'. (7) OWN LISTING - Seller cannot buy own: 400 error. (8) INSUFFICIENT - Returns 402 correctly. (9) MINE - Buyer purchases and seller listings verified. NO CRITICAL ISSUES FOUND. All marketplace endpoints working correctly with proper money flow."
