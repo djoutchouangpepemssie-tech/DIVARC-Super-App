@@ -11,23 +11,17 @@ import {
   Utensils, Car, ShoppingBag, Ticket, HeartPulse, Globe, ChevronDown, Info,
   Landmark, CreditCard, Settings2, Trash2, Download, Users, Play
 } from 'lucide-react'
+import { api, getToken, setToken, clearToken } from '@/lib/api'
+import Messaging from './components/messaging'
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 
 /* ============================= helpers ============================= */
-const API = ''
 const eur = (cents, mask = false) => {
   if (mask) return '••••'
   const v = (cents / 100)
   return v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 const cx = (...a) => a.filter(Boolean).join(' ')
-
-async function api(path, opts) {
-  const res = await fetch(`${API}/api${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  })
-  return res.json()
-}
 
 /* ============================= primitives ============================= */
 const Glass = ({ className, sheen, strong, children, ...p }) => (
@@ -57,116 +51,90 @@ const Pill = ({ children, className }) => (
   </span>
 )
 
-/* ============================= onboarding ============================= */
-function Onboarding({ onDone }) {
-  const [step, setStep] = useState(0)
+/* ============================= LOGIN (Email + OTP) ============================= */
+function Login({ onAuthed }) {
+  const [step, setStep] = useState('email') // email | otp
+  const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
+  const [name, setName] = useState('')
+  const [isNew, setIsNew] = useState(false)
+  const [preview, setPreview] = useState('')
   const [busy, setBusy] = useState(false)
-  const steps = ['Bienvenue', 'Passkey', 'Identité', 'Premier coffre']
+  const [error, setError] = useState('')
 
-  const next = () => setStep((s) => Math.min(s + 1, steps.length - 1))
-
-  const createPasskey = async () => {
+  const sendCode = async () => {
+    setError('')
+    if (!email.includes('@')) { setError('E-mail invalide'); return }
     setBusy(true)
-    await new Promise((r) => setTimeout(r, 900))
+    const r = await api('/auth/otp/send', { method: 'POST', body: JSON.stringify({ email }) })
     setBusy(false)
-    next()
+    if (r.error) { setError(r.error); return }
+    setIsNew(r.isNew); setPreview(r.previewCode || ''); setStep('otp')
   }
-  const attrs = [
-    { k: 'name', label: 'Nom & prénom', on: true },
-    { k: 'age', label: 'Majorité (18+)', on: true },
-    { k: 'address', label: 'Adresse postale', on: false },
-  ]
-  const [selAttrs, setSelAttrs] = useState(attrs)
+  const verify = async () => {
+    setError('')
+    if (code.length < 6) { setError('Entre les 6 chiffres'); return }
+    setBusy(true)
+    const r = await api('/auth/otp/verify', { method: 'POST', body: JSON.stringify({ email, code, name: name || undefined }) })
+    setBusy(false)
+    if (r.error) { setError(r.error); return }
+    setToken(r.token)
+    onAuthed(r.user, r.isNew)
+  }
 
   return (
     <div className="min-h-[100dvh] bg-app-gradient flex items-center justify-center p-4">
       <Glass sheen strong className="w-full max-w-[440px] p-7">
-        {/* progress */}
-        <div className="flex gap-2 mb-7">
-          {steps.map((_, i) => (
-            <div key={i} className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
-              <motion.div
-                className="h-full rounded-full bg-primary"
-                initial={false}
-                animate={{ width: i <= step ? '100%' : '0%' }}
-                transition={{ duration: 0.4 }}
-              />
-            </div>
-          ))}
+        <div className="w-16 h-16 rounded-3xl grid place-items-center mb-6 float-slow" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+          <span className="font-display italic text-gold text-4xl leading-none">D</span>
         </div>
-
         <AnimatePresence mode="wait">
-          {step === 0 && (
-            <motion.div key="w" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
-              <div className="w-16 h-16 rounded-3xl grid place-items-center mb-5 float-slow"
-                style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
-                <span className="font-display italic text-gold text-4xl leading-none">D</span>
-              </div>
+          {step === 'email' ? (
+            <motion.div key="email" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
               <h1 className="font-display text-4xl leading-tight mb-2">Bienvenue sur DIVARC</h1>
-              <p className="text-muted-foreground mb-7 leading-relaxed">
-                La super-app européenne : paiement, messages, assistant IA et social vidéo.
-                Conforme RGPD, centrée sur la confiance.
-              </p>
-              <PrimaryBtn onClick={next} full>Commencer <ChevronRight size={18} /></PrimaryBtn>
-              <p className="text-center text-xs text-muted-foreground mt-4">Configuration en 60 secondes</p>
-            </motion.div>
-          )}
-
-          {step === 1 && (
-            <motion.div key="p" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
-              <StepHead icon={<Fingerprint size={26} />} title="Créer avec une passkey"
-                sub="Sans mot de passe. Utilise Face ID, ton empreinte ou ton appareil." />
-              <button onClick={createPasskey} disabled={busy}
-                className="press w-full rounded-3xl p-6 mb-4 text-white grid place-items-center gap-3 relative overflow-hidden"
-                style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
-                <div className={cx('w-14 h-14 rounded-full grid place-items-center bg-white/15', !busy && 'pulse-ring')}>
-                  {busy ? <RefreshCw className="animate-spin" size={26} /> : <Fingerprint size={30} />}
-                </div>
-                <span className="font-semibold">{busy ? 'Création de la passkey…' : 'Créer ma passkey'}</span>
-              </button>
-              <button onClick={next} className="w-full text-sm text-muted-foreground flex items-center justify-center gap-2 py-2">
-                <Mail size={15} /> Utiliser un code par e-mail (repli)
-              </button>
-            </motion.div>
-          )}
-
-          {step === 2 && (
-            <motion.div key="i" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
-              <StepHead icon={<BadgeCheck size={26} />} title="Vérifier ton identité"
-                sub="Partage sélectif via ton identité numérique (FranceConnect / EUDI — démo)." />
-              <div className="space-y-2.5 mb-5">
-                {selAttrs.map((a, i) => (
-                  <button key={a.k} onClick={() => setSelAttrs((p) => p.map((x, j) => j === i ? { ...x, on: !x.on } : x))}
-                    className="w-full flex items-center justify-between rounded-2xl border border-border bg-card/60 px-4 py-3 press">
-                    <span className="text-sm font-medium">{a.label}</span>
-                    <div className={cx('w-5 h-5 rounded-md grid place-items-center transition-colors', a.on ? 'bg-primary text-white' : 'bg-muted')}>
-                      {a.on && <Check size={14} />}
-                    </div>
-                  </button>
-                ))}
+              <p className="text-muted-foreground mb-6 leading-relaxed">Connexion sécurisée par code e-mail. Pas de mot de passe.</p>
+              <label className="text-xs text-muted-foreground">Ton e-mail</label>
+              <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-4 py-3 mt-1.5 mb-2">
+                <Mail size={18} className="text-muted-foreground" />
+                <input type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendCode()}
+                  placeholder="toi@exemple.fr" className="flex-1 bg-transparent outline-none text-sm" />
               </div>
-              <PrimaryBtn onClick={next} full>
-                <Shield size={16} /> Vérifier avec mon identité numérique
+              {error && <p className="text-xs text-destructive mb-2">{error}</p>}
+              <PrimaryBtn onClick={sendCode} full disabled={busy}>
+                {busy ? <RefreshCw className="animate-spin" size={18} /> : <>Recevoir mon code <ChevronRight size={18} /></>}
               </PrimaryBtn>
-              <p className="text-center text-xs text-muted-foreground mt-3">Tu ne partages que ce que tu coches.</p>
+              <p className="text-center text-xs text-muted-foreground mt-4">Conforme RGPD · Hébergé dans l'UE</p>
             </motion.div>
-          )}
-
-          {step === 3 && (
-            <motion.div key="c" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
-              <StepHead icon={<Gift size={26} />} title="Ton premier coffre est offert 🎁"
-                sub="On a ouvert un coffre « Vacances ». Envoie une Enveloppe à un ami pour démarrer." />
-              <Glass className="p-4 mb-5 flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl grid place-items-center text-xl" style={{ background: 'rgba(67,83,240,.12)' }}>🏖️</div>
-                <div className="flex-1">
-                  <div className="font-semibold text-sm">Vacances Lisbonne</div>
-                  <div className="text-xs text-muted-foreground">Objectif 1 500,00 €</div>
+          ) : (
+            <motion.div key="otp" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
+              <button onClick={() => { setStep('email'); setCode(''); setError('') }} className="text-sm text-muted-foreground flex items-center gap-1 mb-4"><ArrowLeft size={15} /> Modifier l'e-mail</button>
+              <h1 className="font-display text-3xl leading-tight mb-1.5">Entre ton code</h1>
+              <p className="text-muted-foreground mb-5 text-sm">Envoyé à <b className="text-foreground">{email}</b></p>
+              {preview && (
+                <div className="mb-4 rounded-2xl bg-gold/12 border border-gold/30 px-4 py-2.5 text-sm flex items-center gap-2">
+                  <Info size={15} className="text-gold" /> Mode aperçu — ton code : <b className="font-grotesk tracking-widest text-gold">{preview}</b>
                 </div>
-                <Pill className="bg-primary/10 text-primary">+5,00 € offert</Pill>
-              </Glass>
-              <PrimaryBtn onClick={() => onDone()} full>
-                <Sparkles size={16} /> Entrer dans DIVARC
+              )}
+              <div className="flex justify-center mb-4">
+                <InputOTP maxLength={6} value={code} onChange={setCode}>
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} /><InputOTPSlot index={1} /><InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} /><InputOTPSlot index={4} /><InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+              {isNew && (
+                <div className="mb-4">
+                  <label className="text-xs text-muted-foreground">Ton prénom & nom</label>
+                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex. Camille Dubois"
+                    className="w-full rounded-2xl border border-border bg-card/60 px-4 py-3 mt-1.5 text-sm" />
+                </div>
+              )}
+              {error && <p className="text-xs text-destructive mb-2">{error}</p>}
+              <PrimaryBtn onClick={verify} full disabled={busy}>
+                {busy ? <RefreshCw className="animate-spin" size={18} /> : <><Sparkles size={16} /> {isNew ? 'Créer mon compte' : 'Se connecter'}</>}
               </PrimaryBtn>
+              <button onClick={sendCode} className="w-full text-center text-xs text-muted-foreground mt-4">Renvoyer le code</button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -682,7 +650,7 @@ function GoldParticles() {
 }
 
 /* ============================= QR ============================= */
-function QRScreen() {
+function QRScreen({ user }) {
   const [mode, setMode] = useState('mine')
   const [seconds, setSeconds] = useState(600)
   useEffect(() => {
@@ -720,7 +688,7 @@ function QRScreen() {
                 <div className="w-12 h-12 rounded-2xl grid place-items-center text-white font-display italic text-2xl" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>D</div>
               </div>
             </div>
-            <div className="font-semibold">Adrien Vasseur · @adrien</div>
+            <div className="font-semibold">{user?.name} · {user?.handle}</div>
             <div className="flex items-center justify-center gap-2 mt-3 text-sm text-muted-foreground">
               <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
               QR à usage unique · expire dans {mm}:{ss}
@@ -826,7 +794,7 @@ const SocialTeaser = () => (
 )
 
 /* ============================= PROFILE ============================= */
-function Profile({ user, theme, setTheme, mask, setMask }) {
+function Profile({ user, theme, setTheme, mask, setMask, onLogout }) {
   const accesses = [
     { name: 'Livraison', pseudo: 'divarc-a91f', since: '12 mai', icon: Utensils, c: '#F15BB5' },
     { name: 'Mobilité', pseudo: 'divarc-7c02', since: '3 avr', icon: Car, c: '#3FB68B' },
@@ -907,6 +875,9 @@ function Profile({ user, theme, setTheme, mask, setMask }) {
             </button>
           </div>
         </div>
+        <button onClick={onLogout} className="press w-full inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 font-medium border border-border bg-card/60 text-muted-foreground">
+          <ArrowLeft size={16} /> Se déconnecter
+        </button>
         <div className="text-center text-xs text-muted-foreground pb-2">DIVARC · Hébergé dans l\u2019UE · divarc.fr</div>
       </div>
     </Screen>
@@ -1043,33 +1014,34 @@ function Sheet({ children, onClose, title, gold }) {
 function App() {
   const { theme, setTheme } = useTheme()
   const [booted, setBooted] = useState(false)
-  const [onboarded, setOnboarded] = useState(false)
   const [tab, setTab] = useState('hub')
   const [mask, setMask] = useState(false)
-  const [overlay, setOverlay] = useState(null) // 'send' | 'enveloppe' | 'coffre'
+  const [overlay, setOverlay] = useState(null)
   const [user, setUser] = useState(null)
   const [wallet, setWallet] = useState(null)
   const [txs, setTxs] = useState([])
   const [contacts, setContacts] = useState([])
 
   const load = useCallback(async () => {
-    const [w, t, c, me] = await Promise.all([
-      api('/wallet'), api('/transactions'), api('/contacts'), api('/me'),
-    ])
-    setWallet(w); setTxs(t); setContacts(c); setUser(me)
+    const [w, t, c] = await Promise.all([api('/wallet'), api('/transactions'), api('/contacts')])
+    if (!w.error) setWallet(w)
+    if (Array.isArray(t)) setTxs(t)
+    if (Array.isArray(c)) setContacts(c)
   }, [])
 
   useEffect(() => {
     (async () => {
-      await api('/seed', { method: 'POST' })
-      await load()
-      const ob = typeof window !== 'undefined' && localStorage.getItem('divarc_onboarded')
-      setOnboarded(!!ob)
+      if (getToken()) {
+        const me = await api('/auth/me')
+        if (!me.error) { setUser(me); await load() }
+        else clearToken()
+      }
       setBooted(true)
     })()
   }, [load])
 
-  const finishOnboard = () => { localStorage.setItem('divarc_onboarded', '1'); setOnboarded(true) }
+  const onAuthed = async (u) => { setUser(u); setTab('hub'); await load() }
+  const logout = async () => { await api('/auth/logout', { method: 'POST' }); clearToken(); setUser(null); setWallet(null); setTxs([]); setContacts([]) }
 
   const handleAction = (id) => {
     if (id === 'send') return setOverlay('send')
@@ -1081,7 +1053,7 @@ function App() {
   const goTab = (t) => { setTab(t) }
 
   if (!booted) return <Boot />
-  if (!onboarded) return <Onboarding onDone={finishOnboard} />
+  if (!user) return <Login onAuthed={onAuthed} />
 
   return (
     <div className="font-body text-foreground">
@@ -1089,10 +1061,10 @@ function App() {
         <motion.div key={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
           {tab === 'hub' && <Hub user={user} wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} onTab={goTab} />}
           {tab === 'wallet' && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
-          {tab === 'messages' && <Messages contacts={contacts} />}
-          {tab === 'qr' && <QRScreen />}
+          {tab === 'messages' && <Messaging me={user} />}
+          {tab === 'qr' && <QRScreen user={user} />}
           {tab === 'discover' && <Discover />}
-          {tab === 'profile' && <Profile user={user} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} />}
+          {tab === 'profile' && <Profile user={user} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}
         </motion.div>
       </AnimatePresence>
 

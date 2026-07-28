@@ -175,6 +175,62 @@ backend:
         -working: true
         -agent: "testing"
         -comment: "✅ PASS - POST /api/coffres creates coffre successfully with name, goalCents, rule. Returns coffre with id and all fields."
+  - task: "Auth Email+OTP (send/verify/me/logout) + user provisioning [PHASE2]"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "POST /auth/otp/send returns previewCode when RESEND_API_KEY empty + isNew. POST /auth/otp/verify checks sha256 code, creates Bearer session token, auto-provisions new user (wallet 480000c + 2 coffres + welcome tx + welcome DM with bot Marie). GET /auth/me needs Bearer (401 otherwise). POST /auth/logout."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ PASS (Tests 1-5) - Auth flow complete: (1) POST /auth/otp/send returns {ok:true, isNew:true, previewCode, delivery:'preview'}. (2) POST /auth/otp/verify with correct code returns {token, user, isNew:true}, user has handle=@usera, initials=UA. (3) Negative cases verified: wrong code->400, no auth->401, with Bearer->200. (4) Existing user: send->isNew:false, verify->isNew:false (login). (5) User provisioning: wallet balanceCents=480000, currency=EUR, 2 coffres, welcome transaction 'Bienvenue' +480000c present."
+  - task: "Messaging: conversations/messages/groups/communities/reactions [PHASE2]"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "GET /conversations (DM includes other+friendship+unread). POST /conversations (dm dedupe, group, community). GET/POST /conversations/:id/messages (bot DMs auto-reply). POST /conversations/:id/join. GET /communities. POST /messages/:id/react toggle. All require Bearer (401 without)."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ PASS (Tests 6-12) - Messaging complete: (6) GET /conversations returns welcome DM with Marie (@marie), includes friendship {streak:0, xp:0, level:0, name:'Connaissance', emoji:'🌱', pct:0}. (7) GET /conversations/:id/messages returns conversation.friendship + messages (welcome message present). (9) POST /messages/:id/react toggles reactions correctly (🔥 added then removed). (10) POST /conversations creates group 'Team' with @thomas,@lena, memberCount=3. (11) GET /communities returns Paris (comm-paris) with joined:false, POST /join works, joined:true, appears in conversations. (12) DM dedupe: POST /conversations with @thomas twice returns existing:true with same id."
+  - task: "Friendship viral mechanics streak/XP/levels [PHASE2]"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "bumpFriendship +10 XP/message, levels [0,100,300,700,1500], streak++ when both active same day. Returned in conv detail + send response."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ PASS (Test 8) - Friendship mechanics working: Initial XP=0 (level 'Connaissance' 🌱). After sending 6 messages, XP increased to 120 (level 'Ami·e' 💫), confirming +10 XP per message and +10 for bot auto-reply. Level threshold at 100 XP correctly triggered level change from 'Connaissance' to 'Ami·e'. Bot auto-reply confirmed (senderId='bot-marie'). Friendship object returned in POST /conversations/:id/messages response."
+  - task: "Per-user Wallet/Send/Enveloppe now auth-scoped [PHASE2]"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Wallet/send/enveloppe/coffres now scoped to authenticated user via Bearer. Re-verify idempotency + share-sum + 402 under auth; two users independent."
+        -working: true
+        -agent: "testing"
+        -comment: "✅ PASS (Tests 13-15) - Auth-scoped wallet verified: (13) Multi-user isolation: userB@divarc.fr created with independent wallet (480000c), does NOT see userA's 'Team' group, has own Marie DM. (14) POST /send with idempotency: 480000->478000 for 2000c, repeat with same idempotencyKey returns idempotent:true, balance unchanged at 478000. (15) POST /enveloppe/create: 5 shares sum exactly to 3333c (verified), insufficient balance (99999999c) returns 402 correctly."
 
 frontend:
   - task: "Foundation UI (Onboarding, Hub, Wallet, QR, Discover, Profile, Messages, Send, Enveloppe)"
@@ -192,11 +248,15 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 1
+  test_sequence: 2
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Auth Email+OTP (send/verify/me/logout) + user provisioning [PHASE2]"
+    - "Messaging: conversations/messages/groups/communities/reactions [PHASE2]"
+    - "Friendship viral mechanics streak/XP/levels [PHASE2]"
+    - "Per-user Wallet/Send/Enveloppe now auth-scoped [PHASE2]"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -206,3 +266,7 @@ agent_communication:
     -message: "Couche 1 backend DIVARC prête. Merci de tester tous les endpoints /api. Points clés: (1) idempotence de /api/send — rejouer la même idempotencyKey ne doit PAS re-débiter; (2) /api/enveloppe/create la somme des parts (shares) doit == totalCents exactement; (3) open ne doit pas permettre à un même claimer de réclamer 2 parts; (4) solde insuffisant renvoie 402. Base URL interne: appeler les routes en /api/... (montants en centimes)."
     -agent: "testing"
     -message: "✅ ALL BACKEND TESTS PASSED (9/9). Comprehensive testing completed: (1) Seed idempotency verified - no duplicate data; (2) All GET endpoints working (me, wallet, transactions, contacts); (3) Send P2P with full idempotency - balance only debited once, ledger batch created, 402/400 errors correct; (4) Enveloppe create - CRITICAL sum of shares == totalCents verified for 1,3,5,8 shares with odd totals; (5) Enveloppe open - claimer idempotency works, 410 when exhausted; (6) Coffres create working. No issues found. Backend ready for production."
+    -agent: "main"
+    -message: "PHASE 2 implémentée: (1) Auth Email+OTP avec preview mode (RESEND_API_KEY vide), auto-provision user (wallet 480k + 2 coffres + welcome tx + DM Marie). (2) Messaging: conversations DM/group/community, messages avec bot auto-reply, reactions toggle, DM dedupe. (3) Friendship: +10 XP/message, levels [Connaissance 0, Ami·e 100, Bon·ne ami·e 300, Meilleur·e ami·e 700, Âme sœur 1500], streak. (4) Wallet/send/enveloppe auth-scoped, multi-user isolation. Merci de tester PHASE 2 endpoints avec Bearer tokens."
+    -agent: "testing"
+    -message: "✅ ALL PHASE 2 BACKEND TESTS PASSED (15/15). Comprehensive multi-user testing completed: AUTH FLOW (4 tests): OTP send/verify with preview mode, negative cases (wrong code->400, no auth->401), existing user login. USER PROVISIONING (1 test): wallet 480000c, 2 coffres, welcome tx verified. MESSAGING+FRIENDSHIP (4 tests): conversations with Marie DM, friendship mechanics (XP 0->120, level Connaissance->Ami·e), bot auto-reply, reactions toggle. GROUPS+COMMUNITIES (3 tests): group creation (3 members), Paris community join, DM dedupe. MULTI-USER ISOLATION (1 test): userB independent wallet, no access to userA's groups. WALLET AUTH-SCOPED (2 tests): send idempotency verified, enveloppe share sum exact (3333c), 402 errors correct. NO CRITICAL ISSUES FOUND. All endpoints working correctly with Bearer authentication."
