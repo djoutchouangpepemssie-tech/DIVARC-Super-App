@@ -297,6 +297,27 @@ function injectAds(out, ads) {
   return merged
 }
 
+const STORE_APPS = [
+  { id: 'spotly', name: 'Spotly', cat: 'Musique', emoji: '🎵', color: '#3FB68B', desc: 'Streaming musical illimité. Connecte pour payer ton abonnement et partager tes titres.', perms: ['Profil', 'Paiement'] },
+  { id: 'flixo', name: 'Flixo', cat: 'Streaming', emoji: '🎬', color: '#EF476F', desc: 'Films & séries. Reprends la lecture sur tous tes écrans.', perms: ['Profil', 'Paiement'] },
+  { id: 'ridenow', name: 'RideNow', cat: 'Transport', emoji: '🚗', color: '#00BBF9', desc: 'VTC et trottinettes en un tap, payé au wallet.', perms: ['Profil', 'Localisation', 'Paiement'] },
+  { id: 'fitpulse', name: 'FitPulse', cat: 'Santé', emoji: '💪', color: '#F97C4E', desc: 'Coach sportif & suivi d\u2019activité personnalisé.', perms: ['Profil', 'Santé'] },
+  { id: 'notino', name: 'Notino', cat: 'Productivité', emoji: '📝', color: '#4353F0', desc: 'Notes, tâches et objectifs synchronisés.', perms: ['Profil'] },
+  { id: 'shopz', name: 'Shopz', cat: 'Shopping', emoji: '🛒', color: '#9B5DE5', desc: 'Boutiques locales, livraison rapide, paiement wallet.', perms: ['Profil', 'Paiement', 'Localisation'] },
+  { id: 'bankly', name: 'Bankly', cat: 'Finance', emoji: '🏦', color: '#E2AA2B', desc: 'Agrège tes comptes bancaires (open banking, démo).', perms: ['Profil', 'Comptes bancaires'] },
+  { id: 'lingo', name: 'Lingo', cat: 'Éducation', emoji: '🗣️', color: '#00BBF9', desc: 'Apprends les langues en 5 min/jour.', perms: ['Profil'] },
+  { id: 'gamely', name: 'Gamely', cat: 'Jeux', emoji: '🎮', color: '#F15BB5', desc: 'Cloud gaming social avec tes amis DIVARC.', perms: ['Profil', 'Messages'] },
+  { id: 'mealo', name: 'Mealo', cat: 'Repas', emoji: '🍔', color: '#F97C4E', desc: 'Livraison de repas, suivi en temps réel.', perms: ['Profil', 'Paiement', 'Localisation'] },
+  { id: 'cloudy', name: 'Cloudy', cat: 'Productivité', emoji: '☁️', color: '#6E7BF5', desc: 'Stockage & partage de fichiers chiffrés.', perms: ['Profil', 'Documents'] },
+  { id: 'newsr', name: 'Newsr', cat: 'Actualités', emoji: '📰', color: '#5B5A50', desc: 'Ton actu personnalisée, sans bulle de filtre.', perms: ['Profil'] },
+]
+async function ensureAppStoreSeed(db) {
+  if (await db.collection('store_apps').countDocuments() > 0) return
+  await db.collection('store_apps').insertMany(STORE_APPS.map((a) => ({
+    ...a, rating: +(4 + Math.random()).toFixed(1), users: Math.floor(Math.random() * 900 + 100) * 1000,
+  })))
+}
+
 // ---------------- Router ----------------
 async function handleRoute(request, { params }) {
   const { path = [] } = await params
@@ -852,6 +873,42 @@ async function handleRoute(request, { params }) {
       const inc = type === 'click' ? { clicks: 1 } : { impressions: 1 }
       await db.collection('campaigns').updateOne({ id: c.id }, { $set: set, $inc: inc })
       return ok({ ok: true })
+    }
+
+    /* ===================== APP STORE ===================== */
+    await ensureAppStoreSeed(db)
+
+    if (route === '/store/apps' && method === 'GET') {
+      const q = (url.searchParams.get('q') || '').toLowerCase()
+      const cat = url.searchParams.get('cat') || ''
+      let apps = await db.collection('store_apps').find({}, { projection: { _id: 0 } }).toArray()
+      if (cat && cat !== 'Tout') apps = apps.filter((a) => a.cat === cat)
+      if (q) apps = apps.filter((a) => a.name.toLowerCase().includes(q) || a.cat.toLowerCase().includes(q) || a.desc.toLowerCase().includes(q))
+      const conns = await db.collection('app_connections').find({ userId: me.id }).toArray()
+      const connMap = Object.fromEntries(conns.map((c) => [c.appId, c]))
+      return ok(apps.map((a) => ({ ...a, connected: !!connMap[a.id], pseudonym: connMap[a.id]?.pseudonym || null, since: connMap[a.id]?.since || null })))
+    }
+
+    if (route.startsWith('/store/apps/') && path[3] === 'connect' && method === 'POST') {
+      const appId = path[2]
+      const app = await db.collection('store_apps').findOne({ id: appId })
+      if (!app) return err('App introuvable', 404)
+      const ex = await db.collection('app_connections').findOne({ userId: me.id, appId })
+      if (ex) { const { _id, ...c } = ex; return ok({ connection: c, existing: true }) }
+      const conn = { id: uuidv4(), userId: me.id, appId, appName: app.name, pseudonym: 'divarc-' + crypto.randomBytes(2).toString('hex'), scopes: app.perms, color: app.color, emoji: app.emoji, since: new Date() }
+      await db.collection('app_connections').insertOne(conn)
+      const { _id, ...clean } = conn
+      return ok({ connection: clean })
+    }
+
+    if (route.startsWith('/store/apps/') && path[3] === 'disconnect' && method === 'POST') {
+      await db.collection('app_connections').deleteOne({ userId: me.id, appId: path[2] })
+      return ok({ ok: true })
+    }
+
+    if (route === '/store/connections' && method === 'GET') {
+      const conns = await db.collection('app_connections').find({ userId: me.id }, { projection: { _id: 0 } }).sort({ since: -1 }).toArray()
+      return ok(conns)
     }
 
     return err(`Route ${route} introuvable`, 404)

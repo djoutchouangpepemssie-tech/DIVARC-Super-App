@@ -1,496 +1,432 @@
 #!/usr/bin/env python3
 """
-DIVARC Ads Manager Backend Test - PHASE 5
-Tests all ads campaign endpoints with comprehensive money flow verification
+DIVARC App Store Backend Test - PHASE 6
+Tests all app store endpoints with comprehensive verification
 """
 
 import requests
 import json
 import sys
+import re
 
 BASE_URL = "https://divarc-hub.preview.emergentagent.com/api"
 
 def log(msg):
     print(f"[TEST] {msg}")
 
-def test_phase5_ads_manager():
-    """Test PHASE 5: Ads Manager campaigns + tracking + sponsored feed injection"""
-    
-    log("=" * 80)
-    log("PHASE 5: ADS MANAGER - COMPREHENSIVE BACKEND TEST")
-    log("=" * 80)
-    
-    # Step 0: Create advertiser account ad5@divarc.fr
-    log("\n[SETUP] Creating advertiser account ad5@divarc.fr with 480000c wallet")
-    
+def create_user(email, name):
+    """Helper to create and authenticate a user"""
     # Send OTP
-    res = requests.post(f"{BASE_URL}/auth/otp/send", json={"email": "ad5@divarc.fr"})
+    res = requests.post(f"{BASE_URL}/auth/otp/send", json={"email": email})
     assert res.status_code == 200, f"OTP send failed: {res.status_code} {res.text}"
     data = res.json()
     assert data.get("ok") == True, f"OTP send not ok: {data}"
     assert "previewCode" in data, f"No previewCode in response: {data}"
     code = data["previewCode"]
-    log(f"✓ OTP sent, previewCode: {code}")
     
     # Verify OTP
     res = requests.post(f"{BASE_URL}/auth/otp/verify", json={
-        "email": "ad5@divarc.fr",
+        "email": email,
         "code": code,
-        "name": "Advertiser Five"
+        "name": name
     })
     assert res.status_code == 200, f"OTP verify failed: {res.status_code} {res.text}"
     data = res.json()
     assert "token" in data, f"No token in response: {data}"
     token = data["token"]
     user = data.get("user", {})
-    log(f"✓ Authenticated as {user.get('name')} ({user.get('handle')})")
+    log(f"✓ Created user: {user.get('name')} ({user.get('handle')})")
+    return token, user
+
+def test_phase6_app_store():
+    """Test PHASE 6: App Store directory + consented connect/disconnect"""
     
+    log("=" * 80)
+    log("PHASE 6: APP STORE - COMPREHENSIVE BACKEND TEST")
+    log("=" * 80)
+    
+    # ========================================================================
+    # SETUP: Create user store6@divarc.fr
+    # ========================================================================
+    log("\n[SETUP] Creating user store6@divarc.fr")
+    token, user = create_user("store6@divarc.fr", "Store Six")
     headers = {"Authorization": f"Bearer {token}"}
     
-    # Verify initial wallet balance
-    res = requests.get(f"{BASE_URL}/wallet", headers=headers)
-    assert res.status_code == 200, f"Wallet fetch failed: {res.status_code} {res.text}"
-    wallet = res.json()
-    initial_balance = wallet.get("balanceCents")
-    assert initial_balance == 480000, f"Expected initial balance 480000c, got {initial_balance}c"
-    log(f"✓ Initial wallet balance: {initial_balance}c")
-    
     # ========================================================================
-    # TEST 1: CREATE CAMPAIGN - Verify wallet debit and transaction
+    # TEST 1: GET /api/store/apps - Verify 12 seeded apps with all fields
     # ========================================================================
     log("\n" + "=" * 80)
-    log("TEST 1: CREATE CAMPAIGN - Wallet debit + transaction verification")
+    log("TEST 1: GET /api/store/apps - Verify 12 seeded apps with all required fields")
     log("=" * 80)
     
-    campaign_data = {
-        "name": "Test Camp",
-        "objective": "Ventes",
-        "budgetCents": 5000,
-        "color": "#F15BB5",
-        "audience": {
-            "interests": ["#mode"],
-            "age": "18-34",
-            "locations": ["France"]
-        },
-        "creative": {
-            "headline": "Promo",
-            "body": "-30%",
-            "cta": "Acheter",
-            "emoji": "👟"
-        }
-    }
+    res = requests.get(f"{BASE_URL}/store/apps", headers=headers)
+    assert res.status_code == 200, f"GET /store/apps failed: {res.status_code} {res.text}"
+    apps = res.json()
     
-    res = requests.post(f"{BASE_URL}/ads/campaigns", json=campaign_data, headers=headers)
-    assert res.status_code == 200, f"Campaign creation failed: {res.status_code} {res.text}"
+    log(f"✓ GET /store/apps returned {len(apps)} apps")
+    assert len(apps) == 12, f"Expected 12 apps, got {len(apps)}"
+    
+    # Verify each app has required fields
+    required_fields = ['id', 'name', 'cat', 'emoji', 'color', 'desc', 'perms', 'rating', 'users', 'connected', 'pseudonym']
+    for app in apps:
+        for field in required_fields:
+            assert field in app, f"App {app.get('name')} missing field: {field}"
+        
+        # Verify initial state: connected=false, pseudonym=null
+        assert app['connected'] == False, f"App {app['name']} should have connected=false initially"
+        assert app['pseudonym'] == None, f"App {app['name']} should have pseudonym=null initially"
+        
+        # Verify perms is an array
+        assert isinstance(app['perms'], list), f"App {app['name']} perms should be an array"
+    
+    log(f"✓ All 12 apps have required fields: {', '.join(required_fields)}")
+    log(f"✓ All apps have connected=false and pseudonym=null initially")
+    
+    # Find specific apps for later tests
+    spotly = next((a for a in apps if a['id'] == 'spotly'), None)
+    bankly = next((a for a in apps if a['id'] == 'bankly'), None)
+    flixo = next((a for a in apps if a['id'] == 'flixo'), None)
+    
+    assert spotly is not None, "Spotly app not found"
+    assert bankly is not None, "Bankly app not found"
+    assert flixo is not None, "Flixo app not found"
+    
+    log(f"✓ Found Spotly: {spotly['name']} (cat: {spotly['cat']}, perms: {spotly['perms']})")
+    log(f"✓ Found Bankly: {bankly['name']} (cat: {bankly['cat']}, perms: {bankly['perms']})")
+    log(f"✓ Found Flixo: {flixo['name']} (cat: {flixo['cat']}, perms: {flixo['perms']})")
+    
+    log("\n✅ TEST 1 PASSED: 12 apps with all required fields verified")
+    
+    # ========================================================================
+    # TEST 2: FILTER BY CATEGORY - GET /api/store/apps?cat=Finance
+    # ========================================================================
+    log("\n" + "=" * 80)
+    log("TEST 2: FILTER BY CATEGORY - GET /api/store/apps?cat=Finance")
+    log("=" * 80)
+    
+    res = requests.get(f"{BASE_URL}/store/apps?cat=Finance", headers=headers)
+    assert res.status_code == 200, f"GET /store/apps?cat=Finance failed: {res.status_code} {res.text}"
+    finance_apps = res.json()
+    
+    log(f"✓ GET /store/apps?cat=Finance returned {len(finance_apps)} apps")
+    
+    # Verify only Finance category apps
+    for app in finance_apps:
+        assert app['cat'] == 'Finance', f"App {app['name']} has category {app['cat']}, expected Finance"
+    
+    # Verify Bankly is in the list
+    bankly_found = any(a['id'] == 'bankly' for a in finance_apps)
+    assert bankly_found, "Bankly not found in Finance category filter"
+    
+    log(f"✓ All returned apps are Finance category")
+    log(f"✓ Bankly found in Finance filter")
+    
+    log("\n✅ TEST 2 PASSED: Category filter working correctly")
+    
+    # ========================================================================
+    # TEST 3: FILTER BY SEARCH - GET /api/store/apps?q=music and q=musi
+    # ========================================================================
+    log("\n" + "=" * 80)
+    log("TEST 3: FILTER BY SEARCH - GET /api/store/apps?q=music and q=musi")
+    log("=" * 80)
+    
+    # Test with full word "music"
+    res = requests.get(f"{BASE_URL}/store/apps?q=music", headers=headers)
+    assert res.status_code == 200, f"GET /store/apps?q=music failed: {res.status_code} {res.text}"
+    music_apps = res.json()
+    
+    log(f"✓ GET /store/apps?q=music returned {len(music_apps)} apps")
+    
+    # Verify Spotly is in the results (Musique category)
+    spotly_found = any(a['id'] == 'spotly' for a in music_apps)
+    assert spotly_found, "Spotly not found in search for 'music'"
+    
+    log(f"✓ Spotly found in search for 'music'")
+    
+    # Test with partial word "musi"
+    res = requests.get(f"{BASE_URL}/store/apps?q=musi", headers=headers)
+    assert res.status_code == 200, f"GET /store/apps?q=musi failed: {res.status_code} {res.text}"
+    musi_apps = res.json()
+    
+    log(f"✓ GET /store/apps?q=musi returned {len(musi_apps)} apps")
+    
+    # Verify Spotly is in the results
+    spotly_found = any(a['id'] == 'spotly' for a in musi_apps)
+    assert spotly_found, "Spotly not found in search for 'musi'"
+    
+    log(f"✓ Spotly found in search for 'musi'")
+    
+    log("\n✅ TEST 3 PASSED: Search filter working correctly")
+    
+    # ========================================================================
+    # TEST 4: CONNECT - POST /api/store/apps/spotly/connect
+    # ========================================================================
+    log("\n" + "=" * 80)
+    log("TEST 4: CONNECT - POST /api/store/apps/spotly/connect")
+    log("=" * 80)
+    
+    res = requests.post(f"{BASE_URL}/store/apps/spotly/connect", headers=headers)
+    assert res.status_code == 200, f"POST /store/apps/spotly/connect failed: {res.status_code} {res.text}"
     data = res.json()
-    assert "campaign" in data, f"No campaign in response: {data}"
-    assert "balanceCents" in data, f"No balanceCents in response: {data}"
     
-    campaign = data["campaign"]
-    campaign_id = campaign.get("id")
-    new_balance = data["balanceCents"]
+    assert "connection" in data, f"No connection in response: {data}"
+    connection = data["connection"]
     
-    log(f"✓ Campaign created: {campaign.get('name')} (ID: {campaign_id})")
-    log(f"  - Budget: {campaign.get('budgetCents')}c")
-    log(f"  - Status: {campaign.get('status')}")
-    log(f"  - Objective: {campaign.get('objective')}")
-    log(f"  - Color: {campaign.get('color')}")
+    log(f"✓ Connection created:")
+    log(f"  - App ID: {connection.get('appId')}")
+    log(f"  - App Name: {connection.get('appName')}")
+    log(f"  - Pseudonym: {connection.get('pseudonym')}")
+    log(f"  - Scopes: {connection.get('scopes')}")
     
-    # Verify wallet debited by 5000 (480000 -> 475000)
-    expected_balance = initial_balance - 5000
-    assert new_balance == expected_balance, f"Expected balance {expected_balance}c, got {new_balance}c"
-    log(f"✓ Wallet debited correctly: {initial_balance}c -> {new_balance}c (-5000c)")
+    # Verify pseudonym format: divarc-[0-9a-f]{4}
+    pseudonym = connection.get('pseudonym')
+    assert pseudonym is not None, "Pseudonym is None"
     
-    # Verify transaction exists
-    res = requests.get(f"{BASE_URL}/transactions", headers=headers)
-    assert res.status_code == 200, f"Transactions fetch failed: {res.status_code} {res.text}"
-    transactions = res.json()
+    pseudonym_pattern = r'^divarc-[0-9a-f]{4}$'
+    assert re.match(pseudonym_pattern, pseudonym), f"Pseudonym '{pseudonym}' does not match pattern {pseudonym_pattern}"
     
-    pub_tx = None
-    for tx in transactions:
-        if tx.get("category") == "Publicité" and tx.get("amountCents") == -5000:
-            pub_tx = tx
-            break
+    log(f"✓ Pseudonym matches pattern /^divarc-[0-9a-f]{{4}}$/")
     
-    assert pub_tx is not None, f"No 'Publicité' transaction of -5000c found in transactions"
-    log(f"✓ 'Publicité' transaction created: {pub_tx.get('label')} ({pub_tx.get('amountCents')}c)")
+    # Verify scopes match app perms
+    assert connection.get('scopes') == spotly['perms'], f"Scopes {connection.get('scopes')} do not match app perms {spotly['perms']}"
     
-    log("\n✅ TEST 1 PASSED: Campaign created, wallet debited, transaction recorded")
+    log(f"✓ Scopes match app permissions: {spotly['perms']}")
+    
+    # Store pseudonym for later verification
+    spotly_pseudonym = pseudonym
+    
+    log("\n✅ TEST 4 PASSED: Connection created with correct pseudonym format and scopes")
     
     # ========================================================================
-    # TEST 2: INSUFFICIENT FUNDS - Try to create campaign with huge budget
+    # TEST 5: CONNECTED FLAG - GET /api/store/apps shows Spotly connected
     # ========================================================================
     log("\n" + "=" * 80)
-    log("TEST 2: INSUFFICIENT FUNDS - Attempt to create campaign with 99999999c budget")
+    log("TEST 5: CONNECTED FLAG - GET /api/store/apps shows Spotly connected:true")
     log("=" * 80)
     
-    huge_campaign = {
-        "name": "Huge Campaign",
-        "budgetCents": 99999999
-    }
+    res = requests.get(f"{BASE_URL}/store/apps", headers=headers)
+    assert res.status_code == 200, f"GET /store/apps failed: {res.status_code} {res.text}"
+    apps = res.json()
     
-    res = requests.post(f"{BASE_URL}/ads/campaigns", json=huge_campaign, headers=headers)
-    assert res.status_code == 402, f"Expected 402, got {res.status_code}: {res.text}"
-    log(f"✓ Correctly returned 402 for insufficient balance")
+    spotly_app = next((a for a in apps if a['id'] == 'spotly'), None)
+    assert spotly_app is not None, "Spotly not found in apps list"
     
-    log("\n✅ TEST 2 PASSED: Insufficient funds check working")
+    log(f"✓ Spotly app:")
+    log(f"  - Connected: {spotly_app['connected']}")
+    log(f"  - Pseudonym: {spotly_app['pseudonym']}")
+    
+    assert spotly_app['connected'] == True, f"Spotly should have connected=true, got {spotly_app['connected']}"
+    assert spotly_app['pseudonym'] == spotly_pseudonym, f"Spotly pseudonym {spotly_app['pseudonym']} does not match {spotly_pseudonym}"
+    
+    log(f"✓ Spotly now shows connected=true with pseudonym {spotly_pseudonym}")
+    
+    log("\n✅ TEST 5 PASSED: Connected flag and pseudonym correctly reflected in apps list")
     
     # ========================================================================
-    # TEST 3: LIST CAMPAIGNS - Verify metrics
+    # TEST 6: IDEMPOTENT - POST /api/store/apps/spotly/connect again
     # ========================================================================
     log("\n" + "=" * 80)
-    log("TEST 3: LIST CAMPAIGNS - Verify metrics (impressions, clicks, spentCents, ctr, status)")
+    log("TEST 6: IDEMPOTENT - POST /api/store/apps/spotly/connect again (should return existing)")
     log("=" * 80)
     
-    res = requests.get(f"{BASE_URL}/ads/campaigns", headers=headers)
-    assert res.status_code == 200, f"Campaigns list failed: {res.status_code} {res.text}"
-    campaigns = res.json()
-    
-    assert len(campaigns) >= 1, f"Expected at least 1 campaign, got {len(campaigns)}"
-    
-    test_camp = None
-    for c in campaigns:
-        if c.get("id") == campaign_id:
-            test_camp = c
-            break
-    
-    assert test_camp is not None, f"Test Camp not found in campaigns list"
-    
-    log(f"✓ Campaign found in list: {test_camp.get('name')}")
-    log(f"  - Impressions: {test_camp.get('impressions')}")
-    log(f"  - Clicks: {test_camp.get('clicks')}")
-    log(f"  - SpentCents: {test_camp.get('spentCents')}")
-    log(f"  - CTR: {test_camp.get('ctr')}")
-    log(f"  - Status: {test_camp.get('status')}")
-    
-    assert test_camp.get("impressions") == 0, f"Expected impressions 0, got {test_camp.get('impressions')}"
-    assert test_camp.get("clicks") == 0, f"Expected clicks 0, got {test_camp.get('clicks')}"
-    assert test_camp.get("spentCents") == 0, f"Expected spentCents 0, got {test_camp.get('spentCents')}"
-    assert test_camp.get("ctr") == 0, f"Expected ctr 0, got {test_camp.get('ctr')}"
-    assert test_camp.get("status") == "active", f"Expected status 'active', got {test_camp.get('status')}"
-    
-    log("\n✅ TEST 3 PASSED: Campaign metrics correct (all zeros, status active)")
-    
-    # ========================================================================
-    # TEST 4: FEED INJECTION - Verify sponsored posts in foryou, NOT in chrono
-    # ========================================================================
-    log("\n" + "=" * 80)
-    log("TEST 4: FEED INJECTION - Verify sponsored posts appear in foryou mode only")
-    log("=" * 80)
-    
-    # Test foryou mode
-    res = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers)
-    assert res.status_code == 200, f"Feed foryou failed: {res.status_code} {res.text}"
-    feed_foryou = res.json()
-    
-    sponsored_items = [item for item in feed_foryou if item.get("sponsored") == True]
-    log(f"✓ Feed foryou mode returned {len(feed_foryou)} items, {len(sponsored_items)} sponsored")
-    
-    assert len(sponsored_items) >= 1, f"Expected at least 1 sponsored item in foryou feed, got {len(sponsored_items)}"
-    
-    # Find our campaign in sponsored items
-    our_sponsored = None
-    for item in sponsored_items:
-        if item.get("campaignId") == campaign_id:
-            our_sponsored = item
-            break
-    
-    assert our_sponsored is not None, f"Our campaign {campaign_id} not found in sponsored items"
-    log(f"✓ Our campaign found in sponsored feed:")
-    log(f"  - Campaign ID: {our_sponsored.get('campaignId')}")
-    log(f"  - Sponsored: {our_sponsored.get('sponsored')}")
-    log(f"  - CTA: {our_sponsored.get('cta')}")
-    log(f"  - Reason: {our_sponsored.get('reason')}")
-    
-    assert our_sponsored.get("cta") == "Acheter", f"Expected cta 'Acheter', got {our_sponsored.get('cta')}"
-    assert our_sponsored.get("reason") == "Sponsorisé", f"Expected reason 'Sponsorisé', got {our_sponsored.get('reason')}"
-    
-    # Test chrono mode - should NOT contain sponsored items
-    res = requests.get(f"{BASE_URL}/social/feed?mode=chrono&scope=all", headers=headers)
-    assert res.status_code == 200, f"Feed chrono failed: {res.status_code} {res.text}"
-    feed_chrono = res.json()
-    
-    sponsored_chrono = [item for item in feed_chrono if item.get("sponsored") == True]
-    log(f"✓ Feed chrono mode returned {len(feed_chrono)} items, {len(sponsored_chrono)} sponsored")
-    
-    assert len(sponsored_chrono) == 0, f"Expected 0 sponsored items in chrono feed, got {len(sponsored_chrono)}"
-    
-    log("\n✅ TEST 4 PASSED: Sponsored posts appear in foryou mode only, not in chrono")
-    
-    # ========================================================================
-    # TEST 5: TRACK IMPRESSION - 3 times, verify spend
-    # ========================================================================
-    log("\n" + "=" * 80)
-    log("TEST 5: TRACK IMPRESSION - Track 3 impressions, verify spend (3c each)")
-    log("=" * 80)
-    
-    for i in range(3):
-        res = requests.post(f"{BASE_URL}/ads/campaigns/{campaign_id}/track", 
-                          json={"type": "impression"}, headers=headers)
-        assert res.status_code == 200, f"Track impression {i+1} failed: {res.status_code} {res.text}"
-        data = res.json()
-        assert data.get("ok") == True, f"Track impression {i+1} not ok: {data}"
-        log(f"✓ Impression {i+1} tracked")
-    
-    # Verify campaign metrics
-    res = requests.get(f"{BASE_URL}/ads/campaigns", headers=headers)
-    assert res.status_code == 200, f"Campaigns list failed: {res.status_code} {res.text}"
-    campaigns = res.json()
-    
-    test_camp = None
-    for c in campaigns:
-        if c.get("id") == campaign_id:
-            test_camp = c
-            break
-    
-    assert test_camp is not None, f"Test Camp not found"
-    
-    log(f"✓ Campaign metrics after 3 impressions:")
-    log(f"  - Impressions: {test_camp.get('impressions')}")
-    log(f"  - SpentCents: {test_camp.get('spentCents')}")
-    
-    assert test_camp.get("impressions") == 3, f"Expected impressions 3, got {test_camp.get('impressions')}"
-    assert test_camp.get("spentCents") == 9, f"Expected spentCents 9 (3x3c), got {test_camp.get('spentCents')}"
-    
-    log("\n✅ TEST 5 PASSED: 3 impressions tracked, spend = 9c (3c each)")
-    
-    # ========================================================================
-    # TEST 6: TRACK CLICK - 2 times, verify spend and CTR
-    # ========================================================================
-    log("\n" + "=" * 80)
-    log("TEST 6: TRACK CLICK - Track 2 clicks, verify spend (25c each) and CTR")
-    log("=" * 80)
-    
-    for i in range(2):
-        res = requests.post(f"{BASE_URL}/ads/campaigns/{campaign_id}/track", 
-                          json={"type": "click"}, headers=headers)
-        assert res.status_code == 200, f"Track click {i+1} failed: {res.status_code} {res.text}"
-        data = res.json()
-        assert data.get("ok") == True, f"Track click {i+1} not ok: {data}"
-        log(f"✓ Click {i+1} tracked")
-    
-    # Verify campaign metrics
-    res = requests.get(f"{BASE_URL}/ads/campaigns", headers=headers)
-    assert res.status_code == 200, f"Campaigns list failed: {res.status_code} {res.text}"
-    campaigns = res.json()
-    
-    test_camp = None
-    for c in campaigns:
-        if c.get("id") == campaign_id:
-            test_camp = c
-            break
-    
-    assert test_camp is not None, f"Test Camp not found"
-    
-    log(f"✓ Campaign metrics after 2 clicks:")
-    log(f"  - Impressions: {test_camp.get('impressions')}")
-    log(f"  - Clicks: {test_camp.get('clicks')}")
-    log(f"  - SpentCents: {test_camp.get('spentCents')}")
-    log(f"  - CTR: {test_camp.get('ctr')}")
-    
-    assert test_camp.get("clicks") == 2, f"Expected clicks 2, got {test_camp.get('clicks')}"
-    expected_spent = 9 + 50  # 9 from impressions + 2*25 from clicks
-    assert test_camp.get("spentCents") == expected_spent, f"Expected spentCents {expected_spent}, got {test_camp.get('spentCents')}"
-    
-    # CTR = clicks / impressions * 100 = 2 / 3 * 100 = 66.7
-    expected_ctr = round(2 / 3 * 100, 1)
-    assert test_camp.get("ctr") == expected_ctr, f"Expected ctr {expected_ctr}, got {test_camp.get('ctr')}"
-    
-    log("\n✅ TEST 6 PASSED: 2 clicks tracked, spend = 59c (9+50), CTR = 66.7%")
-    
-    # ========================================================================
-    # TEST 7: AUTO-END ON BUDGET - Create tiny campaign and exhaust it
-    # ========================================================================
-    log("\n" + "=" * 80)
-    log("TEST 7: AUTO-END ON BUDGET - Create 6c campaign, exhaust it, verify auto-end")
-    log("=" * 80)
-    
-    tiny_campaign = {
-        "name": "Tiny Campaign",
-        "budgetCents": 6,
-        "creative": {
-            "headline": "Tiny",
-            "body": "Test",
-            "cta": "Click"
-        }
-    }
-    
-    res = requests.post(f"{BASE_URL}/ads/campaigns", json=tiny_campaign, headers=headers)
-    assert res.status_code == 200, f"Tiny campaign creation failed: {res.status_code} {res.text}"
+    res = requests.post(f"{BASE_URL}/store/apps/spotly/connect", headers=headers)
+    assert res.status_code == 200, f"POST /store/apps/spotly/connect failed: {res.status_code} {res.text}"
     data = res.json()
-    tiny_id = data["campaign"]["id"]
-    log(f"✓ Tiny campaign created (ID: {tiny_id}, budget: 6c)")
     
-    # Track 1st impression (spend 3c, total 3c)
-    res = requests.post(f"{BASE_URL}/ads/campaigns/{tiny_id}/track", 
-                      json={"type": "impression"}, headers=headers)
-    assert res.status_code == 200, f"Track impression 1 failed: {res.status_code} {res.text}"
-    log(f"✓ Impression 1 tracked (spend 3c, total 3c)")
+    assert "connection" in data, f"No connection in response: {data}"
+    assert "existing" in data, f"No existing flag in response: {data}"
+    assert data["existing"] == True, f"Expected existing=true, got {data.get('existing')}"
     
-    # Verify still active
-    res = requests.get(f"{BASE_URL}/ads/campaigns/{tiny_id}", headers=headers)
-    assert res.status_code == 200, f"Campaign fetch failed: {res.status_code} {res.text}"
-    tiny = res.json()
-    assert tiny.get("status") == "active", f"Expected status 'active', got {tiny.get('status')}"
-    assert tiny.get("spentCents") == 3, f"Expected spentCents 3, got {tiny.get('spentCents')}"
-    log(f"✓ Campaign still active (spent 3c / 6c)")
+    connection = data["connection"]
+    log(f"✓ Connection returned with existing=true")
+    log(f"  - Pseudonym: {connection.get('pseudonym')}")
     
-    # Track 2nd impression (spend 3c, total 6c - should auto-end)
-    res = requests.post(f"{BASE_URL}/ads/campaigns/{tiny_id}/track", 
-                      json={"type": "impression"}, headers=headers)
-    assert res.status_code == 200, f"Track impression 2 failed: {res.status_code} {res.text}"
-    log(f"✓ Impression 2 tracked (spend 3c, total 6c)")
+    # Verify SAME pseudonym
+    assert connection.get('pseudonym') == spotly_pseudonym, f"Pseudonym changed! Expected {spotly_pseudonym}, got {connection.get('pseudonym')}"
     
-    # Verify auto-ended
-    res = requests.get(f"{BASE_URL}/ads/campaigns/{tiny_id}", headers=headers)
-    assert res.status_code == 200, f"Campaign fetch failed: {res.status_code} {res.text}"
-    tiny = res.json()
-    assert tiny.get("status") == "ended", f"Expected status 'ended', got {tiny.get('status')}"
-    assert tiny.get("spentCents") == 6, f"Expected spentCents 6, got {tiny.get('spentCents')}"
-    log(f"✓ Campaign auto-ended (spent 6c / 6c)")
+    log(f"✓ Pseudonym unchanged: {spotly_pseudonym}")
     
-    # Verify no longer in sponsored feed
-    res = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers)
-    assert res.status_code == 200, f"Feed fetch failed: {res.status_code} {res.text}"
-    feed = res.json()
+    # Verify GET /api/store/connections has exactly 1 entry for spotly
+    res = requests.get(f"{BASE_URL}/store/connections", headers=headers)
+    assert res.status_code == 200, f"GET /store/connections failed: {res.status_code} {res.text}"
+    connections = res.json()
     
-    tiny_in_feed = any(item.get("campaignId") == tiny_id for item in feed if item.get("sponsored"))
-    assert not tiny_in_feed, f"Ended campaign should not appear in sponsored feed"
-    log(f"✓ Ended campaign not in sponsored feed")
+    spotly_connections = [c for c in connections if c['appId'] == 'spotly']
+    assert len(spotly_connections) == 1, f"Expected exactly 1 spotly connection, got {len(spotly_connections)}"
     
-    # Try to track another impression - should return ok:false
-    res = requests.post(f"{BASE_URL}/ads/campaigns/{tiny_id}/track", 
-                      json={"type": "impression"}, headers=headers)
-    assert res.status_code == 200, f"Track impression 3 failed: {res.status_code} {res.text}"
-    data = res.json()
-    assert data.get("ok") == False, f"Expected ok:false for ended campaign, got {data}"
-    log(f"✓ Tracking on ended campaign returns ok:false")
+    log(f"✓ GET /store/connections has exactly 1 entry for spotly (no duplicate)")
     
-    log("\n✅ TEST 7 PASSED: Campaign auto-ended when budget exhausted, no longer in feed")
+    log("\n✅ TEST 6 PASSED: Idempotent connect - same pseudonym, no duplicate")
     
     # ========================================================================
-    # TEST 8: PAUSE/RESUME - Verify feed injection stops/starts
+    # TEST 7: GET /api/store/connections - List connected apps
     # ========================================================================
     log("\n" + "=" * 80)
-    log("TEST 8: PAUSE/RESUME - Verify feed injection stops when paused, resumes when active")
+    log("TEST 7: GET /api/store/connections - List connected apps")
     log("=" * 80)
     
-    # Pause the main campaign
-    res = requests.patch(f"{BASE_URL}/ads/campaigns/{campaign_id}", 
-                        json={"status": "paused"}, headers=headers)
-    assert res.status_code == 200, f"Pause campaign failed: {res.status_code} {res.text}"
-    data = res.json()
-    assert data.get("status") == "paused", f"Expected status 'paused', got {data.get('status')}"
-    log(f"✓ Campaign paused")
+    res = requests.get(f"{BASE_URL}/store/connections", headers=headers)
+    assert res.status_code == 200, f"GET /store/connections failed: {res.status_code} {res.text}"
+    connections = res.json()
     
-    # Verify not in feed
-    res = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers)
-    assert res.status_code == 200, f"Feed fetch failed: {res.status_code} {res.text}"
-    feed = res.json()
+    log(f"✓ GET /store/connections returned {len(connections)} connections")
     
-    paused_in_feed = any(item.get("campaignId") == campaign_id for item in feed if item.get("sponsored"))
-    assert not paused_in_feed, f"Paused campaign should not appear in sponsored feed"
-    log(f"✓ Paused campaign not in sponsored feed")
+    assert len(connections) >= 1, f"Expected at least 1 connection, got {len(connections)}"
     
-    # Resume the campaign
-    res = requests.patch(f"{BASE_URL}/ads/campaigns/{campaign_id}", 
-                        json={"status": "active"}, headers=headers)
-    assert res.status_code == 200, f"Resume campaign failed: {res.status_code} {res.text}"
-    data = res.json()
-    assert data.get("status") == "active", f"Expected status 'active', got {data.get('status')}"
-    log(f"✓ Campaign resumed (active)")
+    # Verify connection structure
+    for conn in connections:
+        assert 'appName' in conn, f"Connection missing appName: {conn}"
+        assert 'pseudonym' in conn, f"Connection missing pseudonym: {conn}"
+        assert 'scopes' in conn, f"Connection missing scopes: {conn}"
+        assert 'since' in conn, f"Connection missing since: {conn}"
+        
+        log(f"  - {conn['appName']}: {conn['pseudonym']} (scopes: {conn['scopes']})")
     
-    # Verify back in feed
-    res = requests.get(f"{BASE_URL}/social/feed?mode=foryou&scope=all", headers=headers)
-    assert res.status_code == 200, f"Feed fetch failed: {res.status_code} {res.text}"
-    feed = res.json()
+    log(f"✓ All connections have required fields: appName, pseudonym, scopes, since")
     
-    active_in_feed = any(item.get("campaignId") == campaign_id for item in feed if item.get("sponsored"))
-    assert active_in_feed, f"Active campaign should appear in sponsored feed"
-    log(f"✓ Active campaign back in sponsored feed")
-    
-    log("\n✅ TEST 8 PASSED: Pause/resume working, feed injection stops/starts correctly")
+    log("\n✅ TEST 7 PASSED: Connections list working correctly")
     
     # ========================================================================
-    # TEST 9: END + REFUND - Verify wallet refund and transaction
+    # TEST 8: DISCONNECT - POST /api/store/apps/spotly/disconnect
     # ========================================================================
     log("\n" + "=" * 80)
-    log("TEST 9: END + REFUND - End campaign, verify wallet refund and transaction")
+    log("TEST 8: DISCONNECT - POST /api/store/apps/spotly/disconnect")
     log("=" * 80)
     
-    # Get current wallet balance
-    res = requests.get(f"{BASE_URL}/wallet", headers=headers)
-    assert res.status_code == 200, f"Wallet fetch failed: {res.status_code} {res.text}"
-    wallet_before = res.json()
-    balance_before = wallet_before.get("balanceCents")
-    log(f"✓ Wallet balance before ending campaign: {balance_before}c")
-    
-    # Get campaign current spend
-    res = requests.get(f"{BASE_URL}/ads/campaigns/{campaign_id}", headers=headers)
-    assert res.status_code == 200, f"Campaign fetch failed: {res.status_code} {res.text}"
-    camp_before = res.json()
-    budget = camp_before.get("budgetCents")
-    spent = camp_before.get("spentCents")
-    expected_refund = budget - spent
-    log(f"✓ Campaign budget: {budget}c, spent: {spent}c, expected refund: {expected_refund}c")
-    
-    # End the campaign
-    res = requests.patch(f"{BASE_URL}/ads/campaigns/{campaign_id}", 
-                        json={"status": "ended"}, headers=headers)
-    assert res.status_code == 200, f"End campaign failed: {res.status_code} {res.text}"
+    res = requests.post(f"{BASE_URL}/store/apps/spotly/disconnect", headers=headers)
+    assert res.status_code == 200, f"POST /store/apps/spotly/disconnect failed: {res.status_code} {res.text}"
     data = res.json()
-    assert data.get("status") == "ended", f"Expected status 'ended', got {data.get('status')}"
-    log(f"✓ Campaign ended")
     
-    # Verify wallet refunded
-    res = requests.get(f"{BASE_URL}/wallet", headers=headers)
-    assert res.status_code == 200, f"Wallet fetch failed: {res.status_code} {res.text}"
-    wallet_after = res.json()
-    balance_after = wallet_after.get("balanceCents")
+    assert data.get("ok") == True, f"Expected ok=true, got {data}"
+    log(f"✓ Disconnect returned ok=true")
     
-    expected_balance = balance_before + expected_refund
-    assert balance_after == expected_balance, f"Expected balance {expected_balance}c, got {balance_after}c"
-    log(f"✓ Wallet refunded: {balance_before}c -> {balance_after}c (+{expected_refund}c)")
+    # Verify GET /api/store/apps shows Spotly connected=false
+    res = requests.get(f"{BASE_URL}/store/apps", headers=headers)
+    assert res.status_code == 200, f"GET /store/apps failed: {res.status_code} {res.text}"
+    apps = res.json()
     
-    # Verify refund transaction exists
-    res = requests.get(f"{BASE_URL}/transactions", headers=headers)
-    assert res.status_code == 200, f"Transactions fetch failed: {res.status_code} {res.text}"
-    transactions = res.json()
+    spotly_app = next((a for a in apps if a['id'] == 'spotly'), None)
+    assert spotly_app is not None, "Spotly not found in apps list"
     
-    refund_tx = None
-    for tx in transactions:
-        if "Remboursement pub" in tx.get("label", "") and tx.get("amountCents") == expected_refund:
-            refund_tx = tx
-            break
+    log(f"✓ Spotly app after disconnect:")
+    log(f"  - Connected: {spotly_app['connected']}")
+    log(f"  - Pseudonym: {spotly_app['pseudonym']}")
     
-    assert refund_tx is not None, f"No 'Remboursement pub' transaction of {expected_refund}c found"
-    log(f"✓ 'Remboursement pub' transaction created: {refund_tx.get('label')} (+{refund_tx.get('amountCents')}c)")
+    assert spotly_app['connected'] == False, f"Spotly should have connected=false after disconnect, got {spotly_app['connected']}"
     
-    log("\n✅ TEST 9 PASSED: Campaign ended, wallet refunded, transaction recorded")
+    log(f"✓ Spotly now shows connected=false")
+    
+    # Verify GET /api/store/connections is empty (or doesn't include spotly)
+    res = requests.get(f"{BASE_URL}/store/connections", headers=headers)
+    assert res.status_code == 200, f"GET /store/connections failed: {res.status_code} {res.text}"
+    connections = res.json()
+    
+    spotly_connections = [c for c in connections if c['appId'] == 'spotly']
+    assert len(spotly_connections) == 0, f"Expected 0 spotly connections after disconnect, got {len(spotly_connections)}"
+    
+    log(f"✓ GET /store/connections no longer includes spotly")
+    
+    log("\n✅ TEST 8 PASSED: Disconnect working correctly")
+    
+    # ========================================================================
+    # TEST 9: INVALID - POST /api/store/apps/doesnotexist/connect
+    # ========================================================================
+    log("\n" + "=" * 80)
+    log("TEST 9: INVALID - POST /api/store/apps/doesnotexist/connect (should return 404)")
+    log("=" * 80)
+    
+    res = requests.post(f"{BASE_URL}/store/apps/doesnotexist/connect", headers=headers)
+    assert res.status_code == 404, f"Expected 404 for invalid app, got {res.status_code}: {res.text}"
+    
+    log(f"✓ Correctly returned 404 for non-existent app")
+    
+    log("\n✅ TEST 9 PASSED: Invalid app returns 404")
+    
+    # ========================================================================
+    # TEST 10: MULTI-USER ISOLATION - Create store6b@divarc.fr
+    # ========================================================================
+    log("\n" + "=" * 80)
+    log("TEST 10: MULTI-USER ISOLATION - Create store6b@divarc.fr and verify isolation")
+    log("=" * 80)
+    
+    # Create second user
+    token_b, user_b = create_user("store6b@divarc.fr", "Store Six B")
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+    
+    # User B connects to flixo
+    log(f"\n[User B] Connecting to flixo")
+    res = requests.post(f"{BASE_URL}/store/apps/flixo/connect", headers=headers_b)
+    assert res.status_code == 200, f"POST /store/apps/flixo/connect failed: {res.status_code} {res.text}"
+    data = res.json()
+    
+    flixo_pseudonym = data["connection"]["pseudonym"]
+    log(f"✓ User B connected to flixo with pseudonym: {flixo_pseudonym}")
+    
+    # User A (store6) reconnects to spotly for isolation test
+    log(f"\n[User A] Reconnecting to spotly")
+    res = requests.post(f"{BASE_URL}/store/apps/spotly/connect", headers=headers)
+    assert res.status_code == 200, f"POST /store/apps/spotly/connect failed: {res.status_code} {res.text}"
+    data = res.json()
+    
+    spotly_pseudonym_new = data["connection"]["pseudonym"]
+    log(f"✓ User A connected to spotly with pseudonym: {spotly_pseudonym_new}")
+    
+    # Verify User A connections do NOT include flixo
+    log(f"\n[User A] Verifying connections do NOT include flixo")
+    res = requests.get(f"{BASE_URL}/store/connections", headers=headers)
+    assert res.status_code == 200, f"GET /store/connections failed: {res.status_code} {res.text}"
+    connections_a = res.json()
+    
+    flixo_in_a = any(c['appId'] == 'flixo' for c in connections_a)
+    assert not flixo_in_a, f"User A should NOT see flixo connection (belongs to User B)"
+    
+    spotly_in_a = any(c['appId'] == 'spotly' for c in connections_a)
+    assert spotly_in_a, f"User A should see spotly connection"
+    
+    log(f"✓ User A connections: {[c['appName'] for c in connections_a]}")
+    log(f"✓ User A does NOT see flixo (User B's connection)")
+    
+    # Verify User B connections do NOT include spotly
+    log(f"\n[User B] Verifying connections do NOT include spotly")
+    res = requests.get(f"{BASE_URL}/store/connections", headers=headers_b)
+    assert res.status_code == 200, f"GET /store/connections failed: {res.status_code} {res.text}"
+    connections_b = res.json()
+    
+    spotly_in_b = any(c['appId'] == 'spotly' for c in connections_b)
+    assert not spotly_in_b, f"User B should NOT see spotly connection (belongs to User A)"
+    
+    flixo_in_b = any(c['appId'] == 'flixo' for c in connections_b)
+    assert flixo_in_b, f"User B should see flixo connection"
+    
+    log(f"✓ User B connections: {[c['appName'] for c in connections_b]}")
+    log(f"✓ User B does NOT see spotly (User A's connection)")
+    
+    log("\n✅ TEST 10 PASSED: Multi-user isolation working correctly")
     
     # ========================================================================
     # FINAL SUMMARY
     # ========================================================================
     log("\n" + "=" * 80)
-    log("PHASE 5 ADS MANAGER - ALL TESTS PASSED ✅")
+    log("PHASE 6 APP STORE - ALL TESTS PASSED ✅")
     log("=" * 80)
     log("\nSummary:")
-    log("  1. ✅ CREATE campaign - wallet debited, transaction created")
-    log("  2. ✅ INSUFFICIENT funds - 402 returned correctly")
-    log("  3. ✅ LIST campaigns - metrics correct (impressions, clicks, spend, CTR, status)")
-    log("  4. ✅ FEED INJECTION - sponsored posts in foryou mode only, not chrono")
-    log("  5. ✅ TRACK IMPRESSION - 3 impressions tracked, spend = 9c (3c each)")
-    log("  6. ✅ TRACK CLICK - 2 clicks tracked, spend = 59c (9+50), CTR = 66.7%")
-    log("  7. ✅ AUTO-END ON BUDGET - tiny campaign exhausted, auto-ended, removed from feed")
-    log("  8. ✅ PAUSE/RESUME - feed injection stops/starts correctly")
-    log("  9. ✅ END + REFUND - wallet refunded by (budget - spent), transaction created")
+    log("  1. ✅ GET /store/apps - 12 seeded apps with all required fields")
+    log("  2. ✅ FILTER BY CATEGORY - cat=Finance returns only Finance apps (Bankly)")
+    log("  3. ✅ FILTER BY SEARCH - q=music and q=musi both match Spotly (Musique)")
+    log("  4. ✅ CONNECT - pseudonym matches /^divarc-[0-9a-f]{4}$/, scopes match perms")
+    log("  5. ✅ CONNECTED FLAG - Spotly shows connected:true with pseudonym")
+    log("  6. ✅ IDEMPOTENT - reconnect returns existing:true with SAME pseudonym, no duplicate")
+    log("  7. ✅ GET /store/connections - lists connected apps with all fields")
+    log("  8. ✅ DISCONNECT - Spotly shows connected:false, removed from connections")
+    log("  9. ✅ INVALID - non-existent app returns 404")
+    log(" 10. ✅ MULTI-USER ISOLATION - User A and User B have independent connections")
     log("\n" + "=" * 80)
-    log("NO CRITICAL ISSUES FOUND - ALL MONEY FLOWS VERIFIED")
+    log("NO CRITICAL ISSUES FOUND - ALL APP STORE ENDPOINTS WORKING")
     log("=" * 80)
 
 if __name__ == "__main__":
     try:
-        test_phase5_ads_manager()
+        test_phase6_app_store()
         sys.exit(0)
     except AssertionError as e:
         log(f"\n❌ TEST FAILED: {e}")

@@ -16,6 +16,7 @@ import Messaging from './components/messaging'
 import Social from './components/social'
 import Marketplace from './components/marketplace'
 import AdsManager from './components/ads'
+import AppStore from './components/appstore'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 
 /* ============================= helpers ============================= */
@@ -776,6 +777,13 @@ function Discover({ onTab }) {
             <ChevronRight size={18} className="text-muted-foreground" />
           </Glass>
         </button>
+        <button onClick={() => onTab && onTab('store')} className="press w-full text-left">
+          <Glass sheen className="p-5 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#00BBF9,#4353F0)' }}><Compass size={20} /></div>
+            <div className="flex-1"><div className="font-semibold">App Store</div><div className="text-xs text-muted-foreground">Connecte tes apps · identité cloisonnée</div></div>
+            <ChevronRight size={18} className="text-muted-foreground" />
+          </Glass>
+        </button>
         <button onClick={() => onTab && onTab('ads')} className="press w-full text-left">
           <Glass sheen className="p-5 flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#F97C4E,#E2AA2B)' }}><TrendingUp size={20} /></div>
@@ -1086,6 +1094,7 @@ function App() {
           {tab === 'social' && <Social me={user} onBack={() => setTab('hub')} />}
           {tab === 'market' && <Marketplace me={user} onWalletRefresh={load} />}
           {tab === 'ads' && <AdsManager me={user} onWalletRefresh={load} />}
+          {tab === 'store' && <AppStore me={user} />}
         </motion.div>
       </AnimatePresence>
 
