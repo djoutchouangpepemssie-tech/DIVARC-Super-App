@@ -1,0 +1,20 @@
+{
+  "name": "DIVARC — La super-app européenne",
+  "short_name": "DIVARC",
+  "description": "Paiement, messagerie, assistant IA, mini-apps et social vidéo. Conforme RGPD/DMA.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF9F4",
+  "theme_color": "#FAF9F4",
+  "orientation": "portrait-primary",
+  "lang": "fr",
+  "categories": ["finance", "social", "productivity"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
