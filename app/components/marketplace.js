@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
+import { ListingsSkeleton, EmptyState, ErrorState } from './states'
 import {
   Search, X, Heart, MapPin, SlidersHorizontal, Plus, ChevronRight, ChevronLeft, Camera,
   MessageCircle, Store, Compass, Check, Crosshair, Loader2, Send, Tag, Trash2, ShieldCheck,
@@ -44,6 +45,7 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
   const [conditions, setConditions] = useState([])
   const [listings, setListings] = useState([])
   const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState(false)
   const [detail, setDetail] = useState(null)
   const [activeThread, setActiveThread] = useState(null)
   const [toast, setToast] = useState(null)
@@ -73,6 +75,7 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setErr(false)
     const p = new URLSearchParams()
     if (q) p.set('q', q)
     if (cat && cat !== 'Tout') p.set('cat', cat)
@@ -85,6 +88,7 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
     if (geo?.lat != null) { p.set('lat', geo.lat); p.set('lon', geo.lon); if (radius) p.set('radiusKm', String(radius)) }
     const r = await api(`/market/listings?${p.toString()}`)
     if (Array.isArray(r)) setListings(r)
+    else setErr(true)
     setLoading(false)
   }, [q, cat, subcat, txType, cond, minPrice, maxPrice, sort, geo, radius])
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t) }, [load])
@@ -123,7 +127,7 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
               </div>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setView('threads')} className="press w-10 h-10 rounded-full grid place-items-center glass hairline relative"><MessageCircle size={18} /></button>
+              <button onClick={() => setView('threads')} aria-label="Voir mes messages" className="press w-10 h-10 rounded-full grid place-items-center glass hairline relative"><MessageCircle size={18} /></button>
               <button onClick={() => setView('sell')} className="press h-10 px-4 rounded-full grid place-items-center text-white font-semibold text-sm gap-1.5 flex glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}><Plus size={17} /> Vendre</button>
             </div>
           </div>
@@ -163,9 +167,12 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
 
           {/* résultats */}
           {loading ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{[...Array(6)].map((_, i) => <div key={i} className="glass rounded-2xl overflow-hidden animate-pulse"><div className="aspect-[4/3] bg-muted/60" /><div className="p-2.5 space-y-2"><div className="h-3 bg-muted/60 rounded w-3/4" /><div className="h-4 bg-muted/60 rounded w-1/2" /></div></div>)}</div>
+            <ListingsSkeleton count={6} />
+          ) : err ? (
+            <ErrorState onRetry={load} />
           ) : listings.length === 0 ? (
-            <Glass className="p-12 text-center"><Store size={34} className="mx-auto mb-3 text-muted-foreground" /><div className="font-semibold mb-1">Aucune annonce</div><div className="text-sm text-muted-foreground">Élargis ta zone ou modifie tes filtres.</div></Glass>
+            <EmptyState icon={Store} title="Aucune annonce" desc="Élargis ta zone de recherche ou modifie tes filtres pour découvrir plus d'annonces." emoji="🔍"
+              action={<button onClick={() => setView('sell')} className="press px-5 py-2.5 rounded-full text-white font-semibold text-sm glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}>Vendre un article</button>} />
           ) : (
             <>
               <div className="text-xs text-muted-foreground mb-2">{listings.length} annonce{listings.length > 1 ? 's' : ''}</div>
@@ -188,7 +195,7 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
       <AnimatePresence>
         {showLoc && <LocationSheet current={geo} radius={radius} setRadius={setRadius} onApply={applyGeo} onClear={clearGeo} onClose={() => setShowLoc(false)} showToast={showToast} />}
         {showFilters && <FiltersSheet {...{ conditions, cond, setCond, minPrice, setMinPrice, maxPrice, setMaxPrice, sort, setSort, geo }} onClose={() => setShowFilters(false)} onReset={() => { setCond(''); setMinPrice(''); setMaxPrice(''); setSort('recent') }} />}
-        {toast && <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[70] bg-ink text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-xl max-w-[92vw] text-center">{toast}</motion.div>}
+        {toast && <motion.div role="status" aria-live="polite" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[70] bg-ink text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-xl max-w-[92vw] text-center">{toast}</motion.div>}
       </AnimatePresence>
     </div>
   )
@@ -202,7 +209,7 @@ function ListingCard({ l, onOpen, onFav }) {
         <div className="relative aspect-[4/3] bg-muted/60 overflow-hidden">
           {l.images?.[0] ? <img src={imgSrc(l.images[0])} alt={l.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" /> : <div className="w-full h-full grid place-items-center text-3xl">📦</div>}
           <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent pointer-events-none" />
-          <button onClick={(e) => { e.stopPropagation(); onFav() }} className="press absolute top-2 right-2 w-8 h-8 rounded-full grid place-items-center bg-white/85 backdrop-blur shadow-md"><Heart size={16} className={l.favorited ? 'text-destructive' : 'text-ink'} fill={l.favorited ? '#EF476F' : 'none'} /></button>
+          <button onClick={(e) => { e.stopPropagation(); onFav() }} aria-label={l.favorited ? 'Retirer des favoris' : 'Ajouter aux favoris'} aria-pressed={!!l.favorited} className="press absolute top-2 right-2 w-8 h-8 rounded-full grid place-items-center bg-white/85 backdrop-blur shadow-md"><Heart size={16} className={l.favorited ? 'text-destructive' : 'text-ink'} fill={l.favorited ? '#EF476F' : 'none'} /></button>
           {l.transactionType === 'rent' && <span className="absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full text-white glow-gold" style={{ background: 'linear-gradient(135deg,#F0CE7E,#E2AA2B,#B98514)' }}>LOCATION</span>}
           {l.distanceKm != null && <span className="absolute bottom-2 left-2 text-[10px] font-medium px-2 py-0.5 rounded-full bg-ink/70 backdrop-blur text-white flex items-center gap-1"><MapPin size={9} /> {l.distanceKm} km</span>}
         </div>
@@ -230,17 +237,17 @@ function DetailView({ l, me, onBack, onFav, onOpenListing, onChat, onBought, sho
   return (
     <div className="mx-auto max-w-3xl pb-28">
       <div className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-app-gradient/90 backdrop-blur">
-        <button onClick={onBack} className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><ArrowLeft size={18} /></button>
+        <button onClick={onBack} aria-label="Retour" className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><ArrowLeft size={18} /></button>
         <div className="flex-1 font-semibold truncate">{l.title}</div>
-        <button onClick={onFav} className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><Heart size={17} className={l.favorited ? 'text-destructive' : ''} fill={l.favorited ? '#EF476F' : 'none'} /></button>
+        <button onClick={onFav} aria-label={l.favorited ? 'Retirer des favoris' : 'Ajouter aux favoris'} aria-pressed={!!l.favorited} className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><Heart size={17} className={l.favorited ? 'text-destructive' : ''} fill={l.favorited ? '#EF476F' : 'none'} /></button>
       </div>
 
       {/* galerie */}
       <div className="relative aspect-[4/3] md:aspect-[16/9] bg-muted/60 md:rounded-2xl overflow-hidden mx-0 md:mx-4">
         {l.images?.length ? <img src={imgSrc(l.images[idx])} alt={l.title} className="w-full h-full object-cover" /> : <div className="w-full h-full grid place-items-center text-5xl">📦</div>}
         {l.images?.length > 1 && <>
-          <button onClick={() => setIdx((i) => (i - 1 + l.images.length) % l.images.length)} className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/85 grid place-items-center shadow"><ChevronLeft size={18} /></button>
-          <button onClick={() => setIdx((i) => (i + 1) % l.images.length)} className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/85 grid place-items-center shadow"><ChevronRight size={18} /></button>
+          <button onClick={() => setIdx((i) => (i - 1 + l.images.length) % l.images.length)} aria-label="Image précédente" className="press absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/85 grid place-items-center shadow"><ChevronLeft size={18} /></button>
+          <button onClick={() => setIdx((i) => (i + 1) % l.images.length)} aria-label="Image suivante" className="press absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/85 grid place-items-center shadow"><ChevronRight size={18} /></button>
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">{l.images.map((_, i) => <span key={i} className={cx('w-1.5 h-1.5 rounded-full', i === idx ? 'bg-white' : 'bg-white/50')} />)}</div>
         </>}
       </div>

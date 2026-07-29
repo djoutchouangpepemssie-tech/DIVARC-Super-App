@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
+import { KpiSkeleton, RowsSkeleton, EmptyState, ErrorState, Skel } from './states'
 import {
   ArrowLeft, Plus, X, Check, TrendingUp, MousePointerClick, Eye, Target, DollarSign,
   Play, Pause, Trash2, ChevronRight, Sparkles, Search, Loader2, BarChart3, Users,
@@ -22,14 +23,19 @@ export default function AdsManager({ me, onWalletRefresh, onImmersive }) {
   const [insights, setInsights] = useState(null)
   const [detailId, setDetailId] = useState(null)
   const [toast, setToast] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState(false)
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(null), 2600) }
 
   useEffect(() => { onImmersive?.(view !== 'dashboard') }, [view, onImmersive])
 
   const load = useCallback(async () => {
+    setErr(false)
     const [c, i] = await Promise.all([api('/ads/campaigns'), api('/ads/insights')])
     if (Array.isArray(c)) setCampaigns(c)
     if (i && !i.error) setInsights(i)
+    if (!Array.isArray(c)) setErr(true)
+    setLoading(false)
   }, [])
   useEffect(() => { api('/ads/config').then((r) => { if (!r.error) setConfig(r) }); load() }, [load])
 
@@ -44,6 +50,16 @@ export default function AdsManager({ me, onWalletRefresh, onImmersive }) {
           <button onClick={() => setView('create')} className="press h-11 px-4 rounded-full grid place-items-center text-white font-semibold text-sm gap-1.5 flex glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}><Plus size={18} /> Nouvelle campagne</button>
         </div>
 
+        {loading ? (
+          <div className="space-y-5">
+            <div className="glass rounded-2xl p-5 space-y-3"><Skel className="h-3 w-1/3" /><Skel className="h-9 w-1/2" /><Skel className="h-3 w-2/3" /></div>
+            <KpiSkeleton count={4} />
+            <RowsSkeleton count={3} />
+          </div>
+        ) : err ? (
+          <ErrorState onRetry={() => { setLoading(true); load() }} />
+        ) : (
+        <div className="contents">
         {/* hero résumé */}
         {insights && (
           <div className="card-hero p-5 mb-5 glow-primary cascade">
@@ -79,12 +95,14 @@ export default function AdsManager({ me, onWalletRefresh, onImmersive }) {
         {/* liste campagnes */}
         <div className="flex items-center justify-between mb-2"><div className="font-semibold">Campagnes {insights && <span className="text-muted-foreground font-normal">· {insights.counts.active} active{insights.counts.active > 1 ? 's' : ''}</span>}</div></div>
         {campaigns.length === 0 ? (
-          <Glass className="p-12 text-center"><Megaphone size={34} className="mx-auto mb-3 text-muted-foreground" /><div className="font-semibold mb-1">Aucune campagne</div><div className="text-sm text-muted-foreground mb-4">Lance ta première campagne en 3 étapes.</div><button onClick={() => setView('create')} className="press px-5 py-2.5 rounded-full text-white font-semibold text-sm" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>Créer une campagne</button></Glass>
+          <EmptyState icon={Megaphone} emoji="📣" title="Aucune campagne" desc="Lance ta première campagne en 3 étapes et touche une audience européenne ciblée."
+            action={<button onClick={() => setView('create')} className="press px-5 py-2.5 rounded-full text-white font-semibold text-sm glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}>Créer une campagne</button>} />
         ) : (
           <div className="space-y-2.5">{campaigns.map((c) => <CampaignRow key={c.id} c={c} config={config} onOpen={() => { setDetailId(c.id); setView('detail') }} />)}</div>
         )}
+        </div>)}
       </div>
-      <AnimatePresence>{toast && <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[70] bg-ink text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-xl">{toast}</motion.div>}</AnimatePresence>
+      <AnimatePresence>{toast && <motion.div role="status" aria-live="polite" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[70] bg-ink text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-xl">{toast}</motion.div>}</AnimatePresence>
     </div>
   )
 }
@@ -188,7 +206,7 @@ function CreateWizard({ me, config, onCancel, onDone, showToast }) {
 
   return (
     <div className="min-h-[100dvh] bg-app-gradient"><div className="mx-auto max-w-2xl px-4 pt-6 pb-28">
-      <div className="flex items-center gap-3 mb-5"><button onClick={() => step === 0 ? onCancel() : setStep(step - 1)} className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><ArrowLeft size={18} /></button><h1 className="font-display text-2xl">Nouvelle campagne</h1></div>
+      <div className="flex items-center gap-3 mb-5"><button onClick={() => step === 0 ? onCancel() : setStep(step - 1)} aria-label="Retour" className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><ArrowLeft size={18} /></button><h1 className="font-display text-2xl">Nouvelle campagne</h1></div>
       <div className="flex gap-1.5 mb-6">{['Objectif', 'Budget & ciblage', 'Création'].map((l, s) => <div key={s} className="flex-1"><div className={cx('h-1.5 rounded-full', s <= step ? 'bg-primary' : 'bg-muted/60')} /><div className={cx('text-[10px] mt-1', s === step ? 'text-primary font-medium' : 'text-muted-foreground')}>{l}</div></div>)}</div>
 
       {step === 0 && (
@@ -293,7 +311,7 @@ function CampaignDetail({ id, config, onBack, onWalletRefresh, showToast }) {
 
   return (
     <div className="min-h-[100dvh] bg-app-gradient"><div className="mx-auto max-w-2xl px-4 pt-6 pb-28">
-      <div className="flex items-center gap-3 mb-4"><button onClick={onBack} className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><ArrowLeft size={18} /></button><div className="flex-1"><h1 className="font-display text-xl leading-none truncate">{c.name}</h1><div className="text-xs text-muted-foreground mt-1">{typeDef?.name} · {c.objective}</div></div>
+      <div className="flex items-center gap-3 mb-4"><button onClick={onBack} aria-label="Retour" className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><ArrowLeft size={18} /></button><div className="flex-1"><h1 className="font-display text-xl leading-none truncate">{c.name}</h1><div className="text-xs text-muted-foreground mt-1">{typeDef?.name} · {c.objective}</div></div>
         <div className="w-10 h-10 rounded-2xl grid place-items-center text-white text-lg" style={{ background: typeDef?.color || '#4353F0' }}>{typeDef?.emoji || '📣'}</div></div>
 
       {/* contrôles */}
@@ -301,7 +319,7 @@ function CampaignDetail({ id, config, onBack, onWalletRefresh, showToast }) {
         {c.status === 'active' && <button onClick={() => setStatus('paused')} className="press flex-1 py-2.5 rounded-2xl border border-gold/40 bg-gold/12 text-gold font-medium text-sm flex items-center justify-center gap-1.5"><Pause size={15} /> Pause</button>}
         {c.status === 'paused' && <button onClick={() => setStatus('active')} className="press flex-1 py-2.5 rounded-2xl border border-green-500/40 bg-green-500/12 text-green-600 dark:text-green-400 font-medium text-sm flex items-center justify-center gap-1.5"><Play size={15} /> Reprendre</button>}
         {c.status !== 'ended' && <button onClick={() => setStatus('ended')} className="press flex-1 py-2.5 rounded-2xl border border-border bg-card/70 font-medium text-sm">Terminer</button>}
-        <button onClick={remove} className="press px-4 py-2.5 rounded-2xl border border-destructive/30 bg-destructive/10 text-destructive flex items-center justify-center"><Trash2 size={16} /></button>
+        <button onClick={remove} aria-label="Supprimer la campagne" className="press px-4 py-2.5 rounded-2xl border border-destructive/30 bg-destructive/10 text-destructive flex items-center justify-center"><Trash2 size={16} /></button>
       </div>
 
       {/* KPIs */}

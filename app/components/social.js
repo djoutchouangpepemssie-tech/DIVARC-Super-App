@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
+import { FeedSkeleton, EmptyState, ErrorState } from './states'
 import {
   Heart, MessageCircle, Bookmark, Share2, Volume2, VolumeX, Plus, X, ArrowLeft,
   ShoppingBag, Info, BadgeCheck, Sparkles, Check, UserPlus, UserCheck, EyeOff, Send as SendIcon, Gift, Cpu, ChevronRight
@@ -30,6 +31,7 @@ export default function Social({ me, onBack }) {
   const [feed, setFeed] = useState([])
   const [muted, setMuted] = useState(true)
   const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [commentsFor, setCommentsFor] = useState(null)
   const [tipFor, setTipFor] = useState(null)
@@ -37,10 +39,12 @@ export default function Social({ me, onBack }) {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setErr(false)
     const scope = mode === 'following' ? 'following' : 'all'
     const m = mode === 'chrono' ? 'chrono' : 'foryou'
     const r = await api(`/social/feed?mode=${m}&scope=${scope}`)
     if (Array.isArray(r)) setFeed(r)
+    else setErr(true)
     setLoading(false)
   }, [mode])
   useEffect(() => { load() }, [load])
@@ -80,13 +84,13 @@ export default function Social({ me, onBack }) {
     <div className="fixed inset-0 z-40 bg-black">
       {/* feed */}
       <div className="h-full w-full overflow-y-scroll snap-y snap-mandatory no-scrollbar">
-        {loading && <div className="h-full grid place-items-center text-white/70">Chargement du flux…</div>}
-        {!loading && feed.length === 0 && (
-          <div className="h-full grid place-items-center text-center text-white/70 px-8">
-            <div>
-              <Sparkles className="mx-auto mb-3" />
-              {mode === 'following' ? 'Suis des créateurs pour remplir ce flux.' : 'Aucune vidéo pour le moment.'}
-            </div>
+        {loading && <FeedSkeleton />}
+        {!loading && err && <div className="h-full grid place-items-center"><ErrorState dark onRetry={load} title="Flux indisponible" desc="Impossible de charger les vidéos. Vérifie ta connexion et réessaie." /></div>}
+        {!loading && !err && feed.length === 0 && (
+          <div className="h-full grid place-items-center">
+            <EmptyState dark emoji={mode === 'following' ? '👥' : '🎬'}
+              title={mode === 'following' ? 'Ton flux Abonnements est vide' : 'Aucune vidéo pour le moment'}
+              desc={mode === 'following' ? 'Suis des créateurs pour retrouver leurs vidéos ici.' : 'Reviens bientôt pour découvrir de nouvelles vidéos.'} />
           </div>
         )}
         {feed.map((p, i) => (
@@ -115,7 +119,7 @@ export default function Social({ me, onBack }) {
       {/* toast */}
       <AnimatePresence>
         {toast && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+          <motion.div role="status" aria-live="polite" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
             className="absolute bottom-28 left-1/2 -translate-x-1/2 z-30 bg-white text-ink text-sm font-medium px-4 py-2.5 rounded-full shadow-xl">{toast}</motion.div>
         )}
       </AnimatePresence>
@@ -184,7 +188,7 @@ function PostCard({ p, muted, setMuted, onLike, onSave, onFollow, onComments, on
 
       {/* AI + sound */}
       <div className="absolute top-16 right-3 flex flex-col gap-2 z-10">
-        <button onClick={() => setMuted((m) => !m)} className="press w-9 h-9 rounded-full grid place-items-center bg-black/35 text-white backdrop-blur">
+        <button onClick={() => setMuted((m) => !m)} aria-label={muted ? 'Activer le son' : 'Couper le son'} aria-pressed={!muted} className="press w-9 h-9 rounded-full grid place-items-center bg-black/35 text-white backdrop-blur">
           {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
         </button>
         {p.aiGenerated && <span className="text-[9px] bg-black/40 text-white px-2 py-1 rounded-full backdrop-blur flex items-center gap-1"><Cpu size={10} /> IA</span>}

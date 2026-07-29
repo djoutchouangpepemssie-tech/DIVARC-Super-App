@@ -11,7 +11,7 @@ import {
   Utensils, Car, ShoppingBag, Ticket, HeartPulse, Globe, ChevronDown, Info,
   Landmark, CreditCard, Settings2, Trash2, Download, Users, Play
 } from 'lucide-react'
-import { api, getToken, setToken, clearToken } from '@/lib/api'
+import { api, getToken, setToken, clearToken, flushQueue, pendingCount } from '@/lib/api'
 import Messaging from './components/messaging'
 import Social from './components/social'
 import Marketplace from './components/marketplace'
@@ -19,6 +19,7 @@ import AdsManager from './components/ads'
 import AppStore from './components/appstore'
 import AdminHub from './components/hub'
 import Assistant from './components/assistant'
+import { OfflineBanner } from './components/states'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 
 /* ============================= helpers ============================= */
@@ -1082,6 +1083,9 @@ function App() {
   const [wallet, setWallet] = useState(null)
   const [txs, setTxs] = useState([])
   const [contacts, setContacts] = useState([])
+  const [online, setOnline] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [pending, setPending] = useState(0)
 
   const load = useCallback(async () => {
     const [w, t, c] = await Promise.all([api('/wallet'), api('/transactions'), api('/contacts')])
@@ -1101,6 +1105,49 @@ function App() {
     })()
   }, [load])
 
+  // Réseau : online/offline + rejeu de la file d'attente
+  useEffect(() => {
+    if (typeof navigator !== 'undefined') setOnline(navigator.onLine)
+    setPending(pendingCount())
+    const goOnline = async () => {
+      setOnline(true)
+      if (pendingCount() > 0) {
+        setSyncing(true)
+        await flushQueue()
+        setPending(pendingCount())
+        if (getToken()) await load()
+        setTimeout(() => setSyncing(false), 1200)
+      }
+    }
+    const goOffline = () => setOnline(false)
+    const onQueue = () => setPending(pendingCount())
+    window.addEventListener('online', goOnline)
+    window.addEventListener('offline', goOffline)
+    window.addEventListener('divarc:queue', onQueue)
+    return () => {
+      window.removeEventListener('online', goOnline)
+      window.removeEventListener('offline', goOffline)
+      window.removeEventListener('divarc:queue', onQueue)
+    }
+  }, [load])
+
+  // Persistance de session multi-onglets (P2)
+  useEffect(() => {
+    const onStorage = async (e) => {
+      if (e.key !== 'divarc_token') return
+      if (!e.newValue) {
+        // déconnexion dans un autre onglet
+        setUser(null); setWallet(null); setTxs([]); setContacts([])
+      } else if (e.newValue !== e.oldValue) {
+        // connexion (ou changement de compte) dans un autre onglet
+        const me = await api('/auth/me')
+        if (!me.error) { setUser(me); setTab('hub'); await load() }
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [load])
+
   const onAuthed = async (u) => { setUser(u); setTab('hub'); await load() }
   const logout = async () => { await api('/auth/logout', { method: 'POST' }); clearToken(); setUser(null); setWallet(null); setTxs([]); setContacts([]) }
 
@@ -1118,6 +1165,9 @@ function App() {
 
   return (
     <div className="font-body text-foreground">
+      <AnimatePresence>
+        <OfflineBanner online={online} syncing={syncing} />
+      </AnimatePresence>
       <AnimatePresence initial={false}>
         <motion.div key={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
           {tab === 'hub' && <Hub user={user} wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} onTab={goTab} />}
