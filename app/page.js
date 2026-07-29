@@ -1102,7 +1102,7 @@ function App() {
           {tab === 'profile' && <Profile user={user} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}
           {tab === 'social' && <Social me={user} onBack={() => setTab('hub')} />}
           {tab === 'market' && <Marketplace me={user} onWalletRefresh={load} onImmersive={setMktImmersive} />}
-          {tab === 'ads' && <AdsManager me={user} onWalletRefresh={load} />}
+          {tab === 'ads' && <AdsManager me={user} onWalletRefresh={load} onImmersive={setMktImmersive} />}
           {tab === 'store' && <AppStore me={user} />}
           {tab === 'admin' && <AdminHub me={user} onBack={() => setTab('hub')} />}
         </motion.div>

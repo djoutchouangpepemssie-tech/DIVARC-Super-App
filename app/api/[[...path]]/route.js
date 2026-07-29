@@ -414,6 +414,96 @@ function injectAds(out, ads) {
   return merged
 }
 
+// ---------------- Ads Manager v2 (type Google Ads) ----------------
+const ADS_CONFIG = {
+  types: [
+    { id: 'search', name: 'Search', emoji: '🔎', color: '#4353F0', desc: 'Annonces textuelles sur les recherches par mots-clés.', defaultBid: 'cpc' },
+    { id: 'display', name: 'Display', emoji: '🖼️', color: '#9B5DE5', desc: 'Bannières visuelles sur le réseau DIVARC.', defaultBid: 'cpm' },
+    { id: 'video', name: 'Vidéo', emoji: '🎬', color: '#EF476F', desc: 'Spots vidéo dans le feed Social.', defaultBid: 'cpm' },
+    { id: 'shopping', name: 'Shopping', emoji: '🛍️', color: '#3FB68B', desc: 'Fiches produit avec prix dans le Marketplace.', defaultBid: 'cpc' },
+  ],
+  objectives: [
+    { id: 'sales', name: 'Ventes', emoji: '💰' }, { id: 'leads', name: 'Prospects', emoji: '🎯' },
+    { id: 'traffic', name: 'Trafic', emoji: '🌐' }, { id: 'awareness', name: 'Notoriété', emoji: '📣' },
+    { id: 'app', name: 'Promotion d\u2019app', emoji: '📱' },
+  ],
+  bidStrategies: [
+    { id: 'cpc', name: 'CPC manuel', desc: 'Coût par clic' }, { id: 'cpm', name: 'CPM', desc: 'Coût pour 1000 impressions' },
+    { id: 'maximize', name: 'Maximiser les clics', desc: 'Enchère automatique' }, { id: 'target_cpa', name: 'CPA cible', desc: 'Coût par acquisition visé' },
+  ],
+  interests: ['Tech', 'Mode', 'Voyage', 'Food', 'Sport', 'Musique', 'Gaming', 'Finance', 'Immobilier', 'Auto', 'Beauté', 'Éducation', 'Écologie', 'Famille'],
+  devices: ['Mobile', 'Ordinateur', 'Tablette'],
+  ageRanges: ['18-24', '25-34', '35-44', '45-54', '55-64', '65+'],
+  genders: ['Tous', 'Femmes', 'Hommes'],
+}
+function adDerived(c) {
+  const impr = c.impressions || 0, clk = c.clicks || 0, spent = c.spentCents || 0, conv = c.conversions || 0
+  return {
+    ...c,
+    ctr: impr ? +(clk / impr * 100).toFixed(2) : 0,
+    cpcCents: clk ? Math.round(spent / clk) : 0,
+    cpmCents: impr ? Math.round(spent / impr * 1000) : 0,
+    convRate: clk ? +(conv / clk * 100).toFixed(2) : 0,
+    cpaCents: conv ? Math.round(spent / conv) : 0,
+    remainingCents: Math.max(0, (c.budgetCents || 0) - spent),
+  }
+}
+// Estimateur de portée quotidienne selon budget, enchère et largeur du ciblage
+function estimateReach({ dailyBudgetCents = 0, bidStrategy = 'cpc', maxBidCents = 0, targeting = {} }) {
+  const locs = (targeting.locations || []).length
+  const ints = (targeting.interests || []).length
+  const ages = (targeting.ageRange || []).length
+  // largeur : moins de filtres => audience plus large
+  let breadth = 1
+  breadth *= locs === 0 ? 1 : Math.min(1, 0.25 + locs * 0.15)
+  breadth *= ints === 0 ? 1 : Math.min(1, 0.3 + ints * 0.12)
+  breadth *= ages === 0 ? 1 : Math.min(1, 0.35 + ages * 0.14)
+  const audience = Math.round(2_400_000 * breadth) // audience potentielle
+  const cpmBase = bidStrategy === 'cpm' ? Math.max(300, maxBidCents || 500) : 550
+  const cpcBase = bidStrategy === 'cpc' || bidStrategy === 'maximize' ? Math.max(15, maxBidCents || 45) : 45
+  const dailyImpr = dailyBudgetCents > 0 ? Math.round(dailyBudgetCents / cpmBase * 1000) : 0
+  const ctr = 0.012 + Math.random() * 0.006
+  const dailyClicks = Math.round(dailyImpr * ctr)
+  const dailyReach = Math.min(audience, Math.round(dailyImpr * 0.78))
+  return {
+    audience,
+    impressionsPerDay: [Math.round(dailyImpr * 0.75), Math.round(dailyImpr * 1.25)],
+    clicksPerDay: [Math.round(dailyClicks * 0.7), Math.round(dailyClicks * 1.3)],
+    reachPerDay: [Math.round(dailyReach * 0.75), Math.round(dailyReach * 1.25)],
+    estCpcCents: cpcBase, estCtr: +(ctr * 100).toFixed(2),
+  }
+}
+// Historique simulé sur N jours (pour des analytics vivantes dès la création)
+function simulateHistory(camp, days = 7) {
+  const daily = []
+  let totImpr = 0, totClk = 0, totSpent = 0, totConv = 0
+  const perDayBudget = camp.budgetType === 'daily' ? (camp.dailyBudgetCents || Math.round(camp.budgetCents / 30)) : Math.round(camp.budgetCents / 14)
+  const cpc = camp.maxBidCents || 45
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+    const spend = Math.min(perDayBudget, Math.round(perDayBudget * (0.55 + Math.random() * 0.5)))
+    const ctr = 0.012 + Math.random() * 0.008
+    const impr = Math.round(spend / (camp.type === 'display' || camp.type === 'video' ? 6 : 5.2))
+    const clicks = Math.max(0, Math.round(impr * ctr))
+    const conv = Math.max(0, Math.round(clicks * (0.03 + Math.random() * 0.05)))
+    daily.push({ date, impressions: impr, clicks, spentCents: spend, conversions: conv })
+    totImpr += impr; totClk += clicks; totSpent += spend; totConv += conv
+  }
+  const capped = Math.min(totSpent, camp.budgetCents)
+  return { daily, impressions: totImpr, clicks: totClk, spentCents: capped, conversions: totConv }
+}
+function adKeywordSuggest(seed) {
+  const s = (seed || 'produit').toLowerCase().trim()
+  const mods = ['pas cher', 'en ligne', 'livraison', 'avis', 'meilleur', 'promo', 'près de moi', 'occasion', 'neuf', '2025']
+  const base = [s, ...mods.map((m) => `${s} ${m}`)]
+  return base.slice(0, 10).map((text) => ({
+    text, matchType: 'broad',
+    volume: Math.floor(Math.random() * 40000 + 1000),
+    competition: ['Faible', 'Moyenne', 'Élevée'][Math.floor(Math.random() * 3)],
+    suggestedBidCents: Math.floor(Math.random() * 80 + 20),
+  }))
+}
+
 const STORE_APPS = [
   { id: 'spotly', name: 'Spotly', cat: 'Musique', emoji: '🎵', color: '#3FB68B', desc: 'Streaming musical illimité. Connecte pour payer ton abonnement et partager tes titres.', perms: ['Profil', 'Paiement'] },
   { id: 'flixo', name: 'Flixo', cat: 'Streaming', emoji: '🎬', color: '#EF476F', desc: 'Films & séries. Reprends la lecture sur tous tes écrans.', perms: ['Profil', 'Paiement'] },
@@ -1118,72 +1208,151 @@ async function handleRoute(request, { params }) {
     }
 
 
-    /* ===================== ADS MANAGER ===================== */
+    /* ===================== ADS MANAGER v2 (type Google Ads) ===================== */
+    if (route === '/ads/config' && method === 'GET') {
+      return ok(ADS_CONFIG)
+    }
+    if (route === '/ads/keywords' && method === 'GET') {
+      return ok(adKeywordSuggest(url.searchParams.get('q') || ''))
+    }
+    if (route === '/ads/estimate' && method === 'POST') {
+      return ok(estimateReach({
+        dailyBudgetCents: Math.round(body.dailyBudgetCents || 0),
+        bidStrategy: body.bidStrategy || 'cpc',
+        maxBidCents: Math.round(body.maxBidCents || 0),
+        targeting: body.targeting || {},
+      }))
+    }
+    if (route === '/ads/insights' && method === 'GET') {
+      const camps = await db.collection('campaigns').find({ ownerId: me.id }, { projection: { _id: 0 } }).toArray()
+      const tot = camps.reduce((a, c) => ({
+        impressions: a.impressions + (c.impressions || 0), clicks: a.clicks + (c.clicks || 0),
+        spentCents: a.spentCents + (c.spentCents || 0), conversions: a.conversions + (c.conversions || 0),
+        budgetCents: a.budgetCents + (c.budgetCents || 0),
+      }), { impressions: 0, clicks: 0, spentCents: 0, conversions: 0, budgetCents: 0 })
+      // série agrégée par jour (14 jours)
+      const map = {}
+      for (const c of camps) for (const d of (c.daily || [])) {
+        if (!map[d.date]) map[d.date] = { date: d.date, impressions: 0, clicks: 0, spentCents: 0, conversions: 0 }
+        map[d.date].impressions += d.impressions; map[d.date].clicks += d.clicks; map[d.date].spentCents += d.spentCents; map[d.date].conversions += d.conversions
+      }
+      const daily = Object.values(map).sort((a, b) => a.date.localeCompare(b.date)).slice(-14)
+      const top = camps.map(adDerived).sort((a, b) => (b.impressions || 0) - (a.impressions || 0)).slice(0, 5)
+      return ok({
+        totals: { ...tot, ctr: tot.impressions ? +(tot.clicks / tot.impressions * 100).toFixed(2) : 0, cpcCents: tot.clicks ? Math.round(tot.spentCents / tot.clicks) : 0, convRate: tot.clicks ? +(tot.conversions / tot.clicks * 100).toFixed(2) : 0 },
+        daily, top,
+        counts: { total: camps.length, active: camps.filter((c) => c.status === 'active').length, paused: camps.filter((c) => c.status === 'paused').length },
+      })
+    }
+
     if (route === '/ads/campaigns' && method === 'POST') {
       const budgetCents = Math.round(body.budgetCents || 0)
       if (budgetCents <= 0) return err('Budget invalide')
       const wallet = await db.collection('wallets').findOne({ userId: me.id })
       if (!wallet || wallet.balanceCents < budgetCents) return err('Solde insuffisant pour financer la campagne', 402)
       await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: -budgetCents } })
+      const typeDef = ADS_CONFIG.types.find((t) => t.id === body.type) || ADS_CONFIG.types[0]
       const camp = {
-        id: uuidv4(), ownerId: me.id, name: body.name || 'Campagne', objective: body.objective || 'Notoriété',
+        id: uuidv4(), ownerId: me.id, name: body.name || 'Campagne',
+        type: typeDef.id, objective: body.objective || 'awareness',
         brand: body.brand || me.name, brandHandle: me.handle,
-        audience: body.audience || { interests: [], age: 'Tous', locations: ['France'] },
-        budgetCents, spentCents: 0, impressions: 0, clicks: 0,
-        creative: {
-          headline: body.creative?.headline || 'Découvre DIVARC', body: body.creative?.body || '',
-          cta: body.creative?.cta || 'En savoir plus', emoji: body.creative?.emoji || '📣',
-          mediaUrl: body.creative?.mediaUrl || null, priceCents: body.creative?.priceCents || null,
+        budgetCents, budgetType: body.budgetType === 'daily' ? 'daily' : 'total',
+        dailyBudgetCents: Math.round(body.dailyBudgetCents || 0),
+        bidStrategy: body.bidStrategy || typeDef.defaultBid, maxBidCents: Math.round(body.maxBidCents || 45),
+        targetCpaCents: Math.round(body.targetCpaCents || 0),
+        targeting: {
+          locations: body.targeting?.locations || [], radiusKm: body.targeting?.radiusKm || 0,
+          ageRange: body.targeting?.ageRange || [], genders: body.targeting?.genders || ['Tous'],
+          interests: body.targeting?.interests || [], devices: body.targeting?.devices || ADS_CONFIG.devices,
         },
-        color: body.color || '#4353F0', status: 'active', createdAt: new Date(),
+        keywords: Array.isArray(body.keywords) ? body.keywords.map((k) => ({ text: typeof k === 'string' ? k : k.text, matchType: k.matchType || 'broad', bidCents: k.bidCents || Math.round(body.maxBidCents || 45) })) : [],
+        creative: {
+          headline: body.creative?.headline || 'Découvre DIVARC', headline2: body.creative?.headline2 || '',
+          body: body.creative?.body || '', cta: body.creative?.cta || 'En savoir plus', emoji: body.creative?.emoji || '📣',
+          mediaUrl: body.creative?.mediaUrl || null, priceCents: body.creative?.priceCents || null, finalUrl: body.creative?.finalUrl || '',
+        },
+        color: typeDef.color, impressions: 0, clicks: 0, spentCents: 0, conversions: 0, daily: [],
+        status: 'active', createdAt: new Date(),
       }
+      // historique simulé pour analytics immédiates
+      const hist = simulateHistory(camp)
+      camp.daily = hist.daily; camp.impressions = hist.impressions; camp.clicks = hist.clicks; camp.spentCents = hist.spentCents; camp.conversions = hist.conversions
       await db.collection('campaigns').insertOne(camp)
       await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: `Budget pub : ${camp.name}`, category: 'Publicité', amountCents: -budgetCents, carbonKg: 0, icon: '📣', route: null, createdAt: new Date() })
       const updated = await db.collection('wallets').findOne({ userId: me.id }, { projection: { _id: 0 } })
       const { _id, ...clean } = camp
-      return ok({ campaign: clean, balanceCents: updated.balanceCents })
+      return ok({ campaign: adDerived(clean), balanceCents: updated.balanceCents })
     }
 
     if (route === '/ads/campaigns' && method === 'GET') {
       const camps = await db.collection('campaigns').find({ ownerId: me.id }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray()
-      return ok(camps.map((c) => ({ ...c, ctr: c.impressions ? +(c.clicks / c.impressions * 100).toFixed(1) : 0 })))
+      return ok(camps.map(adDerived))
     }
 
     if (route.startsWith('/ads/campaigns/') && path.length === 3 && method === 'GET') {
       const c = await db.collection('campaigns').findOne({ id: path[2], ownerId: me.id }, { projection: { _id: 0 } })
       if (!c) return err('Campagne introuvable', 404)
-      return ok({ ...c, ctr: c.impressions ? +(c.clicks / c.impressions * 100).toFixed(1) : 0 })
+      return ok(adDerived(c))
     }
 
     if (route.startsWith('/ads/campaigns/') && path.length === 3 && method === 'PATCH') {
       const c = await db.collection('campaigns').findOne({ id: path[2], ownerId: me.id })
       if (!c) return err('Campagne introuvable', 404)
-      const status = body.status
-      if (status === 'ended' && c.status !== 'ended') {
-        const refund = Math.max(0, c.budgetCents - (c.spentCents || 0))
-        if (refund > 0) {
-          await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: refund } })
-          await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: `Remboursement pub : ${c.name}`, category: 'Publicité', amountCents: refund, carbonKg: 0, icon: '↩️', route: null, createdAt: new Date() })
+      const set = {}
+      if (body.status) {
+        if (body.status === 'ended' && c.status !== 'ended') {
+          const refund = Math.max(0, c.budgetCents - (c.spentCents || 0))
+          if (refund > 0) {
+            await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: refund } })
+            await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: `Remboursement pub : ${c.name}`, category: 'Publicité', amountCents: refund, carbonKg: 0, icon: '↩️', route: null, createdAt: new Date() })
+          }
         }
+        set.status = body.status
       }
-      await db.collection('campaigns').updateOne({ id: c.id }, { $set: { status } })
+      if (body.name) set.name = body.name
+      if (body.maxBidCents != null) set.maxBidCents = Math.round(body.maxBidCents)
+      if (body.bidStrategy) set.bidStrategy = body.bidStrategy
+      if (body.dailyBudgetCents != null) set.dailyBudgetCents = Math.round(body.dailyBudgetCents)
+      if (body.targeting) set.targeting = { ...c.targeting, ...body.targeting }
+      if (body.creative) set.creative = { ...c.creative, ...body.creative }
+      if (body.keywords) set.keywords = body.keywords
+      await db.collection('campaigns').updateOne({ id: c.id }, { $set: set })
       const updated = await db.collection('campaigns').findOne({ id: c.id }, { projection: { _id: 0 } })
-      return ok(updated)
+      return ok(adDerived(updated))
+    }
+
+    if (route.startsWith('/ads/campaigns/') && path.length === 3 && method === 'DELETE') {
+      const c = await db.collection('campaigns').findOne({ id: path[2], ownerId: me.id })
+      if (!c) return err('Campagne introuvable', 404)
+      if (c.status !== 'ended') {
+        const refund = Math.max(0, c.budgetCents - (c.spentCents || 0))
+        if (refund > 0) { await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: refund } }); await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: `Remboursement pub : ${c.name}`, category: 'Publicité', amountCents: refund, carbonKg: 0, icon: '↩️', route: null, createdAt: new Date() }) }
+      }
+      await db.collection('campaigns').deleteOne({ id: c.id })
+      return ok({ ok: true })
     }
 
     if (route.startsWith('/ads/campaigns/') && path[3] === 'track' && method === 'POST') {
       const c = await db.collection('campaigns').findOne({ id: path[2] })
       if (!c || c.status !== 'active') return ok({ ok: false })
-      const type = body.type === 'click' ? 'click' : 'impression'
-      const cost = type === 'click' ? 25 : 3
-      const newSpent = (c.spentCents || 0) + cost
-      const capped = Math.min(newSpent, c.budgetCents)
-      const set = { spentCents: capped }
-      if (capped >= c.budgetCents) set.status = 'ended'
-      const inc = type === 'click' ? { clicks: 1 } : { impressions: 1 }
+      const type = ['click', 'conversion'].includes(body.type) ? body.type : 'impression'
+      const cpc = c.maxBidCents || 45
+      const cost = type === 'click' ? cpc : type === 'conversion' ? 0 : Math.max(1, Math.round((c.bidStrategy === 'cpm' ? (c.maxBidCents || 500) : 550) / 1000))
+      const newSpent = Math.min((c.spentCents || 0) + cost, c.budgetCents)
+      const set = { spentCents: newSpent }
+      if (newSpent >= c.budgetCents) set.status = 'ended'
+      const inc = type === 'click' ? { clicks: 1 } : type === 'conversion' ? { conversions: 1 } : { impressions: 1 }
+      // maj de la série du jour
+      const today = new Date().toISOString().slice(0, 10)
+      const daily = Array.isArray(c.daily) ? [...c.daily] : []
+      let td = daily.find((d) => d.date === today)
+      if (!td) { td = { date: today, impressions: 0, clicks: 0, spentCents: 0, conversions: 0 }; daily.push(td) }
+      td.impressions += type === 'impression' ? 1 : 0; td.clicks += type === 'click' ? 1 : 0; td.conversions += type === 'conversion' ? 1 : 0; td.spentCents += cost
+      set.daily = daily
       await db.collection('campaigns').updateOne({ id: c.id }, { $set: set, $inc: inc })
       return ok({ ok: true })
     }
+
 
     /* ===================== APP STORE ===================== */
     await ensureAppStoreSeed(db)

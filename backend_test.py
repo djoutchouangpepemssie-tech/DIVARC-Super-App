@@ -1,705 +1,1013 @@
 #!/usr/bin/env python3
 """
-PHASE 8 Marketplace v2 Backend Testing
-Tests all marketplace endpoints with categories, filters, geo, upload, chat & offers
+DIVARC Backend Test Suite - PHASE 9: Ads Manager v2 (Google Ads-like)
+Tests all Ads Manager v2 endpoints with comprehensive validation
 """
+
 import requests
 import json
 import sys
-import base64
+from typing import Dict, Any, Optional
 
+# Configuration
 BASE_URL = "https://divarc-hub.preview.emergentagent.com/api"
+TEST_USER_EMAIL = "ads9@divarc.fr"
 
-def print_test(name, passed, details=""):
-    status = "✅ PASS" if passed else "❌ FAIL"
-    print(f"{status} - {name}")
-    if details:
-        print(f"  {details}")
-    if not passed:
-        sys.exit(1)
+class Colors:
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    END = '\033[0m'
 
-def get_auth_token(email):
-    """Get Bearer token via OTP flow"""
-    # Send OTP
-    r = requests.post(f"{BASE_URL}/auth/otp/send", json={"email": email})
-    assert r.status_code == 200, f"OTP send failed: {r.text}"
-    data = r.json()
-    code = data.get("previewCode")
-    assert code, "No preview code returned"
-    
-    # Verify OTP
-    r = requests.post(f"{BASE_URL}/auth/otp/verify", json={"email": email, "code": code})
-    assert r.status_code == 200, f"OTP verify failed: {r.text}"
-    data = r.json()
-    return data["token"], data["user"]
+def print_test(msg: str):
+    print(f"{Colors.BLUE}[TEST]{Colors.END} {msg}")
 
-def test_phase8_marketplace():
-    print("\n=== PHASE 8 MARKETPLACE V2 BACKEND TESTS ===\n")
-    
-    # Setup: Get tokens for buyer8 and seller8
-    print("Setting up test users...")
-    buyer_token, buyer_user = get_auth_token("buyer8@divarc.fr")
-    seller_token, seller_user = get_auth_token("seller8@divarc.fr")
-    buyer_headers = {"Authorization": f"Bearer {buyer_token}"}
-    seller_headers = {"Authorization": f"Bearer {seller_token}"}
-    print(f"✓ Buyer: {buyer_user['handle']} (id: {buyer_user['id']})")
-    print(f"✓ Seller: {seller_user['handle']} (id: {seller_user['id']})")
-    
-    # Get initial balances
-    r = requests.get(f"{BASE_URL}/wallet", headers=buyer_headers)
-    buyer_balance_initial = r.json()["balanceCents"]
-    r = requests.get(f"{BASE_URL}/wallet", headers=seller_headers)
-    seller_balance_initial = r.json()["balanceCents"]
-    print(f"✓ Buyer initial balance: {buyer_balance_initial}c")
-    print(f"✓ Seller initial balance: {seller_balance_initial}c\n")
-    
-    # TEST 1: GET /market/categories
-    print("TEST 1: GET /market/categories")
-    r = requests.get(f"{BASE_URL}/market/categories", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    data = r.json()
-    categories = data["categories"]
-    conditions = data["conditions"]
-    
-    assert len(categories) == 8, f"Expected 8 categories, got {len(categories)}"
-    assert len(conditions) > 0, "No conditions returned"
-    
-    # Verify immobilier category
-    immobilier = next((c for c in categories if c["id"] == "immobilier"), None)
-    assert immobilier, "immobilier category not found"
-    assert immobilier["name"] == "Immobilier", f"Wrong name: {immobilier['name']}"
-    assert immobilier["emoji"] == "🏠", f"Wrong emoji: {immobilier['emoji']}"
-    assert immobilier["color"] == "#4353F0", f"Wrong color: {immobilier['color']}"
-    assert "sale" in immobilier["types"] and "rent" in immobilier["types"], "Missing types"
-    assert len(immobilier["subcats"]) > 0, "No subcats"
-    assert len(immobilier["fields"]) > 0, "No fields"
-    
-    # Verify fields include propertyType, surface, rooms
-    field_keys = [f["key"] for f in immobilier["fields"]]
-    assert "propertyType" in field_keys, "propertyType field missing"
-    assert "surface" in field_keys, "surface field missing"
-    assert "rooms" in field_keys, "rooms field missing"
-    
-    # Verify vehicules category
-    vehicules = next((c for c in categories if c["id"] == "vehicules"), None)
-    assert vehicules, "vehicules category not found"
-    assert vehicules["name"] == "Véhicules", f"Wrong name: {vehicules['name']}"
-    vehicules_field_keys = [f["key"] for f in vehicules["fields"]]
-    assert "brand" in vehicules_field_keys, "brand field missing"
-    assert "year" in vehicules_field_keys, "year field missing"
-    assert "mileage" in vehicules_field_keys, "mileage field missing"
-    
-    print_test("GET /market/categories", True, 
-               f"8 categories returned. immobilier has types {immobilier['types']}, fields include propertyType/surface/rooms. vehicules has brand/year/mileage fields.")
-    
-    # TEST 2: GET /market/listings (no filters)
-    print("\nTEST 2: GET /market/listings (no filters)")
-    r = requests.get(f"{BASE_URL}/market/listings", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    listings = r.json()
-    
-    assert len(listings) >= 12, f"Expected ~12 seeded listings, got {len(listings)}"
-    
-    # Verify structure of first listing
-    l = listings[0]
-    required_fields = ["id", "title", "priceCents", "category", "subcategory", "transactionType", 
-                       "condition", "attributes", "images", "city", "lat", "lon", "status", 
-                       "seller", "favorited"]
-    for field in required_fields:
-        assert field in l, f"Missing field: {field}"
-    
-    # Verify seller structure
-    assert "name" in l["seller"], "seller.name missing"
-    assert "handle" in l["seller"], "seller.handle missing"
-    assert "verified" in l["seller"], "seller.verified missing"
-    
-    # Verify images non-empty
-    assert len(l["images"]) > 0, "images array empty"
-    
-    # Verify status is active
-    assert l["status"] == "active", f"Expected status 'active', got {l['status']}"
-    
-    # Find specific listings
-    apartment_sale = next((x for x in listings if x["category"] == "immobilier" and x["transactionType"] == "sale"), None)
-    rental = next((x for x in listings if x["transactionType"] == "rent"), None)
-    car = next((x for x in listings if x["category"] == "vehicules"), None)
-    
-    assert apartment_sale, "No apartment sale listing found"
-    assert rental, "No rental listing found"
-    assert car, "No car listing found"
-    
-    print_test("GET /market/listings (no filters)", True,
-               f"{len(listings)} listings returned. Found apartment sale (id: {apartment_sale['id']}), rental (id: {rental['id']}), car (id: {car['id']}). All have required fields.")
-    
-    # TEST 3: FILTERS
-    print("\nTEST 3: FILTERS")
-    
-    # 3a: cat=immobilier
-    r = requests.get(f"{BASE_URL}/market/listings?cat=immobilier", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    immo_listings = r.json()
-    assert all(x["category"] == "immobilier" for x in immo_listings), "Non-immobilier listing in results"
-    print(f"  ✓ cat=immobilier -> {len(immo_listings)} listings (all immobilier)")
-    
-    # 3b: type=rent
-    r = requests.get(f"{BASE_URL}/market/listings?type=rent", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    rent_listings = r.json()
-    assert all(x["transactionType"] == "rent" for x in rent_listings), "Non-rent listing in results"
-    print(f"  ✓ type=rent -> {len(rent_listings)} listings (all rent)")
-    
-    # 3c: cat=vehicules&subcat=Voitures
-    r = requests.get(f"{BASE_URL}/market/listings?cat=vehicules&subcat=Voitures", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    cars = r.json()
-    assert all(x["category"] == "vehicules" and x["subcategory"] == "Voitures" for x in cars), "Wrong category/subcat"
-    print(f"  ✓ cat=vehicules&subcat=Voitures -> {len(cars)} cars")
-    
-    # 3d: minPrice & maxPrice (cents)
-    r = requests.get(f"{BASE_URL}/market/listings?minPrice=1000000&maxPrice=50000000", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    price_filtered = r.json()
-    assert all(1000000 <= x["priceCents"] <= 50000000 for x in price_filtered), "Price out of range"
-    print(f"  ✓ minPrice=1000000&maxPrice=50000000 -> {len(price_filtered)} listings (all in range)")
-    
-    # 3e: q=guitare (search)
-    r = requests.get(f"{BASE_URL}/market/listings?q=guitare", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    guitar_search = r.json()
-    assert len(guitar_search) > 0, "No guitar listing found"
-    assert any("guitare" in x["title"].lower() for x in guitar_search), "Guitar not in title"
-    print(f"  ✓ q=guitare -> {len(guitar_search)} listings (guitar found)")
-    
-    # 3f: sort=price_asc
-    r = requests.get(f"{BASE_URL}/market/listings?sort=price_asc", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    asc_listings = r.json()
-    prices_asc = [x["priceCents"] for x in asc_listings]
-    assert prices_asc == sorted(prices_asc), "Not sorted ascending"
-    print(f"  ✓ sort=price_asc -> prices: {prices_asc[0]}c to {prices_asc[-1]}c (ascending)")
-    
-    # 3g: sort=price_desc
-    r = requests.get(f"{BASE_URL}/market/listings?sort=price_desc", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    desc_listings = r.json()
-    prices_desc = [x["priceCents"] for x in desc_listings]
-    assert prices_desc == sorted(prices_desc, reverse=True), "Not sorted descending"
-    print(f"  ✓ sort=price_desc -> prices: {prices_desc[0]}c to {prices_desc[-1]}c (descending)")
-    
-    # 3h: GEO filter (Paris coords)
-    r = requests.get(f"{BASE_URL}/market/listings?lat=48.8566&lon=2.3522&radiusKm=10", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    geo_listings = r.json()
-    assert all("distanceKm" in x for x in geo_listings), "distanceKm field missing"
-    assert all(x["distanceKm"] <= 10 for x in geo_listings if x["distanceKm"] is not None), "Listing outside radius"
-    print(f"  ✓ lat=48.8566&lon=2.3522&radiusKm=10 -> {len(geo_listings)} listings (all <=10km)")
-    
-    # 3i: sort=distance with lat/lon
-    r = requests.get(f"{BASE_URL}/market/listings?lat=48.8566&lon=2.3522&sort=distance", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    dist_sorted = r.json()
-    distances = [x["distanceKm"] for x in dist_sorted if x["distanceKm"] is not None]
-    assert distances == sorted(distances), "Not sorted by distance"
-    print(f"  ✓ sort=distance with lat/lon -> distances: {distances[:3]} (nearest first)")
-    
-    print_test("FILTERS", True, "All filters working correctly (cat, type, subcat, price, search, sort, geo)")
-    
-    # TEST 4: IMAGE UPLOAD
-    print("\nTEST 4: IMAGE UPLOAD")
-    
-    # Create a tiny 1x1 PNG
-    tiny_png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-    data_url = f"data:image/png;base64,{tiny_png_b64}"
-    
-    r = requests.post(f"{BASE_URL}/market/upload", headers=seller_headers, json={"data": data_url})
-    assert r.status_code == 200, f"Upload failed: {r.text}"
-    upload_data = r.json()
-    assert "id" in upload_data, "No id returned"
-    assert "url" in upload_data, "No url returned"
-    image_id = upload_data["id"]
-    image_url = upload_data["url"]
-    assert image_url == f"/api/market/image/{image_id}", f"Wrong URL format: {image_url}"
-    print(f"  ✓ POST /market/upload -> id: {image_id}, url: {image_url}")
-    
-    # GET image WITHOUT auth (public)
-    r = requests.get(f"{BASE_URL}/market/image/{image_id}")  # No headers
-    assert r.status_code == 200, f"Public image GET failed: {r.status_code}"
-    assert "image" in r.headers.get("Content-Type", ""), f"Wrong content type: {r.headers.get('Content-Type')}"
-    print(f"  ✓ GET /market/image/{image_id} (no auth) -> 200, Content-Type: {r.headers.get('Content-Type')}")
-    
-    # GET bogus image id
-    r = requests.get(f"{BASE_URL}/market/image/bogus-id-12345")
-    assert r.status_code == 404, f"Expected 404, got {r.status_code}"
-    print(f"  ✓ GET /market/image/bogus-id -> 404")
-    
-    print_test("IMAGE UPLOAD", True, "Upload works, public GET returns image, bogus id returns 404")
-    
-    # TEST 5: CREATE LISTING
-    print("\nTEST 5: CREATE LISTING")
-    
-    new_listing = {
-        "title": "Test T2 Lyon",
-        "description": "Appartement test pour validation",
-        "priceCents": 25000000,
-        "category": "immobilier",
-        "subcategory": "Ventes immobilières",
-        "transactionType": "sale",
-        "condition": "Bon état",
-        "attributes": {
-            "surface": 45,
-            "rooms": 2,
-            "furnished": False
-        },
-        "images": [image_url],
-        "city": "Lyon",
-        "lat": 45.764,
-        "lon": 4.8357
-    }
-    
-    r = requests.post(f"{BASE_URL}/market/listings", headers=seller_headers, json=new_listing)
-    assert r.status_code == 200, f"Create listing failed: {r.text}"
-    created_listing = r.json()
-    assert "id" in created_listing, "No id returned"
-    assert created_listing["sellerId"] == seller_user["id"], f"Wrong sellerId: {created_listing['sellerId']}"
-    assert created_listing["title"] == "Test T2 Lyon", f"Wrong title: {created_listing['title']}"
-    assert created_listing["priceCents"] == 25000000, f"Wrong price: {created_listing['priceCents']}"
-    listing_id = created_listing["id"]
-    print(f"  ✓ POST /market/listings -> id: {listing_id}, sellerId: {created_listing['sellerId']}")
-    
-    # Verify it appears in listings
-    r = requests.get(f"{BASE_URL}/market/listings", headers=buyer_headers)
-    all_listings = r.json()
-    assert any(x["id"] == listing_id for x in all_listings), "Created listing not in listings"
-    print(f"  ✓ Created listing appears in GET /market/listings")
-    
-    print_test("CREATE LISTING", True, f"Seller created listing {listing_id}, appears in listings")
-    
-    # TEST 6: DETAIL
-    print("\nTEST 6: DETAIL")
-    
-    # Get detail (first time, views should increment)
-    r = requests.get(f"{BASE_URL}/market/listings/{listing_id}", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    detail = r.json()
-    assert "isMine" in detail, "isMine field missing"
-    assert "similar" in detail, "similar field missing"
-    assert detail["isMine"] == False, "isMine should be False for buyer"
-    assert "views" in detail, "views field missing"
-    # Note: views field exists (backend increments in DB, but returns old object - minor issue)
-    print(f"  ✓ GET /market/listings/{listing_id} (buyer) -> isMine: False, views: {detail['views']}, similar: {len(detail['similar'])} listings")
-    
-    # Get detail as seller (isMine should be True)
-    r = requests.get(f"{BASE_URL}/market/listings/{listing_id}", headers=seller_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    seller_detail = r.json()
-    assert seller_detail["isMine"] == True, "isMine should be True for seller"
-    print(f"  ✓ GET /market/listings/{listing_id} (seller) -> isMine: True")
-    
-    print_test("DETAIL", True, "Detail endpoint returns isMine flag, similar listings, views increment")
-    
-    # TEST 7: DELETE
-    print("\nTEST 7: DELETE")
-    
-    # Buyer tries to delete seller's listing (should fail)
-    r = requests.delete(f"{BASE_URL}/market/listings/{listing_id}", headers=buyer_headers)
-    assert r.status_code == 403, f"Expected 403, got {r.status_code}"
-    print(f"  ✓ Buyer DELETE seller's listing -> 403 (not owner)")
-    
-    # Create a listing for buyer to delete
-    buyer_listing = {
-        "title": "Buyer Test Item",
-        "description": "To be deleted",
-        "priceCents": 1000,
-        "category": "maison",
-        "subcategory": "Ameublement",
-        "transactionType": "sale",
-        "condition": "Bon état",
-        "attributes": {},
-        "images": [image_url],
-        "city": "Paris",
-        "lat": 48.8566,
-        "lon": 2.3522
-    }
-    r = requests.post(f"{BASE_URL}/market/listings", headers=buyer_headers, json=buyer_listing)
-    buyer_listing_id = r.json()["id"]
-    
-    # Buyer deletes own listing
-    r = requests.delete(f"{BASE_URL}/market/listings/{buyer_listing_id}", headers=buyer_headers)
-    assert r.status_code == 200, f"Delete failed: {r.text}"
-    assert r.json()["ok"] == True, "ok not True"
-    print(f"  ✓ Buyer DELETE own listing -> 200, ok: True")
-    
-    # Verify it's removed
-    r = requests.get(f"{BASE_URL}/market/listings/{buyer_listing_id}", headers=buyer_headers)
-    assert r.status_code == 404, f"Expected 404, got {r.status_code}"
-    print(f"  ✓ Deleted listing returns 404")
-    
-    print_test("DELETE", True, "Owner can delete, non-owner gets 403")
-    
-    # TEST 8: FAVORITE
-    print("\nTEST 8: FAVORITE")
-    
-    # Toggle favorite on
-    r = requests.post(f"{BASE_URL}/market/listings/{listing_id}/favorite", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    fav_data = r.json()
-    assert fav_data["favorited"] == True, "favorited should be True"
-    assert fav_data["favorites"] >= 1, f"favorites count should be >= 1, got {fav_data['favorites']}"
-    print(f"  ✓ POST /market/listings/{listing_id}/favorite -> favorited: True, favorites: {fav_data['favorites']}")
-    
-    # Toggle favorite off
-    r = requests.post(f"{BASE_URL}/market/listings/{listing_id}/favorite", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    unfav_data = r.json()
-    assert unfav_data["favorited"] == False, "favorited should be False"
-    assert unfav_data["favorites"] == fav_data["favorites"] - 1, "favorites count should decrease by 1"
-    print(f"  ✓ POST /market/listings/{listing_id}/favorite (again) -> favorited: False, favorites: {unfav_data['favorites']}")
-    
-    print_test("FAVORITE", True, "Toggle works correctly (favorited: True/False, count +1/-1)")
-    
-    # TEST 9: BUY (money flow)
-    print("\nTEST 9: BUY (money flow)")
-    
-    # Create a cheap listing for testing
-    cheap_listing = {
-        "title": "Cheap Test Item",
-        "description": "For buy test",
-        "priceCents": 5000,
-        "category": "maison",
-        "subcategory": "Ameublement",
-        "transactionType": "sale",
-        "condition": "Bon état",
-        "attributes": {},
-        "images": [image_url],
-        "city": "Paris",
-        "lat": 48.8566,
-        "lon": 2.3522
-    }
-    r = requests.post(f"{BASE_URL}/market/listings", headers=seller_headers, json=cheap_listing)
-    cheap_id = r.json()["id"]
-    print(f"  ✓ Created cheap listing {cheap_id} (5000c)")
-    
-    # Get balances before
-    r = requests.get(f"{BASE_URL}/wallet", headers=buyer_headers)
-    buyer_before = r.json()["balanceCents"]
-    r = requests.get(f"{BASE_URL}/wallet", headers=seller_headers)
-    seller_before = r.json()["balanceCents"]
-    print(f"  ✓ Before: buyer={buyer_before}c, seller={seller_before}c")
-    
-    # Buyer buys the listing
-    r = requests.post(f"{BASE_URL}/market/listings/{cheap_id}/buy", headers=buyer_headers, json={})
-    assert r.status_code == 200, f"Buy failed: {r.text}"
-    buy_data = r.json()
-    assert buy_data["ok"] == True, "ok not True"
-    buyer_after = buy_data["balanceCents"]
-    print(f"  ✓ POST /market/listings/{cheap_id}/buy -> ok: True")
-    
-    # Get seller balance after
-    r = requests.get(f"{BASE_URL}/wallet", headers=seller_headers)
-    seller_after = r.json()["balanceCents"]
-    print(f"  ✓ After: buyer={buyer_after}c, seller={seller_after}c")
-    
-    # Verify money flow
-    assert buyer_after == buyer_before - 5000, f"Buyer balance wrong: {buyer_after} != {buyer_before - 5000}"
-    assert seller_after == seller_before + 5000, f"Seller balance wrong: {seller_after} != {seller_before + 5000}"
-    print(f"  ✓ Money flow verified: buyer -5000c, seller +5000c")
-    
-    # Verify listing status changed to 'sold'
-    r = requests.get(f"{BASE_URL}/market/listings/{cheap_id}", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    sold_listing = r.json()
-    assert sold_listing["status"] == "sold", f"Status should be 'sold', got {sold_listing['status']}"
-    print(f"  ✓ Listing status: {sold_listing['status']}")
-    
-    # Try to buy again (should fail with 410)
-    r = requests.post(f"{BASE_URL}/market/listings/{cheap_id}/buy", headers=buyer_headers, json={})
-    assert r.status_code == 410, f"Expected 410, got {r.status_code}"
-    print(f"  ✓ Buying again -> 410 (already sold)")
-    
-    # Test buying own listing (should fail with 400)
-    r = requests.post(f"{BASE_URL}/market/listings/{listing_id}/buy", headers=seller_headers, json={})
-    assert r.status_code == 400, f"Expected 400, got {r.status_code}"
-    print(f"  ✓ Seller buying own listing -> 400")
-    
-    # Test insufficient balance
-    expensive_listing = {
-        "title": "Expensive Item",
-        "description": "Too expensive",
-        "priceCents": 99999999999,
-        "category": "maison",
-        "subcategory": "Ameublement",
-        "transactionType": "sale",
-        "condition": "Bon état",
-        "attributes": {},
-        "images": [image_url],
-        "city": "Paris",
-        "lat": 48.8566,
-        "lon": 2.3522
-    }
-    r = requests.post(f"{BASE_URL}/market/listings", headers=seller_headers, json=expensive_listing)
-    expensive_id = r.json()["id"]
-    
-    r = requests.post(f"{BASE_URL}/market/listings/{expensive_id}/buy", headers=buyer_headers, json={})
-    assert r.status_code == 402, f"Expected 402, got {r.status_code}"
-    print(f"  ✓ Insufficient balance -> 402")
-    
-    # Test negotiated price
-    negotiated_listing = {
-        "title": "Negotiable Item",
-        "description": "Can negotiate",
-        "priceCents": 10000,
-        "category": "maison",
-        "subcategory": "Ameublement",
-        "transactionType": "sale",
-        "condition": "Bon état",
-        "attributes": {},
-        "images": [image_url],
-        "city": "Paris",
-        "lat": 48.8566,
-        "lon": 2.3522
-    }
-    r = requests.post(f"{BASE_URL}/market/listings", headers=seller_headers, json=negotiated_listing)
-    negotiated_id = r.json()["id"]
-    
-    r = requests.get(f"{BASE_URL}/wallet", headers=buyer_headers)
-    buyer_before_neg = r.json()["balanceCents"]
-    
-    # Buy with lower negotiated price
-    r = requests.post(f"{BASE_URL}/market/listings/{negotiated_id}/buy", headers=buyer_headers, json={"priceCents": 7000})
-    assert r.status_code == 200, f"Negotiated buy failed: {r.text}"
-    buyer_after_neg = r.json()["balanceCents"]
-    
-    assert buyer_after_neg == buyer_before_neg - 7000, f"Negotiated price not applied: {buyer_after_neg} != {buyer_before_neg - 7000}"
-    print(f"  ✓ Negotiated price: bought 10000c item for 7000c (buyer balance: {buyer_before_neg} -> {buyer_after_neg})")
-    
-    print_test("BUY (money flow)", True, 
-               f"Money flow verified (buyer -{5000}c, seller +{5000}c). Status changed to 'sold'. Buying again -> 410. Own listing -> 400. Insufficient -> 402. Negotiated price works.")
-    
-    # TEST 10: CHAT & OFFERS
-    print("\nTEST 10: CHAT & OFFERS")
-    
-    # 10a: Start chat (buyer with seller's listing)
-    r = requests.post(f"{BASE_URL}/market/listings/{listing_id}/chat", headers=buyer_headers, json={"text": "Dispo?"})
-    assert r.status_code == 200, f"Chat start failed: {r.text}"
-    chat_data = r.json()
-    assert "thread" in chat_data, "thread not in response"
-    thread = chat_data["thread"]
-    assert "id" in thread, "thread.id missing"
-    assert thread["listingId"] == listing_id, f"Wrong listingId: {thread['listingId']}"
-    assert thread["buyerId"] == buyer_user["id"], f"Wrong buyerId: {thread['buyerId']}"
-    assert thread["sellerId"] == seller_user["id"], f"Wrong sellerId: {thread['sellerId']}"
-    thread_id = thread["id"]
-    print(f"  ✓ POST /market/listings/{listing_id}/chat -> thread id: {thread_id}")
-    
-    # Try to start chat on own listing (should fail)
-    r = requests.post(f"{BASE_URL}/market/listings/{listing_id}/chat", headers=seller_headers, json={"text": "Test"})
-    assert r.status_code == 400, f"Expected 400, got {r.status_code}"
-    print(f"  ✓ Starting chat on own listing -> 400")
-    
-    # 10b: GET /market/threads (buyer)
-    r = requests.get(f"{BASE_URL}/market/threads", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    buyer_threads = r.json()
-    assert len(buyer_threads) > 0, "No threads returned"
-    buyer_thread = next((t for t in buyer_threads if t["id"] == thread_id), None)
-    assert buyer_thread, "Thread not found in buyer's threads"
-    assert buyer_thread["role"] == "buyer", f"Wrong role: {buyer_thread['role']}"
-    assert "other" in buyer_thread, "other field missing"
-    assert buyer_thread["other"]["id"] == seller_user["id"], f"Wrong other.id: {buyer_thread['other']['id']}"
-    print(f"  ✓ GET /market/threads (buyer) -> role: 'buyer', other: {buyer_thread['other']['handle']}")
-    
-    # GET /market/threads (seller)
-    r = requests.get(f"{BASE_URL}/market/threads", headers=seller_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    seller_threads = r.json()
-    seller_thread = next((t for t in seller_threads if t["id"] == thread_id), None)
-    assert seller_thread, "Thread not found in seller's threads"
-    assert seller_thread["role"] == "seller", f"Wrong role: {seller_thread['role']}"
-    assert seller_thread["other"]["id"] == buyer_user["id"], f"Wrong other.id: {seller_thread['other']['id']}"
-    print(f"  ✓ GET /market/threads (seller) -> role: 'seller', other: {seller_thread['other']['handle']}")
-    
-    # 10c: GET /market/threads/:id/messages
-    r = requests.get(f"{BASE_URL}/market/threads/{thread_id}/messages", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    msg_data = r.json()
-    assert "thread" in msg_data, "thread not in response"
-    assert "messages" in msg_data, "messages not in response"
-    assert "other" in msg_data, "other not in response"
-    assert "listing" in msg_data, "listing not in response"
-    messages = msg_data["messages"]
-    assert len(messages) >= 1, "No messages returned"
-    assert messages[0]["text"] == "Dispo?", f"Wrong message text: {messages[0]['text']}"
-    print(f"  ✓ GET /market/threads/{thread_id}/messages -> {len(messages)} messages, initial text: '{messages[0]['text']}'")
-    
-    # 10d: POST /market/threads/:id/messages
-    r = requests.post(f"{BASE_URL}/market/threads/{thread_id}/messages", headers=seller_headers, json={"text": "Bonjour"})
-    assert r.status_code == 200, f"Failed: {r.text}"
-    new_msg = r.json()
-    assert new_msg["text"] == "Bonjour", f"Wrong text: {new_msg['text']}"
-    assert new_msg["senderId"] == seller_user["id"], f"Wrong senderId: {new_msg['senderId']}"
-    print(f"  ✓ POST /market/threads/{thread_id}/messages -> message created")
-    
-    # Verify message appears in GET
-    r = requests.get(f"{BASE_URL}/market/threads/{thread_id}/messages", headers=buyer_headers)
-    messages = r.json()["messages"]
-    assert len(messages) >= 2, "New message not in list"
-    assert any(m["text"] == "Bonjour" for m in messages), "Bonjour message not found"
-    print(f"  ✓ New message appears in GET /market/threads/{thread_id}/messages")
-    
-    # 10e: OFFER - buyer makes offer
-    r = requests.post(f"{BASE_URL}/market/threads/{thread_id}/offer", headers=buyer_headers, json={"amountCents": 2000000})
-    assert r.status_code == 200, f"Offer failed: {r.text}"
-    offer_msg = r.json()
-    assert offer_msg["type"] == "offer", f"Wrong type: {offer_msg['type']}"
-    assert offer_msg["amountCents"] == 2000000, f"Wrong amount: {offer_msg['amountCents']}"
-    assert offer_msg["offerStatus"] == "pending", f"Wrong status: {offer_msg['offerStatus']}"
-    offer_id = offer_msg["offerId"]
-    print(f"  ✓ POST /market/threads/{thread_id}/offer -> offerId: {offer_id}, amountCents: 2000000, status: pending")
-    
-    # 10f: RESPOND - buyer tries to respond to own offer (should fail)
-    r = requests.post(f"{BASE_URL}/market/threads/{thread_id}/offer/{offer_id}/respond", headers=buyer_headers, json={"action": "accept"})
-    assert r.status_code == 400, f"Expected 400, got {r.status_code}"
-    print(f"  ✓ Buyer responding to own offer -> 400")
-    
-    # Seller accepts offer
-    r = requests.post(f"{BASE_URL}/market/threads/{thread_id}/offer/{offer_id}/respond", headers=seller_headers, json={"action": "accept"})
-    assert r.status_code == 200, f"Respond failed: {r.text}"
-    respond_data = r.json()
-    assert respond_data["offerStatus"] == "accepted", f"Wrong status: {respond_data['offerStatus']}"
-    print(f"  ✓ POST /market/threads/{thread_id}/offer/{offer_id}/respond (seller, accept) -> status: accepted")
-    
-    # Verify system message added
-    r = requests.get(f"{BASE_URL}/market/threads/{thread_id}/messages", headers=buyer_headers)
-    messages = r.json()["messages"]
-    system_msg = next((m for m in messages if m.get("type") == "system"), None)
-    assert system_msg, "System message not found"
-    assert "acceptée" in system_msg["text"].lower(), f"Wrong system message: {system_msg['text']}"
-    print(f"  ✓ System message added: '{system_msg['text']}'")
-    
-    # Verify thread.acceptedPriceCents set
-    r = requests.get(f"{BASE_URL}/market/threads/{thread_id}/messages", headers=buyer_headers)
-    thread_data = r.json()["thread"]
-    assert "acceptedPriceCents" in thread_data, "acceptedPriceCents not set"
-    assert thread_data["acceptedPriceCents"] == 2000000, f"Wrong acceptedPriceCents: {thread_data['acceptedPriceCents']}"
-    print(f"  ✓ thread.acceptedPriceCents set to 2000000")
-    
-    # Make another offer and reject it
-    r = requests.post(f"{BASE_URL}/market/threads/{thread_id}/offer", headers=buyer_headers, json={"amountCents": 1500000})
-    offer2_id = r.json()["offerId"]
-    
-    r = requests.post(f"{BASE_URL}/market/threads/{thread_id}/offer/{offer2_id}/respond", headers=seller_headers, json={"action": "reject"})
-    assert r.status_code == 200, f"Reject failed: {r.text}"
-    reject_data = r.json()
-    assert reject_data["offerStatus"] == "rejected", f"Wrong status: {reject_data['offerStatus']}"
-    print(f"  ✓ Second offer rejected -> status: rejected")
-    
-    print_test("CHAT & OFFERS", True,
-               "Chat thread created, messages work, offers created with pending status, seller accepts/rejects, system messages added, acceptedPriceCents set")
-    
-    # TEST 11: GET /market/mine
-    print("\nTEST 11: GET /market/mine")
-    
-    # Seller's mine
-    r = requests.get(f"{BASE_URL}/market/mine", headers=seller_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    seller_mine = r.json()
-    assert "selling" in seller_mine, "selling not in response"
-    assert "purchases" in seller_mine, "purchases not in response"
-    assert "favorites" in seller_mine, "favorites not in response"
-    
-    # Verify seller has listings
-    assert len(seller_mine["selling"]) > 0, "No selling listings"
-    assert any(l["id"] == listing_id for l in seller_mine["selling"]), "Created listing not in selling"
-    print(f"  ✓ Seller GET /market/mine -> {len(seller_mine['selling'])} selling, {len(seller_mine['purchases'])} purchases, {len(seller_mine['favorites'])} favorites")
-    
-    # Buyer's mine
-    r = requests.get(f"{BASE_URL}/market/mine", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.text}"
-    buyer_mine = r.json()
-    
-    # Verify buyer has purchases
-    assert len(buyer_mine["purchases"]) > 0, "No purchases"
-    print(f"  ✓ Buyer GET /market/mine -> {len(buyer_mine['selling'])} selling, {len(buyer_mine['purchases'])} purchases, {len(buyer_mine['favorites'])} favorites")
-    
-    print_test("GET /market/mine", True, "Returns selling, purchases, favorites for both buyer and seller")
-    
-    # TEST 12: AUTH
-    print("\nTEST 12: AUTH")
-    
-    # Test endpoints without Bearer token
-    endpoints = [
-        ("GET", "/market/categories"),
-        ("GET", "/market/listings"),
-        ("GET", "/geo/autocomplete?q=Paris"),
-    ]
-    
-    for method, endpoint in endpoints:
-        if method == "GET":
-            r = requests.get(f"{BASE_URL}{endpoint}")
-        else:
-            r = requests.post(f"{BASE_URL}{endpoint}", json={})
+def print_pass(msg: str):
+    print(f"{Colors.GREEN}✅ PASS{Colors.END} - {msg}")
+
+def print_fail(msg: str):
+    print(f"{Colors.RED}❌ FAIL{Colors.END} - {msg}")
+
+def print_info(msg: str):
+    print(f"{Colors.YELLOW}ℹ INFO{Colors.END} - {msg}")
+
+class APIClient:
+    def __init__(self, base_url: str):
+        self.base_url = base_url
+        self.token: Optional[str] = None
+        self.user: Optional[Dict[str, Any]] = None
+
+    def auth_otp_send(self, email: str) -> Dict[str, Any]:
+        """Send OTP code"""
+        resp = requests.post(f"{self.base_url}/auth/otp/send", json={"email": email})
+        return resp.json()
+
+    def auth_otp_verify(self, email: str, code: str) -> Dict[str, Any]:
+        """Verify OTP and get token"""
+        resp = requests.post(f"{self.base_url}/auth/otp/verify", json={"email": email, "code": code})
+        data = resp.json()
+        if "token" in data:
+            self.token = data["token"]
+            self.user = data.get("user")
+        return data
+
+    def get(self, path: str, **kwargs) -> requests.Response:
+        """GET request with auth"""
+        headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        return requests.get(f"{self.base_url}{path}", headers=headers, **kwargs)
+
+    def post(self, path: str, json_data: Optional[Dict] = None, **kwargs) -> requests.Response:
+        """POST request with auth"""
+        headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        return requests.post(f"{self.base_url}{path}", json=json_data, headers=headers, **kwargs)
+
+    def patch(self, path: str, json_data: Optional[Dict] = None, **kwargs) -> requests.Response:
+        """PATCH request with auth"""
+        headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        return requests.patch(f"{self.base_url}{path}", json=json_data, headers=headers, **kwargs)
+
+    def delete(self, path: str, **kwargs) -> requests.Response:
+        """DELETE request with auth"""
+        headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        return requests.delete(f"{self.base_url}{path}", headers=headers, **kwargs)
+
+    def get_wallet(self) -> Dict[str, Any]:
+        """Get wallet balance"""
+        resp = self.get("/wallet")
+        return resp.json()
+
+def test_phase9_ads_manager_v2():
+    """Test PHASE 9: Ads Manager v2 (Google Ads-like)"""
+    client = APIClient(BASE_URL)
+    
+    print("\n" + "="*80)
+    print("PHASE 9: ADS MANAGER V2 (Google Ads-like) - Backend Testing")
+    print("="*80 + "\n")
+
+    # ========== AUTH SETUP ==========
+    print_test("Setting up authentication for ads9@divarc.fr")
+    try:
+        send_resp = client.auth_otp_send(TEST_USER_EMAIL)
+        if not send_resp.get("ok"):
+            print_fail(f"OTP send failed: {send_resp}")
+            return False
         
-        assert r.status_code == 401, f"{method} {endpoint} without auth should return 401, got {r.status_code}"
-        print(f"  ✓ {method} {endpoint} (no auth) -> 401")
-    
-    print_test("AUTH", True, "All /market/* and /geo/* endpoints require Bearer token (401 without)")
-    
-    # TEST 13: GEO ENDPOINTS
-    print("\nTEST 13: GEO ENDPOINTS")
-    
-    # Note: These call external OpenStreetMap Nominatim (GEOAPIFY_API_KEY not set)
-    # Network dependent - may return empty but should not crash
-    
-    # GET /geo/autocomplete
-    r = requests.get(f"{BASE_URL}/geo/autocomplete?q=Paris", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.status_code}"
-    autocomplete_data = r.json()
-    assert isinstance(autocomplete_data, list), "Response should be array"
-    if len(autocomplete_data) > 0:
-        item = autocomplete_data[0]
-        assert "label" in item, "label missing"
-        assert "city" in item, "city missing"
-        assert "lat" in item, "lat missing"
-        assert "lon" in item, "lon missing"
-        print(f"  ✓ GET /geo/autocomplete?q=Paris -> {len(autocomplete_data)} results (network available)")
-    else:
-        print(f"  ⚠ GET /geo/autocomplete?q=Paris -> [] (network limitation or no results)")
-    
-    # Test with <3 chars (should return empty)
-    r = requests.get(f"{BASE_URL}/geo/autocomplete?q=Pa", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.status_code}"
-    short_data = r.json()
-    assert len(short_data) == 0, f"Expected empty array for <3 chars, got {len(short_data)} results"
-    print(f"  ✓ GET /geo/autocomplete?q=Pa (<3 chars) -> []")
-    
-    # GET /geo/reverse
-    r = requests.get(f"{BASE_URL}/geo/reverse?lat=48.8566&lon=2.3522", headers=buyer_headers)
-    assert r.status_code == 200, f"Failed: {r.status_code}"
-    reverse_data = r.json()
-    assert isinstance(reverse_data, dict), "Response should be object"
-    assert "city" in reverse_data, "city missing"
-    assert "lat" in reverse_data, "lat missing"
-    assert "lon" in reverse_data, "lon missing"
-    if reverse_data.get("city"):
-        print(f"  ✓ GET /geo/reverse?lat=48.8566&lon=2.3522 -> city: {reverse_data['city']} (network available)")
-    else:
-        print(f"  ⚠ GET /geo/reverse?lat=48.8566&lon=2.3522 -> city: '' (network limitation)")
-    
-    print_test("GEO ENDPOINTS", True, 
-               "Endpoints respond without crashing. Network-dependent results (using Nominatim fallback). Not a critical failure if empty due to network limitations.")
-    
-    print("\n" + "="*60)
-    print("ALL PHASE 8 MARKETPLACE V2 BACKEND TESTS PASSED ✅")
-    print("="*60)
+        code = send_resp.get("previewCode")
+        if not code:
+            print_fail("No preview code returned")
+            return False
+        
+        verify_resp = client.auth_otp_verify(TEST_USER_EMAIL, code)
+        if "token" not in verify_resp:
+            print_fail(f"OTP verify failed: {verify_resp}")
+            return False
+        
+        print_pass(f"Authenticated as {client.user.get('handle')} with token")
+    except Exception as e:
+        print_fail(f"Auth setup failed: {e}")
+        return False
+
+    # ========== TEST 1: GET /ads/config ==========
+    print_test("TEST 1: GET /ads/config - returns types, objectives, bidStrategies, interests, devices, ageRanges, genders")
+    try:
+        resp = client.get("/ads/config")
+        if resp.status_code != 200:
+            print_fail(f"Status {resp.status_code}: {resp.text}")
+            return False
+        
+        config = resp.json()
+        
+        # Verify types (4: search/display/video/shopping)
+        if "types" not in config or len(config["types"]) != 4:
+            print_fail(f"Expected 4 types, got {len(config.get('types', []))}")
+            return False
+        
+        type_ids = [t["id"] for t in config["types"]]
+        expected_types = ["search", "display", "video", "shopping"]
+        if type_ids != expected_types:
+            print_fail(f"Expected types {expected_types}, got {type_ids}")
+            return False
+        
+        # Verify each type has required fields
+        for t in config["types"]:
+            if not all(k in t for k in ["id", "name", "emoji", "color", "desc", "defaultBid"]):
+                print_fail(f"Type {t.get('id')} missing required fields")
+                return False
+        
+        # Verify objectives (5)
+        if "objectives" not in config or len(config["objectives"]) != 5:
+            print_fail(f"Expected 5 objectives, got {len(config.get('objectives', []))}")
+            return False
+        
+        # Verify bidStrategies (4: cpc/cpm/maximize/target_cpa)
+        if "bidStrategies" not in config or len(config["bidStrategies"]) != 4:
+            print_fail(f"Expected 4 bidStrategies, got {len(config.get('bidStrategies', []))}")
+            return False
+        
+        bid_ids = [b["id"] for b in config["bidStrategies"]]
+        expected_bids = ["cpc", "cpm", "maximize", "target_cpa"]
+        if bid_ids != expected_bids:
+            print_fail(f"Expected bidStrategies {expected_bids}, got {bid_ids}")
+            return False
+        
+        # Verify interests (array)
+        if "interests" not in config or not isinstance(config["interests"], list) or len(config["interests"]) == 0:
+            print_fail(f"Expected non-empty interests array")
+            return False
+        
+        # Verify devices (3)
+        if "devices" not in config or len(config["devices"]) != 3:
+            print_fail(f"Expected 3 devices, got {len(config.get('devices', []))}")
+            return False
+        
+        # Verify ageRanges (6)
+        if "ageRanges" not in config or len(config["ageRanges"]) != 6:
+            print_fail(f"Expected 6 ageRanges, got {len(config.get('ageRanges', []))}")
+            return False
+        
+        # Verify genders (3)
+        if "genders" not in config or len(config["genders"]) != 3:
+            print_fail(f"Expected 3 genders, got {len(config.get('genders', []))}")
+            return False
+        
+        print_pass(f"Config returned: 4 types (search/display/video/shopping), 5 objectives, 4 bidStrategies (cpc/cpm/maximize/target_cpa), {len(config['interests'])} interests, 3 devices, 6 ageRanges, 3 genders")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 2: GET /ads/keywords?q=chaussures ==========
+    print_test("TEST 2: GET /ads/keywords?q=chaussures - returns 10 suggestions with text, matchType, volume, competition, suggestedBidCents")
+    try:
+        resp = client.get("/ads/keywords", params={"q": "chaussures"})
+        if resp.status_code != 200:
+            print_fail(f"Status {resp.status_code}: {resp.text}")
+            return False
+        
+        keywords = resp.json()
+        
+        if not isinstance(keywords, list) or len(keywords) != 10:
+            print_fail(f"Expected 10 keywords, got {len(keywords)}")
+            return False
+        
+        # Verify first keyword contains 'chaussures'
+        first_text = keywords[0].get("text", "").lower()
+        if "chaussures" not in first_text:
+            print_fail(f"First keyword text '{first_text}' does not contain 'chaussures'")
+            return False
+        
+        # Verify all keywords have required fields
+        for kw in keywords:
+            if not all(k in kw for k in ["text", "matchType", "volume", "competition", "suggestedBidCents"]):
+                print_fail(f"Keyword missing required fields: {kw}")
+                return False
+            
+            if not isinstance(kw["volume"], int) or kw["volume"] <= 0:
+                print_fail(f"Invalid volume: {kw['volume']}")
+                return False
+            
+            if not isinstance(kw["suggestedBidCents"], int) or kw["suggestedBidCents"] <= 0:
+                print_fail(f"Invalid suggestedBidCents: {kw['suggestedBidCents']}")
+                return False
+        
+        print_pass(f"10 keywords returned, first text: '{keywords[0]['text']}' (contains 'chaussures'), all have text/matchType/volume/competition/suggestedBidCents")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 3: POST /ads/estimate - targeting narrowing ==========
+    print_test("TEST 3: POST /ads/estimate - verify narrower targeting reduces audience")
+    try:
+        # First estimate with empty targeting (broad)
+        resp1 = client.post("/ads/estimate", json_data={
+            "dailyBudgetCents": 2000,
+            "bidStrategy": "cpc",
+            "maxBidCents": 45,
+            "targeting": {}
+        })
+        if resp1.status_code != 200:
+            print_fail(f"Status {resp1.status_code}: {resp1.text}")
+            return False
+        
+        est1 = resp1.json()
+        
+        # Verify required fields
+        required = ["audience", "impressionsPerDay", "clicksPerDay", "reachPerDay", "estCpcCents", "estCtr"]
+        if not all(k in est1 for k in required):
+            print_fail(f"Estimate missing required fields: {est1.keys()}")
+            return False
+        
+        if not isinstance(est1["audience"], int) or est1["audience"] <= 0:
+            print_fail(f"Invalid audience: {est1['audience']}")
+            return False
+        
+        if not isinstance(est1["impressionsPerDay"], list) or len(est1["impressionsPerDay"]) != 2:
+            print_fail(f"impressionsPerDay should be [min, max]: {est1['impressionsPerDay']}")
+            return False
+        
+        if not isinstance(est1["clicksPerDay"], list) or len(est1["clicksPerDay"]) != 2:
+            print_fail(f"clicksPerDay should be [min, max]: {est1['clicksPerDay']}")
+            return False
+        
+        if not isinstance(est1["reachPerDay"], list) or len(est1["reachPerDay"]) != 2:
+            print_fail(f"reachPerDay should be [min, max]: {est1['reachPerDay']}")
+            return False
+        
+        # Second estimate with narrow targeting
+        resp2 = client.post("/ads/estimate", json_data={
+            "dailyBudgetCents": 2000,
+            "bidStrategy": "cpc",
+            "maxBidCents": 45,
+            "targeting": {
+                "interests": ["Tech", "Mode"],
+                "ageRange": ["25-34", "35-44"]
+            }
+        })
+        if resp2.status_code != 200:
+            print_fail(f"Status {resp2.status_code}: {resp2.text}")
+            return False
+        
+        est2 = resp2.json()
+        
+        # Verify narrower targeting reduces audience
+        if est2["audience"] >= est1["audience"]:
+            print_fail(f"Narrower targeting should reduce audience: broad={est1['audience']}, narrow={est2['audience']}")
+            return False
+        
+        print_pass(f"Broad targeting audience={est1['audience']}, narrow targeting audience={est2['audience']} (reduced ✓). impressionsPerDay={est1['impressionsPerDay']}, clicksPerDay={est1['clicksPerDay']}, reachPerDay={est1['reachPerDay']}, estCpcCents={est1['estCpcCents']}, estCtr={est1['estCtr']}")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 4: POST /ads/campaigns - CRITICAL money flow ==========
+    print_test("TEST 4: POST /ads/campaigns - CRITICAL money flow (wallet debit, transaction, daily[] history, adDerived fields)")
+    try:
+        # Get wallet before
+        wallet_before = client.get_wallet()
+        balance_before = wallet_before.get("balanceCents", 0)
+        print_info(f"Wallet before: {balance_before}c")
+        
+        # Create campaign
+        campaign_data = {
+            "name": "Test Search",
+            "type": "search",
+            "objective": "traffic",
+            "budgetType": "total",
+            "budgetCents": 30000,
+            "dailyBudgetCents": 1000,
+            "bidStrategy": "cpc",
+            "maxBidCents": 50,
+            "targeting": {
+                "interests": ["Tech"],
+                "ageRange": ["25-34"],
+                "genders": ["Tous"],
+                "devices": ["Mobile"]
+            },
+            "keywords": ["chaussures", "baskets"],
+            "creative": {
+                "headline": "Promo",
+                "body": "desc",
+                "cta": "Acheter"
+            }
+        }
+        
+        resp = client.post("/ads/campaigns", json_data=campaign_data)
+        if resp.status_code != 200:
+            print_fail(f"Status {resp.status_code}: {resp.text}")
+            return False
+        
+        result = resp.json()
+        
+        # Verify response structure
+        if "campaign" not in result or "balanceCents" not in result:
+            print_fail(f"Response missing campaign or balanceCents: {result.keys()}")
+            return False
+        
+        campaign = result["campaign"]
+        balance_after = result["balanceCents"]
+        
+        # Verify wallet debited by 30000c
+        expected_balance = balance_before - 30000
+        if balance_after != expected_balance:
+            print_fail(f"Wallet not debited correctly: before={balance_before}, after={balance_after}, expected={expected_balance}")
+            return False
+        
+        print_info(f"Wallet after: {balance_after}c (debited 30000c ✓)")
+        
+        # Verify campaign has daily[] array (non-empty, ~7 entries)
+        if "daily" not in campaign or not isinstance(campaign["daily"], list):
+            print_fail(f"Campaign missing daily[] array")
+            return False
+        
+        if len(campaign["daily"]) < 5:
+            print_fail(f"Campaign daily[] should have ~7 entries, got {len(campaign['daily'])}")
+            return False
+        
+        print_info(f"Campaign daily[] has {len(campaign['daily'])} entries (simulated history ✓)")
+        
+        # Verify impressions > 0
+        if "impressions" not in campaign or campaign["impressions"] <= 0:
+            print_fail(f"Campaign impressions should be > 0, got {campaign.get('impressions')}")
+            return False
+        
+        # Verify clicks >= 0
+        if "clicks" not in campaign or campaign["clicks"] < 0:
+            print_fail(f"Campaign clicks should be >= 0, got {campaign.get('clicks')}")
+            return False
+        
+        # Verify spentCents > 0 AND <= budgetCents
+        if "spentCents" not in campaign or campaign["spentCents"] <= 0:
+            print_fail(f"Campaign spentCents should be > 0, got {campaign.get('spentCents')}")
+            return False
+        
+        if campaign["spentCents"] > campaign.get("budgetCents", 0):
+            print_fail(f"Campaign spentCents ({campaign['spentCents']}) should be <= budgetCents ({campaign.get('budgetCents')})")
+            return False
+        
+        print_info(f"Campaign metrics: impressions={campaign['impressions']}, clicks={campaign['clicks']}, spentCents={campaign['spentCents']} (<=30000 ✓)")
+        
+        # Verify adDerived fields (ctr, cpcCents, cpmCents, convRate, remainingCents)
+        ad_derived_fields = ["ctr", "cpcCents", "cpmCents", "convRate", "remainingCents"]
+        for field in ad_derived_fields:
+            if field not in campaign:
+                print_fail(f"Campaign missing adDerived field: {field}")
+                return False
+        
+        print_info(f"Campaign adDerived fields: ctr={campaign['ctr']}, cpcCents={campaign['cpcCents']}, cpmCents={campaign['cpmCents']}, convRate={campaign['convRate']}, remainingCents={campaign['remainingCents']}")
+        
+        # Verify keywords stored as objects with text/matchType/bidCents
+        if "keywords" not in campaign or not isinstance(campaign["keywords"], list):
+            print_fail(f"Campaign missing keywords array")
+            return False
+        
+        for kw in campaign["keywords"]:
+            if not all(k in kw for k in ["text", "matchType", "bidCents"]):
+                print_fail(f"Keyword missing required fields: {kw}")
+                return False
+        
+        print_info(f"Keywords stored correctly: {campaign['keywords']}")
+        
+        # Verify 'Publicité' transaction created
+        txs_resp = client.get("/transactions")
+        if txs_resp.status_code != 200:
+            print_fail(f"Failed to get transactions: {txs_resp.status_code}")
+            return False
+        
+        txs = txs_resp.json()
+        pub_tx = next((t for t in txs if t.get("category") == "Publicité" and t.get("amountCents") == -30000), None)
+        if not pub_tx:
+            print_fail(f"'Publicité' transaction not found in transactions")
+            return False
+        
+        print_info(f"'Publicité' transaction created: {pub_tx['label']} ({pub_tx['amountCents']}c)")
+        
+        # Store campaign ID for later tests
+        global campaign_id
+        campaign_id = campaign["id"]
+        
+        print_pass(f"Campaign created: wallet {balance_before}c -> {balance_after}c (-30000c ✓), 'Publicité' transaction created ✓, daily[] has {len(campaign['daily'])} entries ✓, impressions={campaign['impressions']}, clicks={campaign['clicks']}, spentCents={campaign['spentCents']} (<=30000 ✓), adDerived fields present ✓, keywords stored as objects ✓")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 5: POST /ads/campaigns - INSUFFICIENT balance ==========
+    print_test("TEST 5: POST /ads/campaigns with budgetCents=99999999 - should return 402")
+    try:
+        resp = client.post("/ads/campaigns", json_data={
+            "name": "Huge Campaign",
+            "type": "search",
+            "budgetCents": 99999999,
+            "bidStrategy": "cpc",
+            "maxBidCents": 50
+        })
+        
+        if resp.status_code != 402:
+            print_fail(f"Expected 402, got {resp.status_code}: {resp.text}")
+            return False
+        
+        error = resp.json()
+        if "error" not in error:
+            print_fail(f"Expected error message in response: {error}")
+            return False
+        
+        print_pass(f"Insufficient balance returns 402: {error['error']}")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 6: GET /ads/campaigns - list with adDerived ==========
+    print_test("TEST 6: GET /ads/campaigns - lists campaigns with adDerived fields")
+    try:
+        resp = client.get("/ads/campaigns")
+        if resp.status_code != 200:
+            print_fail(f"Status {resp.status_code}: {resp.text}")
+            return False
+        
+        campaigns = resp.json()
+        
+        if not isinstance(campaigns, list) or len(campaigns) == 0:
+            print_fail(f"Expected non-empty campaigns array, got {campaigns}")
+            return False
+        
+        # Verify first campaign has adDerived fields
+        camp = campaigns[0]
+        ad_derived_fields = ["ctr", "cpcCents", "remainingCents"]
+        for field in ad_derived_fields:
+            if field not in camp:
+                print_fail(f"Campaign missing adDerived field: {field}")
+                return False
+        
+        print_pass(f"GET /ads/campaigns returned {len(campaigns)} campaign(s) with adDerived fields (ctr={camp['ctr']}, cpcCents={camp['cpcCents']}, remainingCents={camp['remainingCents']})")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 7: GET /ads/campaigns/:id - detail ==========
+    print_test("TEST 7: GET /ads/campaigns/:id - detail with daily[] time-series, targeting, keywords, creative")
+    try:
+        resp = client.get(f"/ads/campaigns/{campaign_id}")
+        if resp.status_code != 200:
+            print_fail(f"Status {resp.status_code}: {resp.text}")
+            return False
+        
+        campaign = resp.json()
+        
+        # Verify required fields
+        required = ["id", "name", "type", "daily", "targeting", "keywords", "creative"]
+        for field in required:
+            if field not in campaign:
+                print_fail(f"Campaign detail missing field: {field}")
+                return False
+        
+        # Verify daily[] is non-empty
+        if not isinstance(campaign["daily"], list) or len(campaign["daily"]) == 0:
+            print_fail(f"Campaign daily[] should be non-empty")
+            return False
+        
+        # Verify targeting has expected fields
+        if not isinstance(campaign["targeting"], dict):
+            print_fail(f"Campaign targeting should be dict")
+            return False
+        
+        # Verify keywords is array
+        if not isinstance(campaign["keywords"], list):
+            print_fail(f"Campaign keywords should be array")
+            return False
+        
+        # Verify creative has expected fields
+        if not isinstance(campaign["creative"], dict):
+            print_fail(f"Campaign creative should be dict")
+            return False
+        
+        print_pass(f"Campaign detail returned: id={campaign['id']}, name={campaign['name']}, type={campaign['type']}, daily[] has {len(campaign['daily'])} entries, targeting={list(campaign['targeting'].keys())}, keywords={len(campaign['keywords'])}, creative={list(campaign['creative'].keys())}")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 8: GET /ads/insights ==========
+    print_test("TEST 8: GET /ads/insights - returns totals, daily[], top[], counts")
+    try:
+        resp = client.get("/ads/insights")
+        if resp.status_code != 200:
+            print_fail(f"Status {resp.status_code}: {resp.text}")
+            return False
+        
+        insights = resp.json()
+        
+        # Verify required fields
+        required = ["totals", "daily", "top", "counts"]
+        for field in required:
+            if field not in insights:
+                print_fail(f"Insights missing field: {field}")
+                return False
+        
+        # Verify totals has required fields
+        totals = insights["totals"]
+        totals_fields = ["impressions", "clicks", "spentCents", "conversions", "ctr", "cpcCents", "convRate"]
+        for field in totals_fields:
+            if field not in totals:
+                print_fail(f"Totals missing field: {field}")
+                return False
+        
+        # Verify totals.impressions > 0 (we created a campaign with simulated history)
+        if totals["impressions"] <= 0:
+            print_fail(f"Totals impressions should be > 0, got {totals['impressions']}")
+            return False
+        
+        # Verify daily is array
+        if not isinstance(insights["daily"], list):
+            print_fail(f"Daily should be array")
+            return False
+        
+        # Verify top is array
+        if not isinstance(insights["top"], list):
+            print_fail(f"Top should be array")
+            return False
+        
+        # Verify counts has total, active, paused
+        counts = insights["counts"]
+        if not all(k in counts for k in ["total", "active", "paused"]):
+            print_fail(f"Counts missing required fields: {counts.keys()}")
+            return False
+        
+        # Verify counts.total >= 1 (we created a campaign)
+        if counts["total"] < 1:
+            print_fail(f"Counts.total should be >= 1, got {counts['total']}")
+            return False
+        
+        # Verify counts.active >= 1 (our campaign is active)
+        if counts["active"] < 1:
+            print_fail(f"Counts.active should be >= 1, got {counts['active']}")
+            return False
+        
+        print_pass(f"Insights returned: totals.impressions={totals['impressions']}, totals.clicks={totals['clicks']}, totals.spentCents={totals['spentCents']}, daily[] has {len(insights['daily'])} entries, top[] has {len(insights['top'])} entries, counts.total={counts['total']}, counts.active={counts['active']}")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 9: POST /ads/campaigns/:id/track - TRACK impressions/clicks/conversions ==========
+    print_test("TEST 9: POST /ads/campaigns/:id/track - track impression/click/conversion, verify increments")
+    try:
+        # Get campaign before tracking
+        resp_before = client.get(f"/ads/campaigns/{campaign_id}")
+        if resp_before.status_code != 200:
+            print_fail(f"Failed to get campaign before: {resp_before.status_code}")
+            return False
+        
+        camp_before = resp_before.json()
+        impr_before = camp_before.get("impressions", 0)
+        clicks_before = camp_before.get("clicks", 0)
+        spent_before = camp_before.get("spentCents", 0)
+        conv_before = camp_before.get("conversions", 0)
+        
+        print_info(f"Before tracking: impressions={impr_before}, clicks={clicks_before}, spentCents={spent_before}, conversions={conv_before}")
+        
+        # Track impression
+        resp1 = client.post(f"/ads/campaigns/{campaign_id}/track", json_data={"type": "impression"})
+        if resp1.status_code != 200:
+            print_fail(f"Track impression failed: {resp1.status_code} {resp1.text}")
+            return False
+        
+        track1 = resp1.json()
+        if not track1.get("ok"):
+            print_fail(f"Track impression returned ok=false: {track1}")
+            return False
+        
+        # Get campaign after impression
+        resp_after1 = client.get(f"/ads/campaigns/{campaign_id}")
+        camp_after1 = resp_after1.json()
+        
+        if camp_after1["impressions"] != impr_before + 1:
+            print_fail(f"Impressions not incremented: before={impr_before}, after={camp_after1['impressions']}")
+            return False
+        
+        print_info(f"After impression: impressions={camp_after1['impressions']} (+1 ✓)")
+        
+        # Track click
+        resp2 = client.post(f"/ads/campaigns/{campaign_id}/track", json_data={"type": "click"})
+        if resp2.status_code != 200:
+            print_fail(f"Track click failed: {resp2.status_code} {resp2.text}")
+            return False
+        
+        track2 = resp2.json()
+        if not track2.get("ok"):
+            print_fail(f"Track click returned ok=false: {track2}")
+            return False
+        
+        # Get campaign after click
+        resp_after2 = client.get(f"/ads/campaigns/{campaign_id}")
+        camp_after2 = resp_after2.json()
+        
+        if camp_after2["clicks"] != clicks_before + 1:
+            print_fail(f"Clicks not incremented: before={clicks_before}, after={camp_after2['clicks']}")
+            return False
+        
+        # Verify spentCents increased by maxBidCents (50)
+        expected_spent = spent_before + 50
+        # Allow for small variance due to impression cost
+        if abs(camp_after2["spentCents"] - expected_spent) > 10:
+            print_fail(f"SpentCents not increased correctly: before={spent_before}, after={camp_after2['spentCents']}, expected~{expected_spent}")
+            return False
+        
+        print_info(f"After click: clicks={camp_after2['clicks']} (+1 ✓), spentCents={camp_after2['spentCents']} (increased ✓)")
+        
+        # Track conversion
+        resp3 = client.post(f"/ads/campaigns/{campaign_id}/track", json_data={"type": "conversion"})
+        if resp3.status_code != 200:
+            print_fail(f"Track conversion failed: {resp3.status_code} {resp3.text}")
+            return False
+        
+        track3 = resp3.json()
+        if not track3.get("ok"):
+            print_fail(f"Track conversion returned ok=false: {track3}")
+            return False
+        
+        # Get campaign after conversion
+        resp_after3 = client.get(f"/ads/campaigns/{campaign_id}")
+        camp_after3 = resp_after3.json()
+        
+        if camp_after3["conversions"] != conv_before + 1:
+            print_fail(f"Conversions not incremented: before={conv_before}, after={camp_after3['conversions']}")
+            return False
+        
+        print_info(f"After conversion: conversions={camp_after3['conversions']} (+1 ✓)")
+        
+        # Verify today's daily bucket updated
+        if not isinstance(camp_after3.get("daily"), list) or len(camp_after3["daily"]) == 0:
+            print_fail(f"Campaign daily[] should be non-empty after tracking")
+            return False
+        
+        # Last entry should be today
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        last_daily = camp_after3["daily"][-1]
+        if last_daily.get("date") != today:
+            print_info(f"Note: Last daily entry date={last_daily.get('date')}, today={today} (may be simulated history)")
+        
+        print_pass(f"Tracking works: impression +1 (impressions={camp_after3['impressions']}), click +1 (clicks={camp_after3['clicks']}, spentCents increased), conversion +1 (conversions={camp_after3['conversions']}), daily[] updated")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 10: PATCH /ads/campaigns/:id - edit fields ==========
+    print_test("TEST 10: PATCH /ads/campaigns/:id - edit name, maxBidCents, targeting")
+    try:
+        # Edit campaign
+        resp = client.patch(f"/ads/campaigns/{campaign_id}", json_data={
+            "name": "Renamed",
+            "maxBidCents": 80,
+            "targeting": {
+                "interests": ["Mode", "Sport"]
+            }
+        })
+        
+        if resp.status_code != 200:
+            print_fail(f"Status {resp.status_code}: {resp.text}")
+            return False
+        
+        updated = resp.json()
+        
+        # Verify name updated
+        if updated.get("name") != "Renamed":
+            print_fail(f"Name not updated: {updated.get('name')}")
+            return False
+        
+        # Verify maxBidCents updated
+        if updated.get("maxBidCents") != 80:
+            print_fail(f"maxBidCents not updated: {updated.get('maxBidCents')}")
+            return False
+        
+        # Verify targeting updated
+        if "Mode" not in updated.get("targeting", {}).get("interests", []):
+            print_fail(f"Targeting not updated: {updated.get('targeting')}")
+            return False
+        
+        print_pass(f"Campaign edited: name='Renamed', maxBidCents=80, targeting.interests=['Mode', 'Sport']")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 11: PATCH status pause/active ==========
+    print_test("TEST 11: PATCH /ads/campaigns/:id - status pause/active (removed from/added to sponsored feed)")
+    try:
+        # Pause campaign
+        resp1 = client.patch(f"/ads/campaigns/{campaign_id}", json_data={"status": "paused"})
+        if resp1.status_code != 200:
+            print_fail(f"Pause failed: {resp1.status_code} {resp1.text}")
+            return False
+        
+        paused = resp1.json()
+        if paused.get("status") != "paused":
+            print_fail(f"Status not paused: {paused.get('status')}")
+            return False
+        
+        print_info(f"Campaign paused")
+        
+        # Check sponsored feed (should not include paused campaign)
+        feed_resp1 = client.get("/social/feed", params={"mode": "foryou"})
+        if feed_resp1.status_code != 200:
+            print_fail(f"Failed to get feed: {feed_resp1.status_code}")
+            return False
+        
+        feed1 = feed_resp1.json()
+        sponsored1 = [p for p in feed1 if p.get("sponsored") and p.get("campaignId") == campaign_id]
+        if len(sponsored1) > 0:
+            print_fail(f"Paused campaign should not appear in feed, but found {len(sponsored1)} sponsored posts")
+            return False
+        
+        print_info(f"Paused campaign not in feed ✓")
+        
+        # Resume campaign
+        resp2 = client.patch(f"/ads/campaigns/{campaign_id}", json_data={"status": "active"})
+        if resp2.status_code != 200:
+            print_fail(f"Resume failed: {resp2.status_code} {resp2.text}")
+            return False
+        
+        active = resp2.json()
+        if active.get("status") != "active":
+            print_fail(f"Status not active: {active.get('status')}")
+            return False
+        
+        print_info(f"Campaign resumed (active)")
+        
+        # Check sponsored feed (should include active campaign)
+        feed_resp2 = client.get("/social/feed", params={"mode": "foryou"})
+        if feed_resp2.status_code != 200:
+            print_fail(f"Failed to get feed: {feed_resp2.status_code}")
+            return False
+        
+        feed2 = feed_resp2.json()
+        sponsored2 = [p for p in feed2 if p.get("sponsored") and p.get("campaignId") == campaign_id]
+        if len(sponsored2) == 0:
+            print_fail(f"Active campaign should appear in feed, but found 0 sponsored posts")
+            return False
+        
+        print_info(f"Active campaign in feed ✓ ({len(sponsored2)} sponsored post(s))")
+        
+        print_pass(f"Status pause/active works: paused -> not in feed, active -> in feed")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 12: PATCH status ended + REFUND ==========
+    print_test("TEST 12: PATCH /ads/campaigns/:id status=ended - remaining budget refunded to wallet")
+    try:
+        # Create a fresh campaign for this test
+        wallet_before = client.get_wallet()
+        balance_before = wallet_before.get("balanceCents", 0)
+        print_info(f"Wallet before new campaign: {balance_before}c")
+        
+        resp_create = client.post("/ads/campaigns", json_data={
+            "name": "Test Refund",
+            "type": "search",
+            "budgetCents": 20000,
+            "bidStrategy": "cpc",
+            "maxBidCents": 50
+        })
+        
+        if resp_create.status_code != 200:
+            print_fail(f"Failed to create campaign: {resp_create.status_code} {resp_create.text}")
+            return False
+        
+        result = resp_create.json()
+        refund_campaign_id = result["campaign"]["id"]
+        balance_after_create = result["balanceCents"]
+        
+        print_info(f"Wallet after creating campaign: {balance_after_create}c (debited 20000c)")
+        
+        # Get campaign to check spentCents
+        resp_get = client.get(f"/ads/campaigns/{refund_campaign_id}")
+        if resp_get.status_code != 200:
+            print_fail(f"Failed to get campaign: {resp_get.status_code}")
+            return False
+        
+        camp = resp_get.json()
+        spent = camp.get("spentCents", 0)
+        remaining = camp.get("budgetCents", 0) - spent
+        
+        print_info(f"Campaign: budgetCents={camp.get('budgetCents')}, spentCents={spent}, remaining={remaining}")
+        
+        # End campaign
+        resp_end = client.patch(f"/ads/campaigns/{refund_campaign_id}", json_data={"status": "ended"})
+        if resp_end.status_code != 200:
+            print_fail(f"Failed to end campaign: {resp_end.status_code} {resp_end.text}")
+            return False
+        
+        ended = resp_end.json()
+        if ended.get("status") != "ended":
+            print_fail(f"Status not ended: {ended.get('status')}")
+            return False
+        
+        print_info(f"Campaign ended")
+        
+        # Get wallet after ending
+        wallet_after = client.get_wallet()
+        balance_after_end = wallet_after.get("balanceCents", 0)
+        
+        # Verify wallet increased by remaining
+        expected_balance = balance_after_create + remaining
+        if balance_after_end != expected_balance:
+            print_fail(f"Wallet not refunded correctly: before_end={balance_after_create}, after_end={balance_after_end}, expected={expected_balance} (remaining={remaining})")
+            return False
+        
+        print_info(f"Wallet after ending: {balance_after_end}c (refunded {remaining}c ✓)")
+        
+        # Verify 'Remboursement pub' transaction created
+        txs_resp = client.get("/transactions")
+        if txs_resp.status_code != 200:
+            print_fail(f"Failed to get transactions: {txs_resp.status_code}")
+            return False
+        
+        txs = txs_resp.json()
+        refund_tx = next((t for t in txs if "Remboursement pub" in t.get("label", "") and t.get("amountCents") == remaining), None)
+        if not refund_tx:
+            print_fail(f"'Remboursement pub' transaction not found")
+            return False
+        
+        print_info(f"'Remboursement pub' transaction created: {refund_tx['label']} ({refund_tx['amountCents']}c)")
+        
+        print_pass(f"END + REFUND works: campaign ended, wallet {balance_after_create}c -> {balance_after_end}c (+{remaining}c refund ✓), 'Remboursement pub' transaction created ✓")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 13: DELETE /ads/campaigns/:id - refund + removal ==========
+    print_test("TEST 13: DELETE /ads/campaigns/:id - refunds remaining if not ended, removed from list")
+    try:
+        # Create a fresh campaign for this test
+        wallet_before = client.get_wallet()
+        balance_before = wallet_before.get("balanceCents", 0)
+        
+        resp_create = client.post("/ads/campaigns", json_data={
+            "name": "Test Delete",
+            "type": "search",
+            "budgetCents": 15000,
+            "bidStrategy": "cpc",
+            "maxBidCents": 50
+        })
+        
+        if resp_create.status_code != 200:
+            print_fail(f"Failed to create campaign: {resp_create.status_code} {resp_create.text}")
+            return False
+        
+        result = resp_create.json()
+        delete_campaign_id = result["campaign"]["id"]
+        balance_after_create = result["balanceCents"]
+        
+        # Get campaign to check remaining
+        resp_get = client.get(f"/ads/campaigns/{delete_campaign_id}")
+        camp = resp_get.json()
+        remaining = camp.get("remainingCents", 0)
+        
+        print_info(f"Campaign created: id={delete_campaign_id}, remaining={remaining}c")
+        
+        # Delete campaign
+        resp_delete = client.delete(f"/ads/campaigns/{delete_campaign_id}")
+        if resp_delete.status_code != 200:
+            print_fail(f"Failed to delete campaign: {resp_delete.status_code} {resp_delete.text}")
+            return False
+        
+        delete_result = resp_delete.json()
+        if not delete_result.get("ok"):
+            print_fail(f"Delete returned ok=false: {delete_result}")
+            return False
+        
+        print_info(f"Campaign deleted")
+        
+        # Verify wallet refunded
+        wallet_after = client.get_wallet()
+        balance_after_delete = wallet_after.get("balanceCents", 0)
+        
+        expected_balance = balance_after_create + remaining
+        if balance_after_delete != expected_balance:
+            print_fail(f"Wallet not refunded correctly: before_delete={balance_after_create}, after_delete={balance_after_delete}, expected={expected_balance}")
+            return False
+        
+        print_info(f"Wallet refunded: {balance_after_create}c -> {balance_after_delete}c (+{remaining}c ✓)")
+        
+        # Verify campaign removed from list
+        resp_list = client.get("/ads/campaigns")
+        campaigns = resp_list.json()
+        deleted_camp = next((c for c in campaigns if c.get("id") == delete_campaign_id), None)
+        if deleted_camp:
+            print_fail(f"Deleted campaign still in list: {deleted_camp}")
+            return False
+        
+        print_info(f"Campaign removed from list ✓")
+        
+        print_pass(f"DELETE works: campaign deleted, wallet refunded +{remaining}c, removed from list")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 14: AUTH - 401 without Bearer ==========
+    print_test("TEST 14: AUTH - /ads/config, /ads/campaigns, /ads/insights without Bearer -> 401")
+    try:
+        # Create client without auth
+        no_auth_client = APIClient(BASE_URL)
+        
+        # Test /ads/config
+        resp1 = no_auth_client.get("/ads/config")
+        if resp1.status_code != 401:
+            print_fail(f"/ads/config without auth should return 401, got {resp1.status_code}")
+            return False
+        
+        # Test /ads/campaigns
+        resp2 = no_auth_client.get("/ads/campaigns")
+        if resp2.status_code != 401:
+            print_fail(f"/ads/campaigns without auth should return 401, got {resp2.status_code}")
+            return False
+        
+        # Test /ads/insights
+        resp3 = no_auth_client.get("/ads/insights")
+        if resp3.status_code != 401:
+            print_fail(f"/ads/insights without auth should return 401, got {resp3.status_code}")
+            return False
+        
+        print_pass(f"Auth required: /ads/config, /ads/campaigns, /ads/insights all return 401 without Bearer")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    # ========== TEST 15: SPONSORED FEED - active campaigns in foryou, not chrono ==========
+    print_test("TEST 15: SPONSORED FEED - active campaign appears in foryou (sponsored:true, campaignId), NOT in chrono")
+    try:
+        # Get foryou feed
+        resp_foryou = client.get("/social/feed", params={"mode": "foryou"})
+        if resp_foryou.status_code != 200:
+            print_fail(f"Failed to get foryou feed: {resp_foryou.status_code}")
+            return False
+        
+        feed_foryou = resp_foryou.json()
+        sponsored_foryou = [p for p in feed_foryou if p.get("sponsored")]
+        
+        if len(sponsored_foryou) == 0:
+            print_fail(f"No sponsored posts in foryou feed (expected at least 1)")
+            return False
+        
+        # Verify sponsored post has required fields
+        sp = sponsored_foryou[0]
+        if not sp.get("sponsored"):
+            print_fail(f"Sponsored post missing sponsored:true")
+            return False
+        
+        if not sp.get("campaignId"):
+            print_fail(f"Sponsored post missing campaignId")
+            return False
+        
+        print_info(f"Foryou feed: {len(sponsored_foryou)} sponsored post(s), campaignId={sp['campaignId']}, reason='{sp.get('reason')}'")
+        
+        # Get chrono feed
+        resp_chrono = client.get("/social/feed", params={"mode": "chrono"})
+        if resp_chrono.status_code != 200:
+            print_fail(f"Failed to get chrono feed: {resp_chrono.status_code}")
+            return False
+        
+        feed_chrono = resp_chrono.json()
+        sponsored_chrono = [p for p in feed_chrono if p.get("sponsored")]
+        
+        if len(sponsored_chrono) > 0:
+            print_fail(f"Sponsored posts should NOT appear in chrono feed, but found {len(sponsored_chrono)}")
+            return False
+        
+        print_info(f"Chrono feed: 0 sponsored posts ✓")
+        
+        print_pass(f"Sponsored feed works: {len(sponsored_foryou)} sponsored post(s) in foryou (sponsored:true, campaignId present), 0 in chrono")
+    except Exception as e:
+        print_fail(f"Exception: {e}")
+        return False
+
+    print("\n" + "="*80)
+    print("ALL PHASE 9 ADS MANAGER V2 TESTS PASSED ✅")
+    print("="*80 + "\n")
+    return True
 
 if __name__ == "__main__":
     try:
-        test_phase8_marketplace()
-    except AssertionError as e:
-        print(f"\n❌ TEST FAILED: {e}")
-        sys.exit(1)
+        success = test_phase9_ads_manager_v2()
+        sys.exit(0 if success else 1)
     except Exception as e:
-        print(f"\n❌ UNEXPECTED ERROR: {e}")
+        print_fail(f"Test suite failed with exception: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
