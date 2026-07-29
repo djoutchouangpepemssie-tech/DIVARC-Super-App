@@ -266,11 +266,13 @@ const RailBtn = ({ onClick, icon, label, active }) => (
 
 function WellnessCard() {
   return (
-    <div className="h-full w-full snap-start grid place-items-center bg-gradient-to-b from-black to-[#0E1020] text-white text-center px-10">
-      <div>
-        <div className="text-6xl mb-4">✨</div>
-        <div className="font-display text-3xl mb-2">Tu es à jour</div>
-        <p className="text-white/70 text-sm max-w-xs mx-auto">Tu as vu toutes les nouveautés. DIVARC ne force pas le scroll infini — reviens quand tu veux. 💛</p>
+    <div className="h-full w-full snap-start grid place-items-center bg-gradient-to-b from-black to-[#0E1020] text-white text-center px-8">
+      <div className="card-hero p-8 max-w-sm w-full glow-primary">
+        <div className="relative">
+          <div className="w-20 h-20 rounded-3xl grid place-items-center mx-auto mb-5 bg-white/15 backdrop-blur hairline float-slow text-4xl">✨</div>
+          <div className="font-display text-3xl mb-2">Tu es à jour</div>
+          <p className="text-white/80 text-sm max-w-xs mx-auto leading-relaxed">DIVARC ne force pas le scroll infini — tu as vu toutes les nouveautés. Reviens quand tu veux. 💛</p>
+        </div>
       </div>
     </div>
   )
@@ -281,7 +283,8 @@ function BottomSheet({ children, onClose, title }) {
     <motion.div className="fixed inset-0 z-50 flex items-end justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }} className="relative w-full sm:max-w-md">
-        <Glass className="p-5 rounded-b-none max-h-[80dvh] overflow-y-auto no-scrollbar bg-background/95">
+        <Glass className="glass-sheen glass-strong p-5 pt-3 rounded-b-none max-h-[80dvh] overflow-y-auto no-scrollbar">
+          <div className="w-10 h-1.5 rounded-full bg-foreground/15 mx-auto mb-4" />
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-display text-2xl">{title}</h3>
             <button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60"><X size={18} /></button>
@@ -334,7 +337,7 @@ function TipSheet({ post, onClose, onTip }) {
       </div>
       <div className="grid grid-cols-3 gap-2 mb-3">
         {[100, 200, 500].map((a) => (
-          <button key={a} onClick={() => onTip(a)} className="press py-4 rounded-2xl border border-gold/40 bg-gold/10 font-display text-xl">{eur(a)} €</button>
+          <button key={a} onClick={() => onTip(a)} className="press py-4 rounded-2xl border border-gold/40 bg-gold/10 hairline hover:glow-gold transition-shadow"><span className="gold-text font-display text-xl">{eur(a)} €</span></button>
         ))}
       </div>
       <div className="flex gap-2">

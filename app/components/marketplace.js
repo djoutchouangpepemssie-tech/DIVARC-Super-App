@@ -114,11 +114,17 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
     <div className="min-h-[100dvh] bg-app-gradient">
       {view === 'browse' && (
         <div className="mx-auto max-w-5xl px-4 pt-6 pb-28">
-          <div className="flex items-center justify-between mb-3">
-            <h1 className="font-display text-3xl">Marketplace</h1>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl grid place-items-center text-white shrink-0 glow-primary float-slow" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}><Store size={22} /></div>
+              <div>
+                <h1 className="font-display text-3xl leading-none">Marketplace</h1>
+                <p className="text-[11px] text-muted-foreground mt-1">Achète & vends partout en Europe</p>
+              </div>
+            </div>
             <div className="flex gap-2">
-              <button onClick={() => setView('threads')} className="press w-10 h-10 rounded-full grid place-items-center bg-card/60 border border-border relative"><MessageCircle size={18} /></button>
-              <button onClick={() => setView('sell')} className="press h-10 px-4 rounded-full grid place-items-center text-white font-semibold text-sm gap-1.5 flex" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><Plus size={17} /> Vendre</button>
+              <button onClick={() => setView('threads')} className="press w-10 h-10 rounded-full grid place-items-center glass hairline relative"><MessageCircle size={18} /></button>
+              <button onClick={() => setView('sell')} className="press h-10 px-4 rounded-full grid place-items-center text-white font-semibold text-sm gap-1.5 flex glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}><Plus size={17} /> Vendre</button>
             </div>
           </div>
 
@@ -163,7 +169,7 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
           ) : (
             <>
               <div className="text-xs text-muted-foreground mb-2">{listings.length} annonce{listings.length > 1 ? 's' : ''}</div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 cascade">
                 {listings.map((l) => <ListingCard key={l.id} l={l} onOpen={() => openDetail(l.id)} onFav={() => toggleFav(l.id)} />)}
               </div>
             </>
@@ -191,16 +197,17 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
 /* ============================ CARTE ANNONCE ============================ */
 function ListingCard({ l, onOpen, onFav }) {
   return (
-    <div className="press cursor-pointer" onClick={onOpen}>
-      <Glass className="rounded-2xl overflow-hidden">
-        <div className="relative aspect-[4/3] bg-muted/60">
-          {l.images?.[0] ? <img src={imgSrc(l.images[0])} alt={l.title} className="w-full h-full object-cover" loading="lazy" /> : <div className="w-full h-full grid place-items-center text-3xl">📦</div>}
-          <button onClick={(e) => { e.stopPropagation(); onFav() }} className="absolute top-2 right-2 w-8 h-8 rounded-full grid place-items-center bg-white/85 backdrop-blur shadow"><Heart size={16} className={l.favorited ? 'text-destructive' : 'text-ink'} fill={l.favorited ? '#EF476F' : 'none'} /></button>
-          {l.transactionType === 'rent' && <span className="absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gold text-white">LOCATION</span>}
-          {l.distanceKm != null && <span className="absolute bottom-2 left-2 text-[10px] font-medium px-2 py-0.5 rounded-full bg-ink/70 text-white flex items-center gap-1"><MapPin size={9} /> {l.distanceKm} km</span>}
+    <div className="press cursor-pointer group" onClick={onOpen}>
+      <Glass className="rounded-2xl overflow-hidden transition-shadow duration-300 group-hover:shadow-[0_18px_46px_-14px_rgba(67,83,240,0.4)]">
+        <div className="relative aspect-[4/3] bg-muted/60 overflow-hidden">
+          {l.images?.[0] ? <img src={imgSrc(l.images[0])} alt={l.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" /> : <div className="w-full h-full grid place-items-center text-3xl">📦</div>}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent pointer-events-none" />
+          <button onClick={(e) => { e.stopPropagation(); onFav() }} className="press absolute top-2 right-2 w-8 h-8 rounded-full grid place-items-center bg-white/85 backdrop-blur shadow-md"><Heart size={16} className={l.favorited ? 'text-destructive' : 'text-ink'} fill={l.favorited ? '#EF476F' : 'none'} /></button>
+          {l.transactionType === 'rent' && <span className="absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full text-white glow-gold" style={{ background: 'linear-gradient(135deg,#F0CE7E,#E2AA2B,#B98514)' }}>LOCATION</span>}
+          {l.distanceKm != null && <span className="absolute bottom-2 left-2 text-[10px] font-medium px-2 py-0.5 rounded-full bg-ink/70 backdrop-blur text-white flex items-center gap-1"><MapPin size={9} /> {l.distanceKm} km</span>}
         </div>
         <div className="p-2.5">
-          <div className="font-display tabular text-gold text-[15px] leading-none mb-1">{priceLabel(l)}</div>
+          <div className="gold-text font-display tabular text-[16px] leading-none mb-1">{priceLabel(l)}</div>
           <div className="text-sm font-medium truncate">{l.title}</div>
           <div className="text-[11px] text-muted-foreground truncate">{l.city || 'France'} · {l.condition}</div>
         </div>
@@ -239,12 +246,20 @@ function DetailView({ l, me, onBack, onFav, onOpenListing, onChat, onBought, sho
       </div>
 
       <div className="px-4">
-        <div className="flex items-center justify-between mt-4 mb-1">
-          <div className="font-display tabular text-gold text-3xl">{priceLabel(l)}</div>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Eye size={13} /> {l.views}</span><span className="flex items-center gap-1"><Heart size={13} /> {l.favorites}</span></div>
+        <div className="card-hero p-5 mt-4 mb-4 glow-primary">
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-display tabular text-4xl leading-none mb-2"><span className="gold-text">{priceLabel(l)}</span></div>
+              <h1 className="font-display text-2xl leading-tight text-white">{l.title}</h1>
+              <div className="text-sm text-white/75 flex items-center gap-1.5 mt-2"><MapPin size={14} /> {l.city || 'France'}{l.postcode ? ` (${l.postcode})` : ''}{l.distanceKm != null ? ` · à ${l.distanceKm} km` : ''}</div>
+            </div>
+            <div className="flex flex-col items-end gap-1.5 text-xs text-white/70 shrink-0">
+              <span className="flex items-center gap-1"><Eye size={13} /> {l.views}</span>
+              <span className="flex items-center gap-1"><Heart size={13} /> {l.favorites}</span>
+              {l.transactionType === 'rent' && <span className="mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/15 backdrop-blur">LOCATION</span>}
+            </div>
+          </div>
         </div>
-        <h1 className="font-display text-2xl leading-tight mb-1">{l.title}</h1>
-        <div className="text-sm text-muted-foreground flex items-center gap-1.5 mb-4"><MapPin size={14} className="text-primary" /> {l.city || 'France'}{l.postcode ? ` (${l.postcode})` : ''}{l.distanceKm != null ? ` · à ${l.distanceKm} km` : ''}</div>
 
         {attrs.length > 0 && (
           <Glass className="p-4 mb-4">
@@ -288,7 +303,7 @@ function DetailView({ l, me, onBack, onFav, onOpenListing, onChat, onBought, sho
           <div className="mx-auto max-w-3xl flex gap-2">
             <button onClick={() => onChat(l, `Bonjour, votre annonce « ${l.title} » est-elle toujours disponible ?`)} className="press flex-1 py-3 rounded-2xl border border-border bg-card/70 font-semibold flex items-center justify-center gap-1.5"><MessageCircle size={17} /> Message</button>
             <button onClick={() => onChat(l, null)} className="press px-4 py-3 rounded-2xl border border-gold/40 bg-gold/12 text-gold font-semibold flex items-center justify-center gap-1.5"><HandCoins size={17} /> Offre</button>
-            <button onClick={buy} className="press flex-[1.2] py-3 rounded-2xl font-semibold text-white flex items-center justify-center gap-1.5" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>{l.transactionType === 'rent' ? 'Réserver' : 'Acheter'}</button>
+            <button onClick={buy} className="press flex-[1.2] py-3 rounded-2xl font-semibold text-white flex items-center justify-center gap-1.5 glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}>{l.transactionType === 'rent' ? 'Réserver' : 'Acheter'}</button>
           </div>
         </div>
       ) : (

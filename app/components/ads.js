@@ -41,12 +41,26 @@ export default function AdsManager({ me, onWalletRefresh, onImmersive }) {
       <div className="mx-auto max-w-5xl px-4 pt-6 pb-28">
         <div className="flex items-center justify-between mb-4">
           <div><h1 className="font-display text-3xl leading-none">Ads Manager</h1><p className="text-sm text-muted-foreground mt-1">Crée, cible et pilote tes campagnes — comme les pros.</p></div>
-          <button onClick={() => setView('create')} className="press h-11 px-4 rounded-full grid place-items-center text-white font-semibold text-sm gap-1.5 flex" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><Plus size={18} /> Nouvelle campagne</button>
+          <button onClick={() => setView('create')} className="press h-11 px-4 rounded-full grid place-items-center text-white font-semibold text-sm gap-1.5 flex glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}><Plus size={18} /> Nouvelle campagne</button>
         </div>
+
+        {/* hero résumé */}
+        {insights && (
+          <div className="card-hero p-5 mb-5 glow-primary cascade">
+            <div className="relative flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-white/70 text-xs mb-1 flex items-center gap-1.5"><WalletIcon size={13} /> Dépense totale</div>
+                <div className="font-display text-4xl leading-none"><span className="gold-text">{eur0(insights.totals.spentCents)}</span> <span className="gold-text text-2xl">€</span></div>
+                <div className="text-white/70 text-xs mt-2">{insights.counts.active} campagne{insights.counts.active > 1 ? 's' : ''} active{insights.counts.active > 1 ? 's' : ''} · {kf(insights.totals.impressions)} impressions</div>
+              </div>
+              <div className="w-16 h-16 rounded-3xl grid place-items-center bg-white/15 backdrop-blur hairline float-slow shrink-0"><Megaphone size={30} /></div>
+            </div>
+          </div>
+        )}
 
         {/* KPIs globaux */}
         {insights && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-5 cascade">
             <Kpi icon={Eye} label="Impressions" value={kf(insights.totals.impressions)} color="#4353F0" />
             <Kpi icon={MousePointerClick} label="Clics" value={kf(insights.totals.clicks)} sub={`CTR ${insights.totals.ctr}%`} color="#9B5DE5" />
             <Kpi icon={Target} label="Conversions" value={kf(insights.totals.conversions)} sub={`${insights.totals.convRate}%`} color="#3FB68B" />
@@ -76,7 +90,7 @@ export default function AdsManager({ me, onWalletRefresh, onImmersive }) {
 }
 
 const Kpi = ({ icon: Icon, label, value, sub, color, gold }) => (
-  <Glass className="p-3.5">
+  <Glass className={cx('p-3.5', gold && 'glow-gold')}>
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><Icon size={13} style={{ color: gold ? '#E2AA2B' : color }} /> {label}</div>
     <div className={cx('font-display tabular text-2xl leading-none', gold && 'text-gold')} style={!gold ? { color } : {}}>{value}</div>
     {sub && <div className="text-[11px] text-muted-foreground mt-1">{sub}</div>}
@@ -103,7 +117,7 @@ function CampaignRow({ c, config, onOpen }) {
   const statusLabel = c.status === 'active' ? 'Active' : c.status === 'paused' ? 'En pause' : 'Terminée'
   const pct = c.budgetCents ? Math.min(100, Math.round((c.spentCents || 0) / c.budgetCents * 100)) : 0
   return (
-    <button onClick={onOpen} className="press w-full text-left"><Glass className="p-3.5">
+    <button onClick={onOpen} className="press w-full text-left"><Glass className={cx('p-3.5 transition-shadow duration-300', c.status === 'active' && 'glow-primary')}>
       <div className="flex items-center gap-3 mb-2.5">
         <div className="w-10 h-10 rounded-2xl grid place-items-center text-white text-lg shrink-0" style={{ background: typeDef?.color || c.color || '#4353F0' }}>{typeDef?.emoji || '📣'}</div>
         <div className="flex-1 min-w-0"><div className="font-semibold text-sm truncate">{c.name}</div><div className="text-[11px] text-muted-foreground">{typeDef?.name || c.type} · {c.objective}</div></div>
