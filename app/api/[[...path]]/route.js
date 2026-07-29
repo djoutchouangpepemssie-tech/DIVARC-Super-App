@@ -524,30 +524,96 @@ Types d'actions autorisés et forme du "payload" :
 - "navigate" : ouvrir un écran. payload = { "tab": "hub"|"wallet"|"messages"|"market"|"ads"|"store"|"admin"|"social"|"discover" }. risk = "low".
 
 RÈGLES :
-- Propose une action UNIQUEMENT si l'intention est claire. Sinon pose une question ou réponds normalement avec actions vides.
-- Pour send_money, l'amountCents doit être en centimes (ex : 20 € => 2000). Vérifie que le destinataire est dans les contacts ; sinon demande une précision.
+- Proposer une action est TOUJOURS SÛR : l'utilisateur doit lui-même la confirmer par un glissement (slide-to-confirm) avant toute exécution. Tu ne déclenches donc jamais rien directement — n'hésite donc JAMAIS à proposer une action quand l'intention est claire.
+- NE DEMANDE JAMAIS de confirmation verbale (interdit : « Confirmes-tu ? », « Voulez-vous que… ? »). Le GLISSEMENT est la confirmation. Propose directement l'action.
+- Remplis TOUJOURS le payload COMPLÈTEMENT à partir du message : montant en centimes, destinataire (toName), titre, prix, ville, budget, etc. Ne laisse JAMAIS un champ vide s'il est déduisible du message.
+- Quand l'utilisateur demande d'envoyer de l'argent, vendre un objet, lancer une pub ou ouvrir un écran : PROPOSE l'action correspondante (ne refuse pas, ne fais pas la morale).
+- Pour send_money : amountCents en centimes (20 € => 2000), toName = le prénom/nom donné. Si aucun destinataire n'est donné, demande UNE précision (actions vides).
 - Ne propose jamais plus de 2 actions.
+- Si l'intention n'est vraiment pas claire, pose UNE question courte (actions vides).
+
+EXEMPLES (montrent le format attendu) :
+Utilisateur : "Envoie 20 € à Marie"
+Toi : {"assistant_message":"C'est prêt ! Fais glisser pour envoyer 20 € à Marie.","actions":[{"id":"a1","type":"send_money","title":"Envoyer 20 € à Marie","summary":"Virement instantané depuis ton wallet.","payload":{"toName":"Marie","amountCents":2000},"risk":"high"}]}
+Utilisateur : "Je veux vendre mon vélo 150 € à Lyon"
+Toi : {"assistant_message":"Super, voici ton annonce prête à publier.","actions":[{"id":"a1","type":"create_listing","title":"Vendre : Vélo","summary":"Annonce Marketplace à 150 €.","payload":{"title":"Vélo","priceCents":15000,"category":"loisirs","description":"Vélo en bon état.","city":"Lyon"},"risk":"medium"}]}
+Utilisateur : "Lance une campagne de notoriété à 50 €"
+Toi : {"assistant_message":"Voici ta campagne, prête à lancer.","actions":[{"id":"a1","type":"launch_ad","title":"Campagne Notoriété","summary":"Budget 50 €, réseau DIVARC.","payload":{"name":"Campagne Notoriété","type":"display","objective":"awareness","budgetCents":5000},"risk":"high"}]}
+Utilisateur : "Ouvre mon wallet"
+Toi : {"assistant_message":"J'ouvre ton wallet.","actions":[{"id":"a1","type":"navigate","title":"Ouvrir le Wallet","summary":"","payload":{"tab":"wallet"},"risk":"low"}]}
 
 RÉPONDS STRICTEMENT EN JSON VALIDE, SANS MARKDOWN, au format exact :
 {"assistant_message": string, "actions": [{"id": string, "type": string, "title": string, "summary": string, "payload": object, "risk": "low"|"medium"|"high"}]}`
 }
+function aiCanonType(t) {
+  const s = String(t || '').toLowerCase()
+  if (/(navigate|navigation|open|ouvrir|go[_ ]?to|afficher|show|screen|voir)/.test(s)) {
+    const m = s.match(/(wallet|marketplace|market|messages?|messagerie|ads?|pub|store|admin|social|hub|discover|découvrir|accueil|profil)/)
+    let tab
+    if (m) { const w = m[1]; tab = w.startsWith('message') || w === 'messagerie' ? 'messages' : (w === 'marketplace' ? 'market' : w === 'pub' ? 'ads' : w === 'découvrir' ? 'discover' : w === 'accueil' ? 'hub' : w) }
+    return { c: 'navigate', tab }
+  }
+  if (/(send|transfer|virement|envoi|envoyer|pay|payment|paiement|money|argent)/.test(s)) return { c: 'send_money' }
+  if (/(ad|advert|campaign|campagne|pub|marketing|sponsor)/.test(s)) return { c: 'launch_ad' }
+  if (/(listing|sell|vendre|vente|annonce|market|classified|item)/.test(s)) return { c: 'create_listing' }
+  return { c: null }
+}
+function aiDefaultTitle(type, p) {
+  const eur = (c) => c != null ? (c / 100).toLocaleString('fr-FR') + ' €' : ''
+  if (type === 'send_money') return `Envoyer ${eur(p.amountCents)} à ${p.toName || 'un contact'}`
+  if (type === 'create_listing') return `Vendre : ${p.title || 'article'}`
+  if (type === 'launch_ad') return `Campagne : ${p.name || 'pub'}`
+  if (type === 'navigate') return 'Ouvrir l\u2019écran'
+  return 'Action'
+}
+const AD_TYPES = ['search', 'display', 'video', 'shopping']
+const AD_OBJECTIVES = ['sales', 'leads', 'traffic', 'awareness', 'app']
+function aiNormalizeAction(a, tabHint) {
+  const pl = (a.payload && typeof a.payload === 'object') ? a.payload
+    : (a.parameters && typeof a.parameters === 'object') ? a.parameters
+    : (a.params && typeof a.params === 'object') ? a.params
+    : (a.args && typeof a.args === 'object') ? a.args : {}
+  const SKIP = new Set(['type', 'action_type', 'action', 'payload', 'parameters', 'params', 'args', 'id', 'title', 'summary', 'risk'])
+  const pick = (...keys) => { for (const k of keys) { if (pl[k] !== undefined && pl[k] !== null && pl[k] !== '') return pl[k]; if (a[k] !== undefined && a[k] !== null && a[k] !== '' && !SKIP.has(k)) return a[k] } return undefined }
+  const toCents = (v) => (v === undefined || v === null || v === '') ? undefined : Math.round(Number(String(v).replace(/[^0-9.,-]/g, '').replace(',', '.')) * 100)
+  const canon = aiCanonType(a.type || a.action_type || a.action)
+  const t = canon.c
+  let payload = {}
+  if (t === 'send_money') {
+    const cents = pl.amountCents ?? a.amountCents ?? toCents(pick('amount', 'montant', 'amountEur', 'value', 'sum'))
+    payload = { toName: pick('toName', 'recipient', 'to', 'contact', 'destinataire', 'beneficiaire', 'name', 'friend'), amountCents: cents, message: pick('message', 'note', 'memo') || '' }
+  } else if (t === 'create_listing') {
+    payload = { title: pick('title', 'titre', 'item', 'objet', 'name', 'produit', 'product'), priceCents: pl.priceCents ?? a.priceCents ?? toCents(pick('price', 'prix', 'amount', 'montant')), category: pick('category', 'categorie'), description: pick('description', 'desc') || '', city: pick('city', 'ville', 'location', 'lieu') || '' }
+  } else if (t === 'launch_ad') {
+    let camp = pl.type ?? pl.campaignType ?? pl.campaign_type ?? a.campaignType ?? a.adType ?? pick('adType', 'kind')
+    let obj = pick('objective', 'objectif', 'goal')
+    camp = String(camp || '').toLowerCase(); obj = String(obj || '').toLowerCase()
+    if (AD_OBJECTIVES.includes(camp) && !AD_OBJECTIVES.includes(obj)) { obj = camp; camp = '' }
+    if (!AD_TYPES.includes(camp)) camp = 'display'
+    if (!AD_OBJECTIVES.includes(obj)) obj = 'awareness'
+    payload = { name: pick('name', 'nom', 'title', 'campaignName', 'campaign_name') || 'Campagne', type: camp, objective: obj, budgetCents: pl.budgetCents ?? a.budgetCents ?? toCents(pick('budget', 'budgetEur', 'amount', 'montant')) }
+  } else if (t === 'navigate') {
+    payload = { tab: pick('tab', 'screen', 'page', 'destination', 'route') || tabHint || canon.tab || 'hub' }
+  }
+  Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k])
+  return { id: a.id || uuidv4(), type: t, title: a.title || aiDefaultTitle(t, payload), summary: a.summary || '', payload, risk: a.risk || (t === 'navigate' ? 'low' : t === 'create_listing' ? 'medium' : 'high') }
+}
 function aiParseJSON(raw) {
-  if (!raw) return { assistant_message: '', actions: [] }
+  if (!raw) return { assistant_message: '', actions: [], _json: false }
   let s = String(raw).trim()
-  // retire les fences markdown ```json ... ```
   s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
-  // isole le premier objet JSON
   const start = s.indexOf('{'); const end = s.lastIndexOf('}')
   if (start >= 0 && end > start) s = s.slice(start, end + 1)
   try {
     const p = JSON.parse(s)
-    const actions = Array.isArray(p.actions) ? p.actions.slice(0, 3).map((a) => ({
-      id: a.id || uuidv4(), type: a.type, title: a.title || 'Action', summary: a.summary || '',
-      payload: (a.payload && typeof a.payload === 'object') ? a.payload : {}, risk: a.risk || 'medium',
-    })).filter((a) => ['send_money', 'create_listing', 'launch_ad', 'navigate'].includes(a.type)) : []
-    return { assistant_message: p.assistant_message || '', actions }
+    const rawActions = Array.isArray(p.actions) ? p.actions : []
+    const actions = rawActions
+      .map((a) => aiNormalizeAction(a, aiCanonType(a.type || a.action_type || a.action).tab))
+      .filter((a) => ['send_money', 'create_listing', 'launch_ad', 'navigate'].includes(a.type))
+      .slice(0, 3)
+    return { assistant_message: p.assistant_message || p.message || '', actions, _json: typeof p.assistant_message === 'string' || Array.isArray(p.actions) }
   } catch (e) {
-    return { assistant_message: String(raw).slice(0, 500), actions: [] }
+    return { assistant_message: String(raw).slice(0, 500), actions: [], _json: false }
   }
 }
 async function aiBuildContext(db, me) {
@@ -837,10 +903,19 @@ async function handleRoute(request, { params }) {
 
       let parsed
       try {
+        const REMINDER = '\n\n[Rappel système : réponds UNIQUEMENT avec un objet JSON valide {"assistant_message": string, "actions": [...]} — AUCUN texte hors du JSON, AUCUN markdown, AUCUN conseil générique. Si l\u2019intention est d\u2019envoyer de l\u2019argent / vendre-acheter / lancer une pub / ouvrir un écran, PROPOSE l\u2019action correspondante dans "actions".]'
         const chat = new LlmChat(process.env.EMERGENT_LLM_KEY, sessionId, aiSystemPrompt(ctx), initial)
-          .withModel('anthropic', AI_MODEL).withParams({ max_tokens: 1200 })
-        const raw = await chat.sendMessage(new UserMessage({ text }))
+          .withModel('anthropic', AI_MODEL).withParams({ max_tokens: 1200, temperature: 0 })
+        let raw = await chat.sendMessage(new UserMessage({ text: text + REMINDER }))
         parsed = aiParseJSON(raw)
+        // retry une fois si le modèle n'a pas renvoyé de JSON exploitable
+        if (!parsed._json) {
+          const chat2 = new LlmChat(process.env.EMERGENT_LLM_KEY, sessionId + '-retry', aiSystemPrompt(ctx), initial)
+            .withModel('anthropic', AI_MODEL).withParams({ max_tokens: 1200, temperature: 0 })
+          raw = await chat2.sendMessage(new UserMessage({ text: `Message de l\u2019utilisateur : "${text}".` + REMINDER }))
+          const p2 = aiParseJSON(raw)
+          if (p2._json) parsed = p2
+        }
       } catch (e) {
         console.error('ai/chat', e?.message || e)
         return err('L\u2019assistant est momentanément indisponible', 502)
