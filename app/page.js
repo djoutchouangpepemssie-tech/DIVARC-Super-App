@@ -90,17 +90,32 @@ function Login({ onAuthed }) {
 
   return (
     <div className="min-h-[100dvh] bg-app-gradient flex items-center justify-center p-4">
-      <Glass sheen strong className="w-full max-w-[440px] p-7">
-        <div className="w-16 h-16 rounded-3xl grid place-items-center mb-6 float-slow" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
-          <span className="font-display italic text-gold text-4xl leading-none">D</span>
+      <Glass sheen strong className="w-full max-w-[440px] overflow-hidden">
+        {/* bandeau premium */}
+        <div className="card-hero px-7 pt-8 pb-7 rounded-none">
+          <div className="relative flex items-center gap-3 mb-5">
+            <div className="w-14 h-14 rounded-2xl grid place-items-center bg-white/15 backdrop-blur hairline float-slow">
+              <span className="font-display italic text-gold text-3xl leading-none">D</span>
+            </div>
+            <div>
+              <div className="font-display text-2xl leading-none tracking-wide">DIVARC</div>
+              <div className="text-[11px] text-white/70 mt-1">La super-app européenne</div>
+            </div>
+          </div>
+          <div className="relative flex items-center gap-2 flex-wrap">
+            <Pill className="bg-white/15 text-white backdrop-blur"><Shield size={12} /> RGPD</Pill>
+            <Pill className="bg-white/15 text-white backdrop-blur"><Fingerprint size={12} /> Sans mot de passe</Pill>
+            <Pill className="bg-white/15 text-white backdrop-blur">🇪🇺 UE</Pill>
+          </div>
         </div>
+        <div className="p-7">
         <AnimatePresence mode="wait">
           {step === 'email' ? (
             <motion.div key="email" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
-              <h1 className="font-display text-4xl leading-tight mb-2">Bienvenue sur DIVARC</h1>
-              <p className="text-muted-foreground mb-6 leading-relaxed">Connexion sécurisée par code e-mail. Pas de mot de passe.</p>
+              <h1 className="font-display text-3xl leading-tight mb-2">Bienvenue 👋</h1>
+              <p className="text-muted-foreground mb-6 leading-relaxed text-sm">Connexion sécurisée par code e-mail. Pas de mot de passe à retenir.</p>
               <label className="text-xs text-muted-foreground">Ton e-mail</label>
-              <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-4 py-3 mt-1.5 mb-2">
+              <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-4 py-3 mt-1.5 mb-2 focus-within:border-primary transition-colors">
                 <Mail size={18} className="text-muted-foreground" />
                 <input type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendCode()}
                   placeholder="toi@exemple.fr" className="flex-1 bg-transparent outline-none text-sm" />
@@ -133,7 +148,7 @@ function Login({ onAuthed }) {
                 <div className="mb-4">
                   <label className="text-xs text-muted-foreground">Ton prénom & nom</label>
                   <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex. Camille Dubois"
-                    className="w-full rounded-2xl border border-border bg-card/60 px-4 py-3 mt-1.5 text-sm" />
+                    className="w-full rounded-2xl border border-border bg-card/60 px-4 py-3 mt-1.5 text-sm focus:border-primary outline-none transition-colors" />
                 </div>
               )}
               {error && <p className="text-xs text-destructive mb-2">{error}</p>}
@@ -144,6 +159,7 @@ function Login({ onAuthed }) {
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </Glass>
     </div>
   )
@@ -846,15 +862,19 @@ function Profile({ user, theme, setTheme, mask, setMask, onLogout }) {
       <div className="cascade space-y-5">
         <h1 className="font-display text-3xl pt-2">Profil & Confiance</h1>
 
-        <Glass sheen className="p-5 flex items-center gap-4">
-          <Avatar c={user} size={60} />
-          <div className="flex-1">
-            <div className="font-semibold text-lg leading-tight">{user?.name}</div>
-            <div className="text-sm text-muted-foreground">{user?.handle}</div>
-            <Pill className="bg-green-500/12 text-green-600 dark:text-green-400 mt-1"><BadgeCheck size={12} /> Vérifié {user?.kyc}</Pill>
+        <div className="card-hero p-5 glow-primary">
+          <div className="relative flex items-center gap-4">
+            <div className="rounded-full p-0.5 bg-white/20 backdrop-blur hairline">
+              <Avatar c={user} size={60} />
+            </div>
+            <div className="flex-1">
+              <div className="font-semibold text-lg leading-tight text-white">{user?.name}</div>
+              <div className="text-sm text-white/70">{user?.handle}</div>
+              <Pill className="bg-white/15 text-white backdrop-blur mt-1.5"><BadgeCheck size={12} className="text-gold" /> Vérifié {user?.kyc}</Pill>
+            </div>
+            <button className="press w-10 h-10 rounded-full grid place-items-center bg-white/15 text-white backdrop-blur" aria-label="Mon QR"><QrCode size={20} /></button>
           </div>
-          <QrCode size={26} className="text-muted-foreground" />
-        </Glass>
+        </div>
 
         {/* security */}
         <div>
