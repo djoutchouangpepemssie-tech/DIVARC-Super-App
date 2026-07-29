@@ -192,17 +192,17 @@ function TabBar({ active, onChange }) {
           if (t.center) {
             return (
               <button key={t.id} onClick={() => onChange(t.id)} aria-label={t.label}
-                className="press -mt-7 w-14 h-14 rounded-full grid place-items-center text-white shadow-xl"
-                style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+                className="press -mt-7 w-14 h-14 rounded-full grid place-items-center text-white glow-primary"
+                style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}>
                 <Icon size={24} />
               </button>
             )
           }
           return (
             <button key={t.id} onClick={() => onChange(t.id)} aria-label={t.label} aria-current={on}
-              className={cx('press flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl min-w-[56px]', on ? 'text-primary' : 'text-muted-foreground')}>
+              className={cx('press flex flex-col items-center gap-1 px-3 py-1.5 rounded-2xl min-w-[56px] transition-colors', on ? 'text-primary bg-primary/10' : 'text-muted-foreground')}>
               <Icon size={21} strokeWidth={on ? 2.4 : 2} />
-              <span className="text-[10px] font-medium">{t.label}</span>
+              <span className={cx('text-[10px]', on ? 'font-semibold' : 'font-medium')}>{t.label}</span>
             </button>
           )
         })}
@@ -235,31 +235,36 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab }) {
           <Glass className="w-10 h-10 grid place-items-center press"><Bell size={18} /></Glass>
         </div>
 
-        {/* balance hero */}
-        <Glass sheen className="p-6 relative">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-muted-foreground">Solde disponible</span>
+        {/* balance hero — carte premium */}
+        <div className="card-hero p-6 glow-primary">
+          <div className="relative flex items-center justify-between mb-1">
+            <span className="text-sm text-white/70">Solde disponible</span>
             <button onClick={() => setMask((m) => !m)} aria-label="Mode Confiance"
-              className="press w-8 h-8 grid place-items-center rounded-full bg-muted/60 text-muted-foreground">
+              className="press w-8 h-8 grid place-items-center rounded-full bg-white/15 text-white/90 backdrop-blur">
               {mask ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
-          <div className="flex items-end gap-2 mb-4">
-            <Amount cents={wallet?.balanceCents || 0} mask={mask} className="text-5xl" />
-            <span className="gold-text font-display text-3xl mb-1">€</span>
+          <div className="relative flex items-end gap-2 mb-4">
+            <Amount cents={wallet?.balanceCents || 0} mask={mask} className="text-5xl text-white" />
+            <span className="font-display text-3xl mb-1 text-gold">€</span>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Pill className="bg-primary/10 text-primary"><Zap size={12} /> SEPA Instant</Pill>
-            <Pill className="bg-green-500/10 text-green-600 dark:text-green-400"><Shield size={12} /> Protégé</Pill>
+          <div className="relative flex items-center justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Pill className="bg-white/15 text-white backdrop-blur"><Zap size={12} /> SEPA Instant</Pill>
+              <Pill className="bg-white/15 text-white backdrop-blur"><Shield size={12} /> Protégé</Pill>
+            </div>
+            <span className="font-display text-lg text-white/40 tracking-wide select-none">DIVARC</span>
           </div>
-        </Glass>
+        </div>
 
         {/* quick actions */}
         <div className="grid grid-cols-4 gap-3">
           {actions.map((a) => (
             <button key={a.id} onClick={() => onAction(a.id)} className="press flex flex-col items-center gap-2">
-              <Glass className="w-full aspect-square grid place-items-center" style={{ color: a.c }}>
-                <a.icon size={22} />
+              <Glass className="w-full aspect-square grid place-items-center hairline">
+                <span className="w-11 h-11 rounded-2xl grid place-items-center text-white shadow-md" style={{ background: `linear-gradient(140deg, ${a.c}, ${a.c}c8)` }}>
+                  <a.icon size={20} />
+                </span>
               </Glass>
               <span className="text-[11px] font-medium">{a.label}</span>
             </button>
@@ -271,7 +276,7 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab }) {
           <div className="w-11 h-11 rounded-2xl grid place-items-center bg-green-500/12 text-green-600 dark:text-green-400"><Leaf size={20} /></div>
           <div className="flex-1">
             <div className="text-sm font-semibold">Empreinte carbone</div>
-            <div className="text-xs text-muted-foreground">{wallet?.carbonMonthKg} kg CO₂ ce mois — 12% de moins qu\u2019en mai</div>
+            <div className="text-xs text-muted-foreground">{wallet?.carbonMonthKg} kg CO₂ ce mois — 12% de moins qu'en mai</div>
           </div>
           <ChevronRight size={18} className="text-muted-foreground" />
         </Glass>
@@ -334,19 +339,19 @@ function Wallet({ wallet, txs, mask, setMask, onAction }) {
           </button>
         </div>
 
-        <Glass sheen className="p-6 text-center relative">
-          <span className="text-sm text-muted-foreground">Solde total</span>
-          <div className="flex items-end justify-center gap-2 my-2">
-            <Amount cents={wallet?.balanceCents || 0} mask={mask} className="text-6xl" />
-            <span className="gold-text font-display text-4xl mb-1.5">€</span>
+        <div className="card-hero p-6 text-center glow-primary">
+          <span className="relative text-sm text-white/70">Solde total</span>
+          <div className="relative flex items-end justify-center gap-2 my-2">
+            <Amount cents={wallet?.balanceCents || 0} mask={mask} className="text-6xl text-white" />
+            <span className="font-display text-4xl mb-1.5 text-gold">€</span>
           </div>
-          <Pill className="bg-primary/10 text-primary"><Zap size={12} /> SEPA Instant · ~10s</Pill>
-        </Glass>
+          <Pill className="relative bg-white/15 text-white backdrop-blur"><Zap size={12} /> SEPA Instant · ~10s</Pill>
+        </div>
 
         <div className="grid grid-cols-5 gap-2">
           {actions.map((a) => (
             <button key={a.id} onClick={() => onAction(a.id)} className="press flex flex-col items-center gap-1.5">
-              <Glass className="w-full aspect-square grid place-items-center text-primary"><a.icon size={20} /></Glass>
+              <Glass className="w-full aspect-square grid place-items-center hairline"><span className="w-10 h-10 rounded-2xl grid place-items-center text-white shadow-md" style={{ background: 'linear-gradient(140deg,#5A67FF,#3A48D8)' }}><a.icon size={18} /></span></Glass>
               <span className="text-[10px] font-medium">{a.label}</span>
             </button>
           ))}
