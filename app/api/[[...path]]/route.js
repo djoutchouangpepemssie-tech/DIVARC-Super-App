@@ -318,6 +318,45 @@ async function ensureAppStoreSeed(db) {
   })))
 }
 
+// ---------------- Hub administratif & santé : connecteurs État (mockés via "ports" eIDAS) ----------------
+const ADMIN_CONN = [
+  { id: 'impots', name: 'Impôts.gouv', cat: 'Fiscalité', emoji: '🧾', color: '#4353F0', desc: 'Ton avis d\u2019imposition, tes acomptes et ton taux de prélèvement à la source.', scopes: ['Identité', 'Revenus fiscaux'], sensitive: false },
+  { id: 'ameli', name: 'Ameli · Assurance Maladie', cat: 'Santé', emoji: '⚕️', color: '#3FB68B', desc: 'Tes remboursements, ta carte Vitale et ton médecin traitant.', scopes: ['Identité', 'Données de santé'], sensitive: true },
+  { id: 'caf', name: 'CAF · Allocations', cat: 'Social', emoji: '👨‍👩‍👧', color: '#E2AA2B', desc: 'Tes droits, quotient familial et versements d\u2019aides.', scopes: ['Identité', 'Situation familiale'], sensitive: false },
+  { id: 'ants', name: 'ANTS · Titres', cat: 'Identité', emoji: '🪪', color: '#6E7BF5', desc: 'Permis de conduire, carte grise, points et démarches.', scopes: ['Identité', 'Titres'], sensitive: false },
+  { id: 'assurance', name: 'Retraite · Info', cat: 'Retraite', emoji: '🏛️', color: '#5B5A50', desc: 'Relevé de carrière et estimation de ta future pension.', scopes: ['Identité', 'Carrière'], sensitive: false },
+]
+const ADMIN_DATA = {
+  impots: [
+    { label: 'Revenu fiscal de référence', value: '38 420 €' },
+    { label: 'Taux de prélèvement', value: '9,3 %' },
+    { label: 'Prochain acompte', value: '298 € · 15 juil.' },
+    { label: 'Avis 2024', value: 'Disponible' },
+  ],
+  ameli: [
+    { label: 'Remboursements en attente', value: '2 · 47,80 €' },
+    { label: 'Médecin traitant', value: 'Dr. Lefèvre' },
+    { label: 'Carte Vitale', value: 'À jour' },
+    { label: 'Plafond mutuelle', value: '82 %' },
+  ],
+  caf: [
+    { label: 'Quotient familial', value: '1 240' },
+    { label: 'Aides actives', value: 'APL · 214 €/mois' },
+    { label: 'Prochain versement', value: '5 du mois' },
+    { label: 'Situation', value: 'À jour' },
+  ],
+  ants: [
+    { label: 'Permis', value: 'Valide · 12 pts' },
+    { label: 'Carte grise', value: 'AB-123-CD' },
+    { label: 'Démarche en cours', value: 'Aucune' },
+  ],
+  assurance: [
+    { label: 'Trimestres validés', value: '68' },
+    { label: 'Pension estimée', value: '1 640 €/mois' },
+    { label: 'Départ estimé', value: '2049' },
+  ],
+}
+
 // ---------------- Router ----------------
 async function handleRoute(request, { params }) {
   const { path = [] } = await params
@@ -909,6 +948,71 @@ async function handleRoute(request, { params }) {
     if (route === '/store/connections' && method === 'GET') {
       const conns = await db.collection('app_connections').find({ userId: me.id }, { projection: { _id: 0 } }).sort({ since: -1 }).toArray()
       return ok(conns)
+    }
+
+    /* ===================== HUB ADMINISTRATIF & SANTÉ ===================== */
+    if (route === '/admin/connectors' && method === 'GET') {
+      const conns = await db.collection('admin_connections').find({ userId: me.id }).toArray()
+      const map = Object.fromEntries(conns.map((c) => [c.connectorId, c]))
+      return ok(ADMIN_CONN.map((a) => ({ ...a, connected: !!map[a.id], pseudonym: map[a.id]?.pseudonym || null, since: map[a.id]?.since || null, data: map[a.id]?.data || [] })))
+    }
+    if (route.startsWith('/admin/connectors/') && path[3] === 'connect' && method === 'POST') {
+      const def = ADMIN_CONN.find((a) => a.id === path[2])
+      if (!def) return err('Connecteur introuvable', 404)
+      const ex = await db.collection('admin_connections').findOne({ userId: me.id, connectorId: def.id })
+      if (ex) { const { _id, ...c } = ex; return ok({ connection: c, existing: true }) }
+      const conn = { id: uuidv4(), userId: me.id, connectorId: def.id, name: def.name, pseudonym: 'eidas-' + crypto.randomBytes(3).toString('hex'), scopes: def.scopes, sensitive: !!def.sensitive, data: ADMIN_DATA[def.id] || [], since: new Date() }
+      await db.collection('admin_connections').insertOne(conn)
+      const { _id, ...clean } = conn
+      return ok({ connection: clean })
+    }
+    if (route.startsWith('/admin/connectors/') && path[3] === 'disconnect' && method === 'POST') {
+      await db.collection('admin_connections').deleteOne({ userId: me.id, connectorId: path[2] })
+      return ok({ ok: true })
+    }
+
+    if (route === '/admin/documents' && method === 'GET') {
+      const count = await db.collection('admin_documents').countDocuments({ userId: me.id })
+      if (count === 0) {
+        await db.collection('admin_documents').insertMany([
+          { id: uuidv4(), userId: me.id, title: 'Avis d\u2019imposition 2024', category: 'Impôts', issuer: 'DGFiP', emoji: '🧾', encrypted: true, shared: false, createdAt: new Date() },
+          { id: uuidv4(), userId: me.id, title: 'Attestation carte Vitale', category: 'Santé', issuer: 'Ameli', emoji: '⚕️', encrypted: true, shared: false, createdAt: new Date() },
+        ])
+      }
+      const docs = await db.collection('admin_documents').find({ userId: me.id }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray()
+      return ok(docs)
+    }
+    if (route === '/admin/documents' && method === 'POST') {
+      const doc = { id: uuidv4(), userId: me.id, title: body.title || 'Document', category: body.category || 'Autre', issuer: body.issuer || 'Moi', emoji: body.emoji || '📄', encrypted: true, shared: false, createdAt: new Date() }
+      await db.collection('admin_documents').insertOne(doc)
+      const { _id, ...clean } = doc
+      return ok(clean)
+    }
+    if (route.startsWith('/admin/documents/') && path[3] === 'share' && method === 'POST') {
+      const shareToken = crypto.randomBytes(4).toString('hex')
+      const expiresAt = new Date(Date.now() + (body.hours || 24) * 3600000)
+      await db.collection('admin_documents').updateOne({ id: path[2], userId: me.id }, { $set: { shared: true, shareToken, shareExpiresAt: expiresAt } })
+      return ok({ shared: true, shareToken, expiresAt })
+    }
+    if (route.startsWith('/admin/documents/') && path[3] === 'unshare' && method === 'POST') {
+      await db.collection('admin_documents').updateOne({ id: path[2], userId: me.id }, { $set: { shared: false }, $unset: { shareToken: '', shareExpiresAt: '' } })
+      return ok({ shared: false })
+    }
+    if (route.startsWith('/admin/documents/') && path.length === 3 && method === 'DELETE') {
+      await db.collection('admin_documents').deleteOne({ id: path[2], userId: me.id })
+      return ok({ ok: true })
+    }
+
+    if (route === '/admin/accounting' && method === 'GET') {
+      const txs = await db.collection('transactions').find({ userId: me.id }).toArray()
+      let income = 0, expense = 0
+      const byCat = {}
+      for (const t of txs) {
+        if (t.amountCents > 0) income += t.amountCents
+        else { expense += -t.amountCents; byCat[t.category] = (byCat[t.category] || 0) + (-t.amountCents) }
+      }
+      const categories = Object.entries(byCat).map(([name, amountCents]) => ({ name, amountCents })).sort((a, b) => b.amountCents - a.amountCents).slice(0, 6)
+      return ok({ incomeCents: income, expenseCents: expense, netCents: income - expense, categories, count: txs.length })
     }
 
     return err(`Route ${route} introuvable`, 404)
