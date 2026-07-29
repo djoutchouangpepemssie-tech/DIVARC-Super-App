@@ -3,14 +3,21 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
-import { Search, X, Star, Check, Shield, Link2, Unlink, ExternalLink, Sparkles, Users } from 'lucide-react'
+import { Search, X, Star, Check, Shield, Link2, Unlink, ExternalLink, Sparkles, Users, Download } from 'lucide-react'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
 const Glass = ({ className, sheen, children, ...p }) => <div className={cx('glass', sheen && 'glass-sheen', className)} {...p}>{children}</div>
-const Icon = ({ a, size = 56 }) => (
-  <div className="rounded-2xl grid place-items-center text-white shadow" style={{ width: size, height: size, background: `linear-gradient(150deg, ${a.color}, ${a.color}bb)`, fontSize: size * 0.44 }}>{a.emoji}</div>
-)
-const CATS = ['Tout', 'Finance', 'Musique', 'Streaming', 'Transport', 'Santé', 'Shopping', 'Productivité', 'Jeux', 'Repas']
+const Icon = ({ a, size = 56 }) => {
+  const [err, setErr] = useState(false)
+  return (
+    <div className="rounded-2xl grid place-items-center text-white shadow shrink-0 overflow-hidden" style={{ width: size, height: size, background: `linear-gradient(150deg, ${a.color}, ${a.color}cc)` }}>
+      {a.logo && !err
+        ? <img src={a.logo} alt={a.name} onError={() => setErr(true)} style={{ width: size * 0.54, height: size * 0.54 }} className="object-contain" />
+        : <span style={{ fontSize: size * 0.4, fontWeight: 700 }}>{a.name?.[0] || '?'}</span>}
+    </div>
+  )
+}
+const CATS = ['Tout', 'Social', 'Réseaux pro', 'Vidéo', 'Messagerie', 'Streaming', 'Musique', 'Finance', 'Mobilité', 'Shopping', 'Repas', 'Productivité', 'Rencontre']
 const kf = (n) => n >= 1000000 ? (n / 1000000).toFixed(1).replace('.0', '') + 'M' : n >= 1000 ? Math.round(n / 1000) + 'k' : n
 
 export default function AppStore({ me }) {
@@ -37,6 +44,8 @@ export default function AppStore({ me }) {
   }
 
   const connected = apps.filter((a) => a.connected)
+  const featured = apps.filter((a) => a.featured)
+  const showExtras = cat === 'Tout' && !q
 
   return (
     <div className="min-h-[100dvh] bg-app-gradient">
@@ -52,7 +61,25 @@ export default function AppStore({ me }) {
           {CATS.map((c) => <button key={c} onClick={() => setCat(c)} className={cx('press whitespace-nowrap px-3.5 py-1.5 rounded-full text-sm font-medium border', cat === c ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>{c}</button>)}
         </div>
 
-        {connected.length > 0 && cat === 'Tout' && !q && (
+        {showExtras && featured.length > 0 && (
+          <div className="mb-6">
+            <h2 className="font-semibold text-[15px] mb-2 flex items-center gap-1.5"><Sparkles size={15} className="text-gold" /> À la une</h2>
+            <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+              {featured.map((a) => (
+                <button key={a.id} onClick={() => setDetail(a)} className="press text-left min-w-[190px]">
+                  <div className="rounded-3xl p-4 h-full text-white relative overflow-hidden" style={{ background: `linear-gradient(150deg, ${a.color}, ${a.color}cc)` }}>
+                    <div className="flex items-center justify-between mb-3"><Icon a={a} size={44} /><span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 backdrop-blur">{a.cat}</span></div>
+                    <div className="font-display text-lg leading-none">{a.name}</div>
+                    <div className="text-[11px] text-white/80 mt-1 line-clamp-2 leading-snug">{a.desc}</div>
+                    <div className="flex items-center gap-2 mt-3 text-[11px] text-white/90"><span className="flex items-center gap-0.5"><Star size={11} fill="white" /> {a.rating}</span><span className="flex items-center gap-1"><Download size={11} /> {kf(a.users)}</span>{a.connected && <span className="ml-auto flex items-center gap-0.5 font-semibold"><Check size={12} /> Connectée</span>}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {connected.length > 0 && showExtras && (
           <div className="mb-6">
             <h2 className="font-semibold text-[15px] mb-2 flex items-center gap-1.5"><Link2 size={15} className="text-primary" /> Connectées</h2>
             <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1">
@@ -104,7 +131,7 @@ function AppDetail({ a, onClose, onConnect, onDisconnect, onOpen }) {
             <div>
               <div className="font-display text-2xl">{a.name}</div>
               <div className="text-sm text-muted-foreground">{a.cat}</div>
-              <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground"><span className="flex items-center gap-0.5"><Star size={12} className="text-gold" fill="#E2AA2B" /> {a.rating}</span><span className="flex items-center gap-0.5"><Users size={12} /> {kf(a.users)} utilisateurs</span></div>
+              <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground"><span className="flex items-center gap-0.5"><Star size={12} className="text-gold" fill="#E2AA2B" /> {a.rating}{a.reviews ? ` (${kf(a.reviews)})` : ''}</span><span className="flex items-center gap-0.5"><Users size={12} /> {kf(a.users)} utilisateurs</span></div>
             </div>
           </div>
           <p className="text-sm text-muted-foreground leading-relaxed mb-4">{a.desc}</p>

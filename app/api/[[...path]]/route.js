@@ -504,24 +504,89 @@ function adKeywordSuggest(seed) {
   }))
 }
 
-const STORE_APPS = [
-  { id: 'spotly', name: 'Spotly', cat: 'Musique', emoji: '🎵', color: '#3FB68B', desc: 'Streaming musical illimité. Connecte pour payer ton abonnement et partager tes titres.', perms: ['Profil', 'Paiement'] },
-  { id: 'flixo', name: 'Flixo', cat: 'Streaming', emoji: '🎬', color: '#EF476F', desc: 'Films & séries. Reprends la lecture sur tous tes écrans.', perms: ['Profil', 'Paiement'] },
-  { id: 'ridenow', name: 'RideNow', cat: 'Transport', emoji: '🚗', color: '#00BBF9', desc: 'VTC et trottinettes en un tap, payé au wallet.', perms: ['Profil', 'Localisation', 'Paiement'] },
-  { id: 'fitpulse', name: 'FitPulse', cat: 'Santé', emoji: '💪', color: '#F97C4E', desc: 'Coach sportif & suivi d\u2019activité personnalisé.', perms: ['Profil', 'Santé'] },
-  { id: 'notino', name: 'Notino', cat: 'Productivité', emoji: '📝', color: '#4353F0', desc: 'Notes, tâches et objectifs synchronisés.', perms: ['Profil'] },
-  { id: 'shopz', name: 'Shopz', cat: 'Shopping', emoji: '🛒', color: '#9B5DE5', desc: 'Boutiques locales, livraison rapide, paiement wallet.', perms: ['Profil', 'Paiement', 'Localisation'] },
-  { id: 'bankly', name: 'Bankly', cat: 'Finance', emoji: '🏦', color: '#E2AA2B', desc: 'Agrège tes comptes bancaires (open banking, démo).', perms: ['Profil', 'Comptes bancaires'] },
-  { id: 'lingo', name: 'Lingo', cat: 'Éducation', emoji: '🗣️', color: '#00BBF9', desc: 'Apprends les langues en 5 min/jour.', perms: ['Profil'] },
-  { id: 'gamely', name: 'Gamely', cat: 'Jeux', emoji: '🎮', color: '#F15BB5', desc: 'Cloud gaming social avec tes amis DIVARC.', perms: ['Profil', 'Messages'] },
-  { id: 'mealo', name: 'Mealo', cat: 'Repas', emoji: '🍔', color: '#F97C4E', desc: 'Livraison de repas, suivi en temps réel.', perms: ['Profil', 'Paiement', 'Localisation'] },
-  { id: 'cloudy', name: 'Cloudy', cat: 'Productivité', emoji: '☁️', color: '#6E7BF5', desc: 'Stockage & partage de fichiers chiffrés.', perms: ['Profil', 'Documents'] },
-  { id: 'newsr', name: 'Newsr', cat: 'Actualités', emoji: '📰', color: '#5B5A50', desc: 'Ton actu personnalisée, sans bulle de filtre.', perms: ['Profil'] },
+// ---------------- App Store : vraies apps du marché (logos via Simple Icons CDN) ----------------
+const APP_CAT_PERMS = {
+  'Social': ['Profil', 'Photos', 'Contacts'],
+  'Réseaux pro': ['Profil', 'Contacts', 'Expérience'],
+  'Vidéo': ['Profil', 'Historique'],
+  'Messagerie': ['Profil', 'Contacts'],
+  'Streaming': ['Profil', 'Paiement'],
+  'Musique': ['Profil', 'Paiement'],
+  'Finance': ['Profil', 'Identité', 'Paiement'],
+  'Mobilité': ['Profil', 'Localisation', 'Paiement'],
+  'Shopping': ['Profil', 'Adresse', 'Paiement'],
+  'Repas': ['Profil', 'Localisation', 'Paiement'],
+  'Productivité': ['Profil', 'Fichiers'],
+  'Rencontre': ['Profil', 'Photos', 'Localisation'],
+}
+const APP_CAT_DESC = {
+  'Social': (n) => `Partage tes moments, tes stories et suis tes amis sur ${n}.`,
+  'Réseaux pro': (n) => `Développe ton réseau professionnel et ta carrière avec ${n}.`,
+  'Vidéo': (n) => `Regarde et diffuse des vidéos en direct sur ${n}.`,
+  'Messagerie': (n) => `Discute en privé et en groupe, chiffré, sur ${n}.`,
+  'Streaming': (n) => `Films & séries en illimité — reprends la lecture partout avec ${n}.`,
+  'Musique': (n) => `Des millions de titres et playlists à écouter sur ${n}.`,
+  'Finance': (n) => `Gère ton argent, tes paiements et tes cartes avec ${n}.`,
+  'Mobilité': (n) => `Déplace-toi en un tap, payé depuis ton wallet, avec ${n}.`,
+  'Shopping': (n) => `Achète tout, livré rapidement, paiement wallet sur ${n}.`,
+  'Repas': (n) => `Fais-toi livrer tes plats préférés avec ${n}.`,
+  'Productivité': (n) => `Organise ton travail et tes fichiers avec ${n}.`,
+  'Rencontre': (n) => `Fais de nouvelles rencontres près de chez toi sur ${n}.`,
+}
+// [id, name, simpleicons slug, brand color, category, featured]
+const STORE_RAW = [
+  ['instagram', 'Instagram', 'instagram', '#E4405F', 'Social', true],
+  ['tiktok', 'TikTok', 'tiktok', '#010101', 'Social', true],
+  ['facebook', 'Facebook', 'facebook', '#0866FF', 'Social', false],
+  ['x', 'X', 'x', '#000000', 'Social', false],
+  ['snapchat', 'Snapchat', 'snapchat', '#0FADFF', 'Social', false],
+  ['pinterest', 'Pinterest', 'pinterest', '#BD081C', 'Social', false],
+  ['reddit', 'Reddit', 'reddit', '#FF4500', 'Social', false],
+  ['threads', 'Threads', 'threads', '#000000', 'Social', false],
+  ['linkedin', 'LinkedIn', 'linkedin', '#0A66C2', 'Réseaux pro', true],
+  ['youtube', 'YouTube', 'youtube', '#FF0000', 'Vidéo', true],
+  ['twitch', 'Twitch', 'twitch', '#9146FF', 'Vidéo', false],
+  ['whatsapp', 'WhatsApp', 'whatsapp', '#25D366', 'Messagerie', true],
+  ['telegram', 'Telegram', 'telegram', '#26A5E4', 'Messagerie', false],
+  ['messenger', 'Messenger', 'messenger', '#00B2FF', 'Messagerie', false],
+  ['signal', 'Signal', 'signal', '#3A76F0', 'Messagerie', false],
+  ['discord', 'Discord', 'discord', '#5865F2', 'Messagerie', false],
+  ['netflix', 'Netflix', 'netflix', '#E50914', 'Streaming', true],
+  ['primevideo', 'Prime Video', 'primevideo', '#1F2E5E', 'Streaming', false],
+  ['disneyplus', 'Disney+', 'disneyplus', '#113CCF', 'Streaming', false],
+  ['spotify', 'Spotify', 'spotify', '#1DB954', 'Musique', true],
+  ['deezer', 'Deezer', 'deezer', '#A238FF', 'Musique', false],
+  ['paypal', 'PayPal', 'paypal', '#003087', 'Finance', false],
+  ['revolut', 'Revolut', 'revolut', '#191C1F', 'Finance', false],
+  ['coinbase', 'Coinbase', 'coinbase', '#0052FF', 'Finance', false],
+  ['uber', 'Uber', 'uber', '#000000', 'Mobilité', true],
+  ['blablacar', 'BlaBlaCar', 'blablacar', '#00AFF5', 'Mobilité', false],
+  ['amazon', 'Amazon', 'amazon', '#FF9900', 'Shopping', false],
+  ['vinted', 'Vinted', 'vinted', '#09B1BA', 'Shopping', false],
+  ['zalando', 'Zalando', 'zalando', '#FF6900', 'Shopping', false],
+  ['ubereats', 'Uber Eats', 'ubereats', '#06C167', 'Repas', false],
+  ['deliveroo', 'Deliveroo', 'deliveroo', '#00CCBC', 'Repas', false],
+  ['notion', 'Notion', 'notion', '#000000', 'Productivité', false],
+  ['slack', 'Slack', 'slack', '#4A154B', 'Productivité', false],
+  ['zoom', 'Zoom', 'zoom', '#0B5CFF', 'Productivité', false],
+  ['dropbox', 'Dropbox', 'dropbox', '#0061FF', 'Productivité', false],
+  ['tinder', 'Tinder', 'tinder', '#FF6B6B', 'Rencontre', false],
+  ['bumble', 'Bumble', 'bumble', '#FFC629', 'Rencontre', false],
 ]
+const STORE_APPS = STORE_RAW.map(([id, name, slug, color, cat, featured]) => ({
+  id, name, slug, color, cat, featured: !!featured,
+  logo: `https://cdn.simpleicons.org/${slug}/FFFFFF`,
+  emoji: '📱',
+  desc: (APP_CAT_DESC[cat] || (() => `Connecte ${name} à ton identité DIVARC.`))(name),
+  perms: APP_CAT_PERMS[cat] || ['Profil'],
+}))
 async function ensureAppStoreSeed(db) {
   if (await db.collection('store_apps').countDocuments() > 0) return
+  const ratings = {}
   await db.collection('store_apps').insertMany(STORE_APPS.map((a) => ({
-    ...a, rating: +(4 + Math.random()).toFixed(1), users: Math.floor(Math.random() * 900 + 100) * 1000,
+    ...a, rating: +(4.2 + Math.random() * 0.75).toFixed(1),
+    users: Math.floor(Math.random() * 900 + 80) * 1000000,
+    reviews: Math.floor(Math.random() * 4000 + 200) * 1000,
   })))
 }
 
@@ -1365,7 +1430,9 @@ async function handleRoute(request, { params }) {
       if (q) apps = apps.filter((a) => a.name.toLowerCase().includes(q) || a.cat.toLowerCase().includes(q) || a.desc.toLowerCase().includes(q))
       const conns = await db.collection('app_connections').find({ userId: me.id }).toArray()
       const connMap = Object.fromEntries(conns.map((c) => [c.appId, c]))
-      return ok(apps.map((a) => ({ ...a, connected: !!connMap[a.id], pseudonym: connMap[a.id]?.pseudonym || null, since: connMap[a.id]?.since || null })))
+      const out = apps.map((a) => ({ ...a, connected: !!connMap[a.id], pseudonym: connMap[a.id]?.pseudonym || null, since: connMap[a.id]?.since || null }))
+      out.sort((a, b) => (b.featured - a.featured) || ((b.users || 0) - (a.users || 0)))
+      return ok(out)
     }
 
     if (route.startsWith('/store/apps/') && path[3] === 'connect' && method === 'POST') {
