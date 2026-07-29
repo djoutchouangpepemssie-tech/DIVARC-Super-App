@@ -38,7 +38,7 @@ function fileToResizedDataUrl(file, max = 1280, quality = 0.82) {
   })
 }
 
-export default function Marketplace({ me, onWalletRefresh }) {
+export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
   const [view, setView] = useState('browse') // browse | detail | sell | threads | thread
   const [cats, setCats] = useState([])
   const [conditions, setConditions] = useState([])
@@ -63,6 +63,8 @@ export default function Marketplace({ me, onWalletRefresh }) {
   const [showLoc, setShowLoc] = useState(false)
 
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(null), 2600) }
+
+  useEffect(() => { onImmersive?.(view !== 'browse') }, [view, onImmersive])
 
   useEffect(() => {
     try { const g = JSON.parse(localStorage.getItem('divarc_geo') || 'null'); if (g) { setGeo(g); setRadius(g.radius || 0) } } catch (e) {}

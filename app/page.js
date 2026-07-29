@@ -1050,6 +1050,7 @@ function App() {
   const [booted, setBooted] = useState(false)
   const [tab, setTab] = useState('hub')
   const [mask, setMask] = useState(false)
+  const [mktImmersive, setMktImmersive] = useState(false)
   const [overlay, setOverlay] = useState(null)
   const [user, setUser] = useState(null)
   const [wallet, setWallet] = useState(null)
@@ -1084,7 +1085,7 @@ function App() {
     if (id === 'split') return setOverlay('send')
     if (id === 'coffre') return setOverlay('coffre')
   }
-  const goTab = (t) => { setTab(t) }
+  const goTab = (t) => { setMktImmersive(false); setTab(t) }
 
   if (!booted) return <Boot />
   if (!user) return <Login onAuthed={onAuthed} />
@@ -1100,14 +1101,14 @@ function App() {
           {tab === 'discover' && <Discover onTab={goTab} />}
           {tab === 'profile' && <Profile user={user} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}
           {tab === 'social' && <Social me={user} onBack={() => setTab('hub')} />}
-          {tab === 'market' && <Marketplace me={user} onWalletRefresh={load} />}
+          {tab === 'market' && <Marketplace me={user} onWalletRefresh={load} onImmersive={setMktImmersive} />}
           {tab === 'ads' && <AdsManager me={user} onWalletRefresh={load} />}
           {tab === 'store' && <AppStore me={user} />}
           {tab === 'admin' && <AdminHub me={user} onBack={() => setTab('hub')} />}
         </motion.div>
       </AnimatePresence>
 
-      {tab !== 'social' && <TabBar active={tab === 'wallet' ? 'hub' : tab} onChange={goTab} />}
+      {tab !== 'social' && !(tab === 'market' && mktImmersive) && <TabBar active={tab === 'wallet' ? 'hub' : tab} onChange={goTab} />}
 
       <AnimatePresence>
         {overlay === 'send' && <SendSheet contacts={contacts} wallet={wallet} onClose={() => setOverlay(null)} onSent={() => load()} />}
