@@ -18,6 +18,7 @@ import Marketplace from './components/marketplace'
 import AdsManager from './components/ads'
 import AppStore from './components/appstore'
 import AdminHub from './components/hub'
+import Assistant from './components/assistant'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 
 /* ============================= helpers ============================= */
@@ -761,7 +762,7 @@ function Discover({ onTab }) {
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-4">
           {list.map((m) => (
             <div key={m.id} className="flex flex-col items-center gap-2">
-              <div onClick={() => { if (m.id === 'shops') onTab && onTab('market'); else if (m.id === 'messages') onTab && onTab('messages'); else if (m.id === 'wallet') onTab && onTab('wallet'); else setWhy(m) }}
+              <div onClick={() => { if (m.id === 'shops') onTab && onTab('market'); else if (m.id === 'messages') onTab && onTab('messages'); else if (m.id === 'wallet') onTab && onTab('wallet'); else if (m.id === 'assistant') onTab && onTab('ai'); else setWhy(m) }}
                 className="press cursor-pointer w-full aspect-square rounded-3xl grid place-items-center text-white shadow-lg relative" style={{ background: m.grad }}>
                 <m.icon size={28} />
                 <button onClick={(e) => { e.stopPropagation(); setWhy(m) }} aria-label="Pourquoi cette app"
@@ -1105,10 +1106,20 @@ function App() {
           {tab === 'ads' && <AdsManager me={user} onWalletRefresh={load} onImmersive={setMktImmersive} />}
           {tab === 'store' && <AppStore me={user} />}
           {tab === 'admin' && <AdminHub me={user} onBack={() => setTab('hub')} />}
+          {tab === 'ai' && <Assistant me={user} onNavigate={goTab} onWalletRefresh={load} onClose={() => goTab('hub')} />}
         </motion.div>
       </AnimatePresence>
 
-      {tab !== 'social' && !(tab === 'market' && mktImmersive) && <TabBar active={tab === 'wallet' ? 'hub' : tab} onChange={goTab} />}
+      {tab !== 'social' && tab !== 'ai' && !(tab === 'market' && mktImmersive) && (
+        <button onClick={() => setTab('ai')} aria-label="Ouvrir DIVA, l'assistant IA"
+          className="press fixed right-4 bottom-24 z-40 w-14 h-14 rounded-full grid place-items-center text-white shadow-xl"
+          style={{ background: 'linear-gradient(135deg,#4353F0,#9B5DE5)' }}>
+          <Sparkles size={24} />
+          <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-gold border-2 border-background" />
+        </button>
+      )}
+
+      {tab !== 'social' && tab !== 'ai' && !(tab === 'market' && mktImmersive) && <TabBar active={tab === 'wallet' ? 'hub' : tab} onChange={goTab} />}
 
       <AnimatePresence>
         {overlay === 'send' && <SendSheet contacts={contacts} wallet={wallet} onClose={() => setOverlay(null)} onSent={() => load()} />}

@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { Resend } from 'resend'
+import { LlmChat, UserMessage } from 'emergentintegrations'
 
 // ---------------- MongoDB ----------------
 let client
@@ -504,6 +505,58 @@ function adKeywordSuggest(seed) {
   }))
 }
 
+// ---------------- Assistant IA : DIVA (Claude Sonnet 4.5 via clé Emergent) ----------------
+const AI_MODEL = 'claude-sonnet-4-5-20250929'
+function aiSystemPrompt(ctx) {
+  return `Tu es DIVA, le copilote IA de DIVARC, la super-app européenne (RGPD, respect de la vie privée).
+Tu tutoies l'utilisateur, tu réponds en FRANÇAIS, de façon chaleureuse, concise et utile.
+
+CONTEXTE UTILISATEUR (ne le répète pas tel quel) :
+- Prénom : ${ctx.name}
+- Solde du wallet : ${(ctx.balanceCents / 100).toFixed(2)} €
+- Contacts disponibles : ${ctx.contacts.map((c) => `${c.name} (${c.handle})`).join(', ') || 'aucun'}
+
+TU PEUX PROPOSER DES ACTIONS que l'utilisateur confirmera lui-même (slide-to-confirm). Tu n'exécutes JAMAIS toi-même.
+Types d'actions autorisés et forme du "payload" :
+- "send_money" : envoyer de l'argent. payload = { "toName": string (un des contacts), "amountCents": number (en centimes), "message": string optionnel }. risk = "high".
+- "create_listing" : déposer une annonce Marketplace. payload = { "title": string, "priceCents": number, "category": "immobilier"|"vehicules"|"multimedia"|"maison"|"mode"|"loisirs"|"famille"|"emploi", "description": string, "city": string }. risk = "medium".
+- "launch_ad" : lancer une campagne pub. payload = { "name": string, "type": "search"|"display"|"video"|"shopping", "objective": "sales"|"leads"|"traffic"|"awareness"|"app", "budgetCents": number }. risk = "high".
+- "navigate" : ouvrir un écran. payload = { "tab": "hub"|"wallet"|"messages"|"market"|"ads"|"store"|"admin"|"social"|"discover" }. risk = "low".
+
+RÈGLES :
+- Propose une action UNIQUEMENT si l'intention est claire. Sinon pose une question ou réponds normalement avec actions vides.
+- Pour send_money, l'amountCents doit être en centimes (ex : 20 € => 2000). Vérifie que le destinataire est dans les contacts ; sinon demande une précision.
+- Ne propose jamais plus de 2 actions.
+
+RÉPONDS STRICTEMENT EN JSON VALIDE, SANS MARKDOWN, au format exact :
+{"assistant_message": string, "actions": [{"id": string, "type": string, "title": string, "summary": string, "payload": object, "risk": "low"|"medium"|"high"}]}`
+}
+function aiParseJSON(raw) {
+  if (!raw) return { assistant_message: '', actions: [] }
+  let s = String(raw).trim()
+  // retire les fences markdown ```json ... ```
+  s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  // isole le premier objet JSON
+  const start = s.indexOf('{'); const end = s.lastIndexOf('}')
+  if (start >= 0 && end > start) s = s.slice(start, end + 1)
+  try {
+    const p = JSON.parse(s)
+    const actions = Array.isArray(p.actions) ? p.actions.slice(0, 3).map((a) => ({
+      id: a.id || uuidv4(), type: a.type, title: a.title || 'Action', summary: a.summary || '',
+      payload: (a.payload && typeof a.payload === 'object') ? a.payload : {}, risk: a.risk || 'medium',
+    })).filter((a) => ['send_money', 'create_listing', 'launch_ad', 'navigate'].includes(a.type)) : []
+    return { assistant_message: p.assistant_message || '', actions }
+  } catch (e) {
+    return { assistant_message: String(raw).slice(0, 500), actions: [] }
+  }
+}
+async function aiBuildContext(db, me) {
+  const wallet = await db.collection('wallets').findOne({ userId: me.id })
+  const contacts = await db.collection('users').find({ id: { $ne: me.id } }, { projection: { _id: 0, name: 1, handle: 1 } }).limit(12).toArray()
+  return { name: me.name || 'toi', balanceCents: wallet?.balanceCents || 0, contacts }
+}
+
+
 // ---------------- App Store : vraies apps du marché (logos via Simple Icons CDN) ----------------
 const APP_CAT_PERMS = {
   'Social': ['Profil', 'Photos', 'Contacts'],
@@ -762,6 +815,96 @@ async function handleRoute(request, { params }) {
       const updated = await db.collection('wallets').findOne({ userId: me.id }, { projection: { _id: 0 } })
       const { _id, ...cleanTx } = tx
       return ok({ transaction: cleanTx, balanceCents: updated.balanceCents })
+    }
+
+    /* ===================== ASSISTANT IA — DIVA ===================== */
+    if (route === '/ai/history' && method === 'GET') {
+      const sessionId = url.searchParams.get('sessionId')
+      if (!sessionId) return ok({ messages: [] })
+      const msgs = await db.collection('ai_messages').find({ userId: me.id, sessionId }, { projection: { _id: 0 } }).sort({ createdAt: 1 }).toArray()
+      return ok({ messages: msgs })
+    }
+
+    if (route === '/ai/chat' && method === 'POST') {
+      const sessionId = body.sessionId || uuidv4()
+      const text = String(body.text || '').trim()
+      if (!text) return err('Message vide')
+      if (!process.env.EMERGENT_LLM_KEY) return err('Assistant IA non configuré', 503)
+
+      const history = await db.collection('ai_messages').find({ userId: me.id, sessionId }, { projection: { _id: 0 } }).sort({ createdAt: 1 }).limit(20).toArray()
+      const initial = history.map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.role === 'assistant' ? (m.content || '') : (m.content || '') }))
+      const ctx = await aiBuildContext(db, me)
+
+      let parsed
+      try {
+        const chat = new LlmChat(process.env.EMERGENT_LLM_KEY, sessionId, aiSystemPrompt(ctx), initial)
+          .withModel('anthropic', AI_MODEL).withParams({ max_tokens: 1200 })
+        const raw = await chat.sendMessage(new UserMessage({ text }))
+        parsed = aiParseJSON(raw)
+      } catch (e) {
+        console.error('ai/chat', e?.message || e)
+        return err('L\u2019assistant est momentanément indisponible', 502)
+      }
+
+      const now = new Date()
+      const userMsg = { id: uuidv4(), userId: me.id, sessionId, role: 'user', content: text, createdAt: now }
+      const actions = parsed.actions.map((a) => ({ ...a, status: 'pending' }))
+      const aiMsg = { id: uuidv4(), userId: me.id, sessionId, role: 'assistant', content: parsed.assistant_message, actions, createdAt: new Date(now.getTime() + 1) }
+      await db.collection('ai_messages').insertMany([userMsg, aiMsg])
+      const { _id: a, ...cleanU } = userMsg; const { _id: b, ...cleanA } = aiMsg
+      return ok({ sessionId, userMessage: cleanU, message: cleanA })
+    }
+
+    if (route.startsWith('/ai/actions/') && path[3] === 'execute' && method === 'POST') {
+      const actionId = path[2]
+      const sessionId = body.sessionId
+      const msg = await db.collection('ai_messages').findOne({ userId: me.id, sessionId, 'actions.id': actionId })
+      if (!msg) return err('Action introuvable', 404)
+      const action = (msg.actions || []).find((a) => a.id === actionId)
+      if (!action) return err('Action introuvable', 404)
+      if (action.status === 'executed') return err('Action déjà exécutée', 409)
+
+      const p = action.payload || {}
+      let result = {}
+      try {
+        if (action.type === 'send_money') {
+          const amount = Math.round(p.amountCents || 0)
+          if (amount <= 0) return err('Montant invalide')
+          const wallet = await db.collection('wallets').findOne({ userId: me.id })
+          if (!wallet || wallet.balanceCents < amount) return err('Solde insuffisant', 402)
+          const recip = await db.collection('users').findOne({ $or: [{ name: p.toName }, { handle: p.toName }, { handle: (p.toName || '').replace(/^@/, '') }] }, { projection: { _id: 0 } })
+          await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: -amount } })
+          if (recip) await creditWallet(db, recip.id, amount)
+          const batch = await postLedger(db, [{ account: `user:${me.id}`, direction: 'debit', amountCents: amount }, { account: `user:${recip?.id || 'external'}`, direction: 'credit', amountCents: amount }])
+          await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: `Envoyé à ${recip?.name || p.toName || 'un ami'} (via DIVA)`, category: 'P2P', amountCents: -amount, carbonKg: 0, icon: '🤖', route: 'A2A', ledgerBatch: batch, status: 'settled', createdAt: new Date() })
+          const updated = await db.collection('wallets').findOne({ userId: me.id }, { projection: { _id: 0 } })
+          result = { kind: 'send_money', amountCents: amount, to: recip?.name || p.toName, balanceCents: updated.balanceCents }
+        } else if (action.type === 'create_listing') {
+          const catDef = MARKET_CATEGORIES.find((c) => c.id === p.category)
+          const listing = { id: uuidv4(), sellerId: me.id, title: p.title || 'Annonce', description: p.description || '', priceCents: Math.max(0, Math.round(p.priceCents || 0)), category: catDef ? catDef.id : 'maison', subcategory: catDef?.subcats?.[0] || 'Autre', transactionType: 'sale', condition: 'Bon état', attributes: {}, images: [], city: p.city || '', postcode: '', country: 'FR', lat: null, lon: null, status: 'active', favorites: 0, views: 0, createdAt: new Date() }
+          await db.collection('listings').insertOne(listing)
+          result = { kind: 'create_listing', listingId: listing.id, title: listing.title }
+        } else if (action.type === 'launch_ad') {
+          const budgetCents = Math.round(p.budgetCents || 0)
+          const wallet = await db.collection('wallets').findOne({ userId: me.id })
+          if (!wallet || wallet.balanceCents < budgetCents) return err('Solde insuffisant pour la campagne', 402)
+          await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: -budgetCents } })
+          const typeDef = ADS_CONFIG.types.find((t) => t.id === p.type) || ADS_CONFIG.types[0]
+          const camp = { id: uuidv4(), ownerId: me.id, name: p.name || 'Campagne', type: typeDef.id, objective: p.objective || 'awareness', brand: me.name, brandHandle: me.handle, budgetCents, budgetType: 'total', dailyBudgetCents: Math.round(budgetCents / 14), bidStrategy: typeDef.defaultBid, maxBidCents: 45, targetCpaCents: 0, targeting: { locations: [], radiusKm: 0, ageRange: [], genders: ['Tous'], interests: [], devices: ADS_CONFIG.devices }, keywords: [], creative: { headline: p.name || 'Découvre DIVARC', headline2: '', body: '', cta: 'En savoir plus', emoji: '📣', mediaUrl: null, priceCents: null, finalUrl: '' }, color: typeDef.color, impressions: 0, clicks: 0, spentCents: 0, conversions: 0, daily: [], status: 'active', createdAt: new Date() }
+          const hist = simulateHistory(camp); camp.daily = hist.daily; camp.impressions = hist.impressions; camp.clicks = hist.clicks; camp.spentCents = hist.spentCents; camp.conversions = hist.conversions
+          await db.collection('campaigns').insertOne(camp)
+          await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: `Budget pub : ${camp.name} (via DIVA)`, category: 'Publicité', amountCents: -budgetCents, carbonKg: 0, icon: '🤖', route: null, createdAt: new Date() })
+          const updated = await db.collection('wallets').findOne({ userId: me.id }, { projection: { _id: 0 } })
+          result = { kind: 'launch_ad', campaignId: camp.id, name: camp.name, balanceCents: updated.balanceCents }
+        } else if (action.type === 'navigate') {
+          result = { kind: 'navigate', tab: p.tab || 'hub' }
+        }
+      } catch (e) {
+        console.error('ai/execute', e?.message || e)
+        return err('Échec de l\u2019exécution', 500)
+      }
+      await db.collection('ai_messages').updateOne({ userId: me.id, sessionId, 'actions.id': actionId }, { $set: { 'actions.$.status': 'executed', 'actions.$.result': result } })
+      return ok({ ok: true, result })
     }
 
     /* ===================== ENVELOPPE ===================== */
