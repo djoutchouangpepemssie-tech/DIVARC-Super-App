@@ -33,7 +33,7 @@ export default function AdsManager({ me, onWalletRefresh, onImmersive }) {
   }, [])
   useEffect(() => { api('/ads/config').then((r) => { if (!r.error) setConfig(r) }); load() }, [load])
 
-  if (view === 'create' && config) return <CreateWizard config={config} onCancel={() => setView('dashboard')} onDone={() => { showToast('Campagne lancée 🚀'); onWalletRefresh?.(); setView('dashboard'); load() }} showToast={showToast} />
+  if (view === 'create' && config) return <CreateWizard me={me} config={config} onCancel={() => setView('dashboard')} onDone={() => { showToast('Campagne lancée 🚀'); onWalletRefresh?.(); setView('dashboard'); load() }} showToast={showToast} />
   if (view === 'detail' && detailId) return <CampaignDetail id={detailId} config={config} onBack={() => { setView('dashboard'); load() }} onWalletRefresh={onWalletRefresh} showToast={showToast} />
 
   return (
@@ -86,11 +86,11 @@ const Kpi = ({ icon: Icon, label, value, sub, color, gold }) => (
 function BarChart({ data, field = 'impressions' }) {
   const max = Math.max(1, ...data.map((d) => d[field] || 0))
   return (
-    <div className="flex items-end gap-1 h-28">
+    <div className="flex items-end gap-1 h-32">
       {data.map((d, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
-          <div className="w-full rounded-t-md transition-all" style={{ height: `${Math.max(4, (d[field] || 0) / max * 100)}%`, background: 'linear-gradient(180deg,#4353F0,#6E7BF5)' }} title={`${d.date} : ${d[field]}`} />
-          <span className="text-[8px] text-muted-foreground">{d.date.slice(8)}</span>
+        <div key={i} className="flex-1 h-full flex flex-col justify-end items-center gap-1">
+          <div className="w-full rounded-t-md transition-all min-h-[3px]" style={{ height: `${Math.max(3, (d[field] || 0) / max * 88)}%`, background: 'linear-gradient(180deg,#4353F0,#6E7BF5)' }} title={`${d.date} : ${d[field]}`} />
+          <span className="text-[8px] text-muted-foreground shrink-0">{d.date.slice(8)}</span>
         </div>
       ))}
     </div>
@@ -119,7 +119,7 @@ function CampaignRow({ c, config, onOpen }) {
 const Mini = ({ label, value, gold }) => <div><div className={cx('font-display tabular text-sm', gold && 'text-gold')}>{value}</div><div className="text-[10px] text-muted-foreground">{label}</div></div>
 
 /* ============================ ASSISTANT DE CRÉATION ============================ */
-function CreateWizard({ config, onCancel, onDone, showToast }) {
+function CreateWizard({ me, config, onCancel, onDone, showToast }) {
   const [step, setStep] = useState(0) // 0 type+obj, 1 ciblage+budget, 2 créa/mots-clés
   const [type, setType] = useState('search')
   const [objective, setObjective] = useState('traffic')
