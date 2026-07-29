@@ -7,13 +7,18 @@ import { Resend } from 'resend'
 // ---------------- MongoDB ----------------
 let client
 let db
+let connectPromise
 async function connectToMongo() {
-  if (!client) {
-    client = new MongoClient(process.env.MONGO_URL)
-    await client.connect()
-    db = client.db(process.env.DB_NAME)
+  if (db) return db
+  if (!connectPromise) {
+    connectPromise = (async () => {
+      client = new MongoClient(process.env.MONGO_URL)
+      await client.connect()
+      db = client.db(process.env.DB_NAME)
+      return db
+    })()
   }
-  return db
+  return await connectPromise
 }
 
 function handleCORS(response) {
@@ -249,31 +254,143 @@ async function ensureSocialSeed(db) {
   await db.collection('posts').insertMany(docs)
 }
 
+// ---------------- Marketplace v2 : catégories (type Leboncoin) ----------------
+const MARKET_CATEGORIES = [
+  { id: 'immobilier', name: 'Immobilier', emoji: '🏠', color: '#4353F0', types: ['sale', 'rent'],
+    subcats: ['Ventes immobilières', 'Locations', 'Colocations', 'Bureaux & commerces', 'Locations de vacances'],
+    fields: [
+      { key: 'propertyType', label: 'Type de bien', type: 'select', options: ['Appartement', 'Maison', 'Studio', 'Loft', 'Terrain', 'Parking', 'Autre'] },
+      { key: 'surface', label: 'Surface', type: 'number', unit: 'm²' },
+      { key: 'rooms', label: 'Pièces', type: 'number' },
+      { key: 'bedrooms', label: 'Chambres', type: 'number' },
+      { key: 'furnished', label: 'Meublé', type: 'bool' },
+      { key: 'energyClass', label: 'DPE', type: 'select', options: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] },
+    ] },
+  { id: 'vehicules', name: 'Véhicules', emoji: '🚗', color: '#EF476F', types: ['sale', 'rent'],
+    subcats: ['Voitures', 'Motos', 'Caravaning', 'Utilitaires', 'Nautisme'],
+    fields: [
+      { key: 'brand', label: 'Marque', type: 'text' },
+      { key: 'model', label: 'Modèle', type: 'text' },
+      { key: 'year', label: 'Année', type: 'number' },
+      { key: 'mileage', label: 'Kilométrage', type: 'number', unit: 'km' },
+      { key: 'fuel', label: 'Carburant', type: 'select', options: ['Essence', 'Diesel', 'Électrique', 'Hybride', 'GPL'] },
+      { key: 'gearbox', label: 'Boîte', type: 'select', options: ['Manuelle', 'Automatique'] },
+    ] },
+  { id: 'multimedia', name: 'Multimédia', emoji: '📱', color: '#00BBF9', types: ['sale'],
+    subcats: ['Informatique', 'Téléphonie', 'Image & son', 'Consoles & jeux vidéo', 'Accessoires'],
+    fields: [{ key: 'brand', label: 'Marque', type: 'text' }] },
+  { id: 'maison', name: 'Maison & Jardin', emoji: '🛋️', color: '#3FB68B', types: ['sale'],
+    subcats: ['Ameublement', 'Électroménager', 'Décoration', 'Bricolage', 'Jardin & plantes', 'Vaisselle'],
+    fields: [] },
+  { id: 'mode', name: 'Mode', emoji: '👗', color: '#F15BB5', types: ['sale'],
+    subcats: ['Vêtements', 'Chaussures', 'Accessoires & bagagerie', 'Montres & bijoux', 'Beauté'],
+    fields: [{ key: 'size', label: 'Taille', type: 'text' }, { key: 'brand', label: 'Marque', type: 'text' }] },
+  { id: 'loisirs', name: 'Loisirs', emoji: '🎸', color: '#9B5DE5', types: ['sale'],
+    subcats: ['Vélos', 'Sport & plein air', 'Instruments de musique', 'Livres', 'Jeux & jouets', 'Collection'],
+    fields: [] },
+  { id: 'famille', name: 'Famille', emoji: '👶', color: '#F97C4E', types: ['sale'],
+    subcats: ['Équipement bébé', 'Mobilier enfant', 'Vêtements bébé'],
+    fields: [] },
+  { id: 'emploi', name: 'Emploi & Services', emoji: '💼', color: '#E2AA2B', types: ['sale', 'service'],
+    subcats: ['Offres d\u2019emploi', 'Services à la personne', 'Cours particuliers', 'Événements', 'Artisans'],
+    fields: [] },
+]
+const CONDITIONS = ['Neuf', 'Comme neuf', 'Très bon état', 'Bon état', 'État correct']
+
+// ---------------- Géolocalisation Europe (Geoapify + repli OpenStreetMap) ----------------
+const EU_CC = 'fr,de,es,it,be,nl,pt,lu,at,ie,fi,se,dk,pl,cz,gr,ro,hu,sk,si,hr,bg,ee,lv,lt,cy,mt,ch,no'
+async function geoAutocomplete(q, country) {
+  const key = process.env.GEOAPIFY_API_KEY
+  try {
+    if (key) {
+      const u = new URL('https://api.geoapify.com/v1/geocode/autocomplete')
+      u.searchParams.set('text', q); u.searchParams.set('apiKey', key); u.searchParams.set('limit', '8'); u.searchParams.set('lang', 'fr')
+      u.searchParams.set('filter', `countrycode:${country ? country.toLowerCase() : EU_CC}`)
+      const r = await fetch(u, { cache: 'no-store' }); const j = await r.json()
+      return (j.features || []).map((f) => ({
+        label: f.properties.formatted, city: f.properties.city || f.properties.county || f.properties.name || '',
+        postcode: f.properties.postcode || '', country: (f.properties.country_code || '').toUpperCase(),
+        lat: f.properties.lat, lon: f.properties.lon, provider: 'geoapify',
+      }))
+    }
+    const u = new URL('https://nominatim.openstreetmap.org/search')
+    u.searchParams.set('q', q); u.searchParams.set('format', 'jsonv2'); u.searchParams.set('addressdetails', '1'); u.searchParams.set('limit', '8'); u.searchParams.set('accept-language', 'fr')
+    u.searchParams.set('countrycodes', country ? country.toLowerCase() : EU_CC)
+    const r = await fetch(u, { cache: 'no-store', headers: { 'User-Agent': 'DIVARC-Marketplace/1.0 (contact@divarc.eu)' } })
+    const arr = await r.json()
+    return (Array.isArray(arr) ? arr : []).map((a) => ({
+      label: a.display_name, city: a.address?.city || a.address?.town || a.address?.village || a.address?.municipality || a.name || '',
+      postcode: a.address?.postcode || '', country: (a.address?.country_code || '').toUpperCase(),
+      lat: +a.lat, lon: +a.lon, provider: 'osm',
+    }))
+  } catch (e) { console.error('geoAutocomplete', e); return [] }
+}
+async function geoReverse(lat, lon) {
+  const key = process.env.GEOAPIFY_API_KEY
+  try {
+    if (key) {
+      const u = new URL('https://api.geoapify.com/v1/geocode/reverse')
+      u.searchParams.set('lat', String(lat)); u.searchParams.set('lon', String(lon)); u.searchParams.set('lang', 'fr'); u.searchParams.set('apiKey', key)
+      const r = await fetch(u, { cache: 'no-store' }); const j = await r.json(); const p = j.features?.[0]?.properties || {}
+      return { label: p.formatted || '', city: p.city || p.county || '', postcode: p.postcode || '', country: (p.country_code || '').toUpperCase(), lat: +lat, lon: +lon }
+    }
+    const u = new URL('https://nominatim.openstreetmap.org/reverse')
+    u.searchParams.set('lat', String(lat)); u.searchParams.set('lon', String(lon)); u.searchParams.set('format', 'jsonv2'); u.searchParams.set('addressdetails', '1'); u.searchParams.set('accept-language', 'fr')
+    const r = await fetch(u, { cache: 'no-store', headers: { 'User-Agent': 'DIVARC-Marketplace/1.0 (contact@divarc.eu)' } })
+    const a = await r.json()
+    return { label: a.display_name || '', city: a.address?.city || a.address?.town || a.address?.village || '', postcode: a.address?.postcode || '', country: (a.address?.country_code || '').toUpperCase(), lat: +lat, lon: +lon }
+  } catch (e) { console.error('geoReverse', e); return { label: '', city: '', postcode: '', country: '', lat: +lat, lon: +lon } }
+}
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
 const MARKET_IMGS = {
-  fashion: 'https://images.unsplash.com/photo-1731505583021-16c3a17339cd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHw0fHxmYXNoaW9ufGVufDB8fHx8MTc4NTI3MDU2M3ww&ixlib=rb-4.1.0&q=85',
-  sneakers: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHwxfHxzbmVha2Vyc3xlbnwwfHx8fDE3ODUyMzAwODN8MA&ixlib=rb-4.1.0&q=85',
-  furniture: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHw0fHxmdXJuaXR1cmV8ZW58MHx8fHwxNzg1MjcwNTYzfDA&ixlib=rb-4.1.0&q=85',
-  bicycle: 'https://images.unsplash.com/photo-1618762044398-ec1e7e048bbd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxiaWN5Y2xlfGVufDB8fHx8MTc4NTI3MDU2M3ww&ixlib=rb-4.1.0&q=85',
-  smartphone: 'https://images.unsplash.com/photo-1634403665481-74948d815f03?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDR8MHwxfHNlYXJjaHw0fHxzbWFydHBob25lfGVufDB8fHx8MTc4NTI3MDU2M3ww&ixlib=rb-4.1.0&q=85',
-  plant: 'https://images.unsplash.com/photo-1592150621744-aca64f48394a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwyfHxob3VzZXBsYW50fGVufDB8fHx8MTc4NTI3MDU2M3ww&ixlib=rb-4.1.0&q=85',
+  apartment: 'https://images.pexels.com/photos/2030037/pexels-photo-2030037.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940',
+  house: 'https://images.pexels.com/photos/20296321/pexels-photo-20296321.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940',
+  car: 'https://images.pexels.com/photos/14776589/pexels-photo-14776589.jpeg',
+  motorcycle: 'https://images.unsplash.com/photo-1449426468159-d96dbf08f19f',
+  sofa: 'https://images.pexels.com/photos/6758245/pexels-photo-6758245.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940',
+  smartphone: 'https://images.pexels.com/photos/47261/pexels-photo-47261.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940',
+  laptop: 'https://images.pexels.com/photos/8003992/pexels-photo-8003992.jpeg',
+  sneakers: 'https://images.pexels.com/photos/1027130/pexels-photo-1027130.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940',
+  bicycle: 'https://images.pexels.com/photos/37858364/pexels-photo-37858364.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940',
+  guitar: 'https://images.pexels.com/photos/9057791/pexels-photo-9057791.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940',
+}
+const CITIES = {
+  'Paris': [48.8566, 2.3522], 'Lyon': [45.7640, 4.8357], 'Marseille': [43.2965, 5.3698],
+  'Bordeaux': [44.8378, -0.5792], 'Nantes': [47.2184, -1.5536], 'Lille': [50.6292, 3.0573],
+  'Toulouse': [43.6047, 1.4442], 'Berlin': [52.5200, 13.4050], 'Madrid': [40.4168, -3.7038], 'Bruxelles': [50.8503, 4.3517],
 }
 async function ensureMarketSeed(db) {
   if (await db.collection('listings').countDocuments() > 0) return
   await ensureDemoUsers(db)
   const seed = [
-    { s: 'bot-lena', t: 'Veste en jean vintage', d: 'Taille M, très bon état, portée quelques fois. Coupe oversize tendance.', p: 3500, cat: 'Mode', cond: 'Très bon état', type: 'item', img: MARKET_IMGS.fashion, loc: 'Paris 11e' },
-    { s: 'bot-yanis', t: 'Sneakers rétro (42)', d: 'Édition running, semelle nickel, boîte incluse.', p: 6900, cat: 'Chaussures', cond: 'Bon état', type: 'item', img: MARKET_IMGS.sneakers, loc: 'Lyon' },
-    { s: 'bot-thomas', t: 'Fauteuil design scandinave', d: 'Fauteuil en tissu, structure bois. Parfait pour un salon cosy.', p: 12000, cat: 'Maison', cond: 'Très bon état', type: 'item', img: MARKET_IMGS.furniture, loc: 'Bordeaux' },
-    { s: 'bot-sofia', t: 'Vélo de ville', d: 'Vélo léger, 7 vitesses, freins révisés. Idéal trajets quotidiens.', p: 18500, cat: 'Vélo', cond: 'Bon état', type: 'item', img: MARKET_IMGS.bicycle, loc: 'Nantes' },
-    { s: 'bot-marie', t: 'Smartphone 128 Go', d: 'Débloqué tout opérateur, batterie 92%, avec chargeur.', p: 29900, cat: 'Tech', cond: 'Très bon état', type: 'item', img: MARKET_IMGS.smartphone, loc: 'Paris 9e' },
-    { s: 'bot-lena', t: 'Monstera en pot', d: 'Belle plante d\u2019intérieur, ~80cm. À récupérer sur place.', p: 2500, cat: 'Jardin', cond: 'Neuf', type: 'ad', img: MARKET_IMGS.plant, loc: 'Paris 20e' },
+    { s: 'bot-marie', t: 'Appartement T3 lumineux — 68 m²', d: 'Bel appartement rénové, 3e étage avec ascenseur, proche métro. Cuisine équipée, double vitrage, cave.', p: 34500000, cat: 'immobilier', sub: 'Ventes immobilières', tx: 'sale', cond: 'Comme neuf', img: 'apartment', city: 'Paris', attrs: { propertyType: 'Appartement', surface: 68, rooms: 3, bedrooms: 2, furnished: false, energyClass: 'C' } },
+    { s: 'bot-thomas', t: 'Studio meublé à louer — 24 m²', d: 'Studio meublé idéal étudiant, charges comprises, disponible immédiatement. Proche campus.', p: 68000, cat: 'immobilier', sub: 'Locations', tx: 'rent', cond: 'Très bon état', img: 'apartment', city: 'Lyon', attrs: { propertyType: 'Studio', surface: 24, rooms: 1, bedrooms: 0, furnished: true, energyClass: 'D' } },
+    { s: 'bot-sofia', t: 'Maison 5 pièces avec jardin — 120 m²', d: 'Maison familiale, 4 chambres, jardin 300 m², garage. Quartier calme et résidentiel.', p: 42000000, cat: 'immobilier', sub: 'Ventes immobilières', tx: 'sale', cond: 'Bon état', img: 'house', city: 'Bordeaux', attrs: { propertyType: 'Maison', surface: 120, rooms: 5, bedrooms: 4, furnished: false, energyClass: 'B' } },
+    { s: 'bot-yanis', t: 'Citadine essence 2019 — 45 000 km', d: 'Entretien à jour, carnet complet, pneus neufs, CT ok. Première main, non fumeur.', p: 1250000, cat: 'vehicules', sub: 'Voitures', tx: 'sale', cond: 'Très bon état', img: 'car', city: 'Nantes', attrs: { brand: 'Renault', model: 'Clio', year: 2019, mileage: 45000, fuel: 'Essence', gearbox: 'Manuelle' } },
+    { s: 'bot-lena', t: 'Moto roadster 650cc', d: 'Moto en excellent état, révision récente, deux casques offerts.', p: 480000, cat: 'vehicules', sub: 'Motos', tx: 'sale', cond: 'Bon état', img: 'motorcycle', city: 'Toulouse', attrs: { brand: 'Yamaha', model: 'MT-07', year: 2020, mileage: 18000, fuel: 'Essence', gearbox: 'Manuelle' } },
+    { s: 'bot-thomas', t: 'Canapé 3 places en velours', d: 'Canapé design confortable, velours bleu nuit, très peu servi. À récupérer sur place.', p: 32000, cat: 'maison', sub: 'Ameublement', tx: 'sale', cond: 'Comme neuf', img: 'sofa', city: 'Paris', attrs: {} },
+    { s: 'bot-marie', t: 'Smartphone 128 Go débloqué', d: 'Débloqué tout opérateur, batterie 92%, avec chargeur et coque. Facture disponible.', p: 29900, cat: 'multimedia', sub: 'Téléphonie', tx: 'sale', cond: 'Très bon état', img: 'smartphone', city: 'Lille', attrs: { brand: 'Samsung' } },
+    { s: 'bot-yanis', t: 'Ordinateur portable 15" i7 16 Go', d: 'PC portable puissant, SSD 512 Go, parfait pour le travail et le montage. Batterie excellente.', p: 55000, cat: 'multimedia', sub: 'Informatique', tx: 'sale', cond: 'Bon état', img: 'laptop', city: 'Marseille', attrs: { brand: 'Lenovo' } },
+    { s: 'bot-sofia', t: 'Sneakers rétro (42)', d: 'Édition running, semelle nickel, boîte incluse. Portées quelques fois.', p: 6900, cat: 'mode', sub: 'Chaussures', tx: 'sale', cond: 'Très bon état', img: 'sneakers', city: 'Lyon', attrs: { size: '42', brand: 'Nike' } },
+    { s: 'bot-lena', t: 'Vélo de ville 7 vitesses', d: 'Vélo léger, freins révisés, antivol offert. Idéal trajets quotidiens en ville.', p: 18500, cat: 'loisirs', sub: 'Vélos', tx: 'sale', cond: 'Bon état', img: 'bicycle', city: 'Nantes', attrs: {} },
+    { s: 'bot-thomas', t: 'Guitare acoustique folk', d: 'Guitare avec housse et accordeur. Son chaud, cordes neuves. Parfaite pour débuter.', p: 12000, cat: 'loisirs', sub: 'Instruments de musique', tx: 'sale', cond: 'Comme neuf', img: 'guitar', city: 'Bordeaux', attrs: {} },
+    { s: 'bot-marie', t: 'Berline familiale 2021 — location', d: 'Location longue durée possible, entretien inclus. Idéale famille, spacieuse et sobre.', p: 39000, cat: 'vehicules', sub: 'Voitures', tx: 'rent', cond: 'Comme neuf', img: 'car', city: 'Paris', attrs: { brand: 'Peugeot', model: '508', year: 2021, mileage: 22000, fuel: 'Hybride', gearbox: 'Automatique' } },
   ]
   const now = Date.now()
-  await db.collection('listings').insertMany(seed.map((x, i) => ({
-    id: uuidv4(), sellerId: x.s, title: x.t, description: x.d, priceCents: x.p, category: x.cat,
-    condition: x.cond, type: x.type, images: [x.img], location: x.loc, status: 'active',
-    favorites: Math.floor(Math.random() * 40), views: Math.floor(Math.random() * 300), createdAt: new Date(now - i * 3600000 * 8),
-  })))
+  await db.collection('listings').insertMany(seed.map((x, i) => {
+    const [lat, lon] = CITIES[x.city] || CITIES['Paris']
+    return {
+      id: uuidv4(), sellerId: x.s, title: x.t, description: x.d, priceCents: x.p, category: x.cat, subcategory: x.sub,
+      transactionType: x.tx, condition: x.cond, attributes: x.attrs || {},
+      images: [MARKET_IMGS[x.img]], city: x.city, postcode: '', country: 'FR', lat, lon,
+      status: 'active', favorites: Math.floor(Math.random() * 40), views: Math.floor(Math.random() * 300), createdAt: new Date(now - i * 3600000 * 6),
+    }
+  }))
 }
 
 async function getSponsored(db) {
@@ -417,6 +534,14 @@ async function handleRoute(request, { params }) {
       const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
       if (token) await db.collection('sessions').deleteOne({ token })
       return ok({ ok: true })
+    }
+
+    // Public: sert les images uploadées (les balises <img> n'envoient pas de Bearer)
+    if (route.startsWith('/market/image/') && path.length === 3 && method === 'GET') {
+      const img = await db.collection('market_images').findOne({ id: path[2] })
+      if (!img) return err('Image introuvable', 404)
+      const buf = Buffer.from(img.data, 'base64')
+      return handleCORS(new NextResponse(buf, { status: 200, headers: { 'Content-Type': img.contentType || 'image/jpeg', 'Cache-Control': 'public, max-age=31536000, immutable' } }))
     }
 
     // Everything below requires auth
@@ -768,19 +893,70 @@ async function handleRoute(request, { params }) {
       return ok({ posts, followers, earningsCents: earnings, views, likes })
     }
 
+    /* ===================== GÉOLOCALISATION (Europe) ===================== */
+    if (route === '/geo/autocomplete' && method === 'GET') {
+      const q = (url.searchParams.get('q') || '').trim()
+      if (q.length < 3) return ok([])
+      const country = url.searchParams.get('country') || ''
+      return ok(await geoAutocomplete(q, country))
+    }
+    if (route === '/geo/reverse' && method === 'GET') {
+      const lat = Number(url.searchParams.get('lat')), lon = Number(url.searchParams.get('lon'))
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return err('Coordonnées invalides')
+      return ok(await geoReverse(lat, lon))
+    }
+
     /* ===================== MARKETPLACE ===================== */
     await ensureMarketSeed(db)
+
+    if (route === '/market/categories' && method === 'GET') {
+      return ok({ categories: MARKET_CATEGORIES, conditions: CONDITIONS })
+    }
+
+    // Upload image -> stockée en base64, servie via /market/image/:id
+    if (route === '/market/upload' && method === 'POST') {
+      const data = String(body.data || '')
+      const m = data.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/)
+      const contentType = m ? m[1] : (body.contentType || 'image/jpeg')
+      const b64 = m ? m[2] : data
+      if (!b64) return err('Image invalide')
+      // limite ~6 Mo décodés
+      if (b64.length > 8_000_000) return err('Image trop lourde (max ~6 Mo)', 413)
+      const id = uuidv4()
+      await db.collection('market_images').insertOne({ id, userId: me.id, data: b64, contentType, createdAt: new Date() })
+      return ok({ id, url: `/api/market/image/${id}` })
+    }
 
     if (route === '/market/listings' && method === 'GET') {
       const q = (url.searchParams.get('q') || '').toLowerCase()
       const cat = url.searchParams.get('cat') || ''
+      const subcat = url.searchParams.get('subcat') || ''
+      const txType = url.searchParams.get('type') || ''
+      const cond = url.searchParams.get('condition') || ''
+      const minP = Number(url.searchParams.get('minPrice')) || 0
+      const maxP = Number(url.searchParams.get('maxPrice')) || 0
       const sort = url.searchParams.get('sort') || 'recent'
+      const lat = Number(url.searchParams.get('lat')), lon = Number(url.searchParams.get('lon'))
+      const radiusKm = Number(url.searchParams.get('radiusKm')) || 0
+      const hasGeo = Number.isFinite(lat) && Number.isFinite(lon)
+
       let items = await db.collection('listings').find({ status: 'active' }, { projection: { _id: 0 } }).toArray()
       if (cat && cat !== 'Tout') items = items.filter((i) => i.category === cat)
-      if (q) items = items.filter((i) => i.title.toLowerCase().includes(q) || i.description.toLowerCase().includes(q))
+      if (subcat) items = items.filter((i) => i.subcategory === subcat)
+      if (txType) items = items.filter((i) => (i.transactionType || 'sale') === txType)
+      if (cond) items = items.filter((i) => i.condition === cond)
+      if (minP) items = items.filter((i) => i.priceCents >= minP)
+      if (maxP) items = items.filter((i) => i.priceCents <= maxP)
+      if (q) items = items.filter((i) => i.title.toLowerCase().includes(q) || (i.description || '').toLowerCase().includes(q) || (i.city || '').toLowerCase().includes(q))
+      if (hasGeo) {
+        items = items.map((i) => ({ ...i, distanceKm: (Number.isFinite(i.lat) && Number.isFinite(i.lon)) ? Math.round(haversineKm(lat, lon, i.lat, i.lon)) : null }))
+        if (radiusKm > 0) items = items.filter((i) => i.distanceKm != null && i.distanceKm <= radiusKm)
+      }
       if (sort === 'price_asc') items.sort((a, b) => a.priceCents - b.priceCents)
       else if (sort === 'price_desc') items.sort((a, b) => b.priceCents - a.priceCents)
+      else if (sort === 'distance' && hasGeo) items.sort((a, b) => (a.distanceKm ?? 1e9) - (b.distanceKm ?? 1e9))
       else items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+
       const favs = new Set((await db.collection('market_favorites').find({ userId: me.id }).toArray()).map((f) => f.listingId))
       const out = []
       for (const i of items) {
@@ -791,13 +967,17 @@ async function handleRoute(request, { params }) {
     }
 
     if (route === '/market/listings' && method === 'POST') {
+      const catDef = MARKET_CATEGORIES.find((c) => c.id === body.category)
       const listing = {
-        id: uuidv4(), sellerId: me.id, title: body.title || 'Article', description: body.description || '',
-        priceCents: Math.max(0, Math.round(body.priceCents || 0)), category: body.category || 'Autre',
-        condition: body.condition || 'Bon état', type: body.type || 'item',
-        images: body.images && body.images.length ? body.images : [], emoji: body.emoji || '📦',
-        color: body.color || '#4353F0', location: body.location || 'France', status: 'active',
-        favorites: 0, views: 0, createdAt: new Date(),
+        id: uuidv4(), sellerId: me.id, title: body.title || 'Annonce', description: body.description || '',
+        priceCents: Math.max(0, Math.round(body.priceCents || 0)),
+        category: catDef ? catDef.id : 'maison', subcategory: body.subcategory || (catDef?.subcats?.[0] || 'Autre'),
+        transactionType: body.transactionType || 'sale', condition: body.condition || 'Bon état',
+        attributes: (body.attributes && typeof body.attributes === 'object') ? body.attributes : {},
+        images: Array.isArray(body.images) ? body.images.filter(Boolean).slice(0, 8) : [],
+        city: body.city || '', postcode: body.postcode || '', country: body.country || 'FR',
+        lat: Number.isFinite(+body.lat) ? +body.lat : null, lon: Number.isFinite(+body.lon) ? +body.lon : null,
+        status: 'active', favorites: 0, views: 0, createdAt: new Date(),
       }
       await db.collection('listings').insertOne(listing)
       const { _id, ...clean } = listing
@@ -810,7 +990,16 @@ async function handleRoute(request, { params }) {
       await db.collection('listings').updateOne({ id: path[2] }, { $inc: { views: 1 } })
       const seller = await db.collection('users').findOne({ id: l.sellerId }, { projection: { _id: 0, email: 0 } })
       const favs = new Set((await db.collection('market_favorites').find({ userId: me.id }).toArray()).map((f) => f.listingId))
-      return ok({ ...l, favorited: favs.has(l.id), seller })
+      const similar = await db.collection('listings').find({ category: l.category, status: 'active', id: { $ne: l.id } }, { projection: { _id: 0 } }).limit(4).toArray()
+      return ok({ ...l, favorited: favs.has(l.id), seller, isMine: l.sellerId === me.id, similar })
+    }
+
+    if (route.startsWith('/market/listings/') && path.length === 3 && method === 'DELETE') {
+      const l = await db.collection('listings').findOne({ id: path[2] })
+      if (!l) return err('Annonce introuvable', 404)
+      if (l.sellerId !== me.id) return err('Non autorisé', 403)
+      await db.collection('listings').deleteOne({ id: path[2] })
+      return ok({ ok: true })
     }
 
     if (route.startsWith('/market/listings/') && path[3] === 'favorite' && method === 'POST') {
@@ -827,16 +1016,17 @@ async function handleRoute(request, { params }) {
       if (!l) return err('Annonce introuvable', 404)
       if (l.status !== 'active') return err('Déjà vendu', 410)
       if (l.sellerId === me.id) return err('Tu ne peux pas acheter ta propre annonce')
+      const priceCents = Math.round(body.priceCents || l.priceCents) // supporte prix négocié
       const wallet = await db.collection('wallets').findOne({ userId: me.id })
-      if (!wallet || wallet.balanceCents < l.priceCents) return err('Solde insuffisant', 402)
-      await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: -l.priceCents } })
-      await creditWallet(db, l.sellerId, l.priceCents)
-      await db.collection('listings').updateOne({ id: l.id }, { $set: { status: 'sold', buyerId: me.id, soldAt: new Date() } })
-      const order = { id: uuidv4(), listingId: l.id, title: l.title, buyerId: me.id, sellerId: l.sellerId, priceCents: l.priceCents, createdAt: new Date() }
+      if (!wallet || wallet.balanceCents < priceCents) return err('Solde insuffisant', 402)
+      await db.collection('wallets').updateOne({ userId: me.id }, { $inc: { balanceCents: -priceCents } })
+      await creditWallet(db, l.sellerId, priceCents)
+      const newStatus = l.transactionType === 'rent' ? 'rented' : 'sold'
+      await db.collection('listings').updateOne({ id: l.id }, { $set: { status: newStatus, buyerId: me.id, soldAt: new Date() } })
+      const order = { id: uuidv4(), listingId: l.id, title: l.title, image: l.images?.[0] || null, buyerId: me.id, sellerId: l.sellerId, priceCents, createdAt: new Date() }
       await db.collection('orders').insertOne(order)
-      const seller = await db.collection('users').findOne({ id: l.sellerId })
-      await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: `Achat : ${l.title}`, category: 'Marketplace', amountCents: -l.priceCents, carbonKg: 0, icon: '🛍️', route: null, createdAt: new Date() })
-      await postLedger(db, [{ account: `user:${me.id}`, direction: 'debit', amountCents: l.priceCents }, { account: `user:${l.sellerId}`, direction: 'credit', amountCents: l.priceCents }])
+      await db.collection('transactions').insertOne({ id: uuidv4(), userId: me.id, label: `Achat : ${l.title}`, category: 'Marketplace', amountCents: -priceCents, carbonKg: 0, icon: '🛍️', route: null, createdAt: new Date() })
+      await postLedger(db, [{ account: `user:${me.id}`, direction: 'debit', amountCents: priceCents }, { account: `user:${l.sellerId}`, direction: 'credit', amountCents: priceCents }])
       const updated = await db.collection('wallets').findOne({ userId: me.id }, { projection: { _id: 0 } })
       return ok({ ok: true, order: { id: order.id }, balanceCents: updated.balanceCents })
     }
@@ -844,8 +1034,89 @@ async function handleRoute(request, { params }) {
     if (route === '/market/mine' && method === 'GET') {
       const selling = await db.collection('listings').find({ sellerId: me.id }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray()
       const orders = await db.collection('orders').find({ buyerId: me.id }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray()
-      return ok({ selling, purchases: orders })
+      const favIds = (await db.collection('market_favorites').find({ userId: me.id }).toArray()).map((f) => f.listingId)
+      const favorites = await db.collection('listings').find({ id: { $in: favIds }, status: 'active' }, { projection: { _id: 0 } }).toArray()
+      return ok({ selling, purchases: orders, favorites })
     }
+
+    /* ===================== MARKETPLACE — CHAT & OFFRES ===================== */
+    // Démarre (ou récupère) une conversation avec le vendeur d'une annonce
+    if (route.startsWith('/market/listings/') && path[3] === 'chat' && method === 'POST') {
+      const l = await db.collection('listings').findOne({ id: path[2] })
+      if (!l) return err('Annonce introuvable', 404)
+      if (l.sellerId === me.id) return err('C\u2019est ta propre annonce')
+      let thread = await db.collection('market_threads').findOne({ listingId: l.id, buyerId: me.id })
+      if (!thread) {
+        thread = { id: uuidv4(), listingId: l.id, listingTitle: l.title, listingImage: l.images?.[0] || null, listingPriceCents: l.priceCents, buyerId: me.id, sellerId: l.sellerId, createdAt: new Date(), lastMessageAt: new Date() }
+        await db.collection('market_threads').insertOne(thread)
+        if (body.text) await db.collection('market_messages').insertOne({ id: uuidv4(), threadId: thread.id, senderId: me.id, type: 'text', text: String(body.text), createdAt: new Date() })
+      }
+      const { _id, ...clean } = thread
+      return ok({ thread: clean, existing: !!_id && false })
+    }
+
+    if (route === '/market/threads' && method === 'GET') {
+      const threads = await db.collection('market_threads').find({ $or: [{ buyerId: me.id }, { sellerId: me.id }] }, { projection: { _id: 0 } }).sort({ lastMessageAt: -1 }).toArray()
+      const out = []
+      for (const t of threads) {
+        const otherId = t.buyerId === me.id ? t.sellerId : t.buyerId
+        const other = await db.collection('users').findOne({ id: otherId }, { projection: { _id: 0, email: 0 } })
+        const last = await db.collection('market_messages').find({ threadId: t.id }).sort({ createdAt: -1 }).limit(1).toArray()
+        out.push({ ...t, role: t.buyerId === me.id ? 'buyer' : 'seller', other: other ? { id: other.id, name: other.name, handle: other.handle, initials: other.initials, avatarColor: other.avatarColor } : null, lastMessage: last[0] ? { text: last[0].text, type: last[0].type, amountCents: last[0].amountCents } : null })
+      }
+      return ok(out)
+    }
+
+    if (route.startsWith('/market/threads/') && path[3] === 'messages' && method === 'GET') {
+      const t = await db.collection('market_threads').findOne({ id: path[2] }, { projection: { _id: 0 } })
+      if (!t || (t.buyerId !== me.id && t.sellerId !== me.id)) return err('Conversation introuvable', 404)
+      const msgs = await db.collection('market_messages').find({ threadId: t.id }, { projection: { _id: 0 } }).sort({ createdAt: 1 }).toArray()
+      const otherId = t.buyerId === me.id ? t.sellerId : t.buyerId
+      const other = await db.collection('users').findOne({ id: otherId }, { projection: { _id: 0, email: 0 } })
+      const listing = await db.collection('listings').findOne({ id: t.listingId }, { projection: { _id: 0 } })
+      return ok({ thread: { ...t, role: t.buyerId === me.id ? 'buyer' : 'seller' }, messages: msgs, other, listing })
+    }
+
+    if (route.startsWith('/market/threads/') && path[3] === 'messages' && method === 'POST') {
+      const t = await db.collection('market_threads').findOne({ id: path[2] })
+      if (!t || (t.buyerId !== me.id && t.sellerId !== me.id)) return err('Conversation introuvable', 404)
+      const msg = { id: uuidv4(), threadId: t.id, senderId: me.id, type: 'text', text: String(body.text || '').slice(0, 2000), createdAt: new Date() }
+      if (!msg.text.trim()) return err('Message vide')
+      await db.collection('market_messages').insertOne(msg)
+      await db.collection('market_threads').updateOne({ id: t.id }, { $set: { lastMessageAt: new Date() } })
+      const { _id, ...clean } = msg
+      return ok(clean)
+    }
+
+    // Faire une offre (négociation)
+    if (route.startsWith('/market/threads/') && path[3] === 'offer' && path.length === 4 && method === 'POST') {
+      const t = await db.collection('market_threads').findOne({ id: path[2] })
+      if (!t || (t.buyerId !== me.id && t.sellerId !== me.id)) return err('Conversation introuvable', 404)
+      const amountCents = Math.round(body.amountCents || 0)
+      if (amountCents <= 0) return err('Montant invalide')
+      const offerId = uuidv4()
+      const msg = { id: uuidv4(), offerId, threadId: t.id, senderId: me.id, type: 'offer', amountCents, offerStatus: 'pending', createdAt: new Date() }
+      await db.collection('market_messages').insertOne(msg)
+      await db.collection('market_threads').updateOne({ id: t.id }, { $set: { lastMessageAt: new Date() } })
+      const { _id, ...clean } = msg
+      return ok(clean)
+    }
+
+    // Répondre à une offre : accept | reject
+    if (route.startsWith('/market/threads/') && path[3] === 'offer' && path.length === 6 && path[5] === 'respond' && method === 'POST') {
+      const t = await db.collection('market_threads').findOne({ id: path[2] })
+      if (!t || (t.buyerId !== me.id && t.sellerId !== me.id)) return err('Conversation introuvable', 404)
+      const offerId = path[4]
+      const offer = await db.collection('market_messages').findOne({ threadId: t.id, offerId, type: 'offer' })
+      if (!offer) return err('Offre introuvable', 404)
+      if (offer.senderId === me.id) return err('Tu ne peux pas répondre à ta propre offre')
+      const action = body.action === 'accept' ? 'accepted' : 'rejected'
+      await db.collection('market_messages').updateOne({ offerId }, { $set: { offerStatus: action } })
+      await db.collection('market_messages').insertOne({ id: uuidv4(), threadId: t.id, senderId: me.id, type: 'system', text: action === 'accepted' ? `Offre acceptée : ${(offer.amountCents / 100).toFixed(2)} €` : 'Offre refusée', createdAt: new Date() })
+      await db.collection('market_threads').updateOne({ id: t.id }, { $set: { lastMessageAt: new Date(), acceptedPriceCents: action === 'accepted' ? offer.amountCents : t.acceptedPriceCents } })
+      return ok({ ok: true, offerStatus: action, amountCents: offer.amountCents })
+    }
+
 
     /* ===================== ADS MANAGER ===================== */
     if (route === '/ads/campaigns' && method === 'POST') {
