@@ -16,11 +16,11 @@ from .routers import admin, ads, assistant, auth, market, messaging, notificatio
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db = await connect_to_mongo()
-    # Le démarrage ne doit JAMAIS être bloqué par la base : si Mongo tarde/est injoignable,
-    # on démarre quand même (le healthcheck /api/health répond) et les index se créeront
-    # au prochain démarrage. Un ping court évite de geler sur des timeouts longs.
+    # Le démarrage ne doit JAMAIS être bloqué ni crashé par la base : même une URL Mongo
+    # malformée ou injoignable laisse l'app démarrer (le healthcheck /api/health répond),
+    # ce qui permet de diagnostiquer via /api/debug/db.
     try:
+        db = await connect_to_mongo()
         await db.command("ping")
         n = await ensure_indexes(db)
         print(f"[startup] MongoDB OK, {n} index prêts")
@@ -60,16 +60,18 @@ async def health():
 async def debug_db():
     """Diagnostic temporaire : teste la connexion MongoDB et renvoie l'erreur exacte (credentials masqués)."""
     import re
-    from .db import get_db
+    from motor.motor_asyncio import AsyncIOMotorClient
     url = settings.mongo_uri or ""
     masked = re.sub(r"://[^@]+@", "://***@", url) if url else "VIDE"
-    info = {"db_name": settings.DB_NAME, "mongo_url": masked, "url_set": bool(url)}
+    which = "MONGO_PUBLIC_URL" if settings.MONGO_PUBLIC_URL.strip() else "MONGO_URL"
+    info = {"db_name": settings.DB_NAME, "using": which, "mongo_url": masked, "url_set": bool(url)}
     try:
-        db = get_db()
-        r = await db.command("ping")
+        client = AsyncIOMotorClient(url, serverSelectionTimeoutMS=4000, connectTimeoutMS=4000)
+        r = await client[settings.DB_NAME].command("ping")
         info["ok"] = True
         info["ping"] = r
-        info["users_count"] = await db.users.count_documents({})
+        info["users_count"] = await client[settings.DB_NAME].users.count_documents({})
+        client.close()
     except Exception as e:  # noqa: BLE001
         info["ok"] = False
         info["error"] = f"{type(e).__name__}: {str(e)[:400]}"
