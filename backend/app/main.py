@@ -56,27 +56,5 @@ async def health():
     return {"service": "DIVARC API", "status": "live", "time": now().isoformat()}
 
 
-@app.get("/api/debug/db")
-async def debug_db():
-    """Diagnostic temporaire : teste la connexion MongoDB et renvoie l'erreur exacte (credentials masqués)."""
-    import re
-    from motor.motor_asyncio import AsyncIOMotorClient
-    url = settings.mongo_uri or ""
-    masked = re.sub(r"://[^@]+@", "://***@", url) if url else "VIDE"
-    which = "MONGO_PUBLIC_URL" if settings.MONGO_PUBLIC_URL.strip() else "MONGO_URL"
-    info = {"db_name": settings.DB_NAME, "using": which, "mongo_url": masked, "url_set": bool(url)}
-    try:
-        client = AsyncIOMotorClient(url, serverSelectionTimeoutMS=4000, connectTimeoutMS=4000)
-        r = await client[settings.DB_NAME].command("ping")
-        info["ok"] = True
-        info["ping"] = r
-        info["users_count"] = await client[settings.DB_NAME].users.count_documents({})
-        client.close()
-    except Exception as e:  # noqa: BLE001
-        info["ok"] = False
-        info["error"] = f"{type(e).__name__}: {str(e)[:400]}"
-    return info
-
-
 for r in (auth, wallet, messaging, social, market, ads, store, admin, assistant, ws, notifications):
     app.include_router(r.router, prefix="/api")
