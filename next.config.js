@@ -6,8 +6,13 @@ const nextConfig = {
       { protocol: 'https', hostname: 'avatars.githubusercontent.com', pathname: '/**' },
     ],
   },
-  // Renamed from experimental.serverComponentsExternalPackages in Next 15
-  serverExternalPackages: ['mongodb'],
+  // Proxy same-origin : toutes les requêtes /api/* du front sont relayées vers le
+  // backend Python (FastAPI). Définir BACKEND_URL (ex: https://divarc-api.up.railway.app).
+  // Avantage : pas de CORS, et les <img src="/api/market/image/..."> fonctionnent tel quel.
+  async rewrites() {
+    const api = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '')
+    return api ? [{ source: '/api/:path*', destination: `${api}/api/:path*` }] : []
+  },
   webpack(config, { dev }) {
     if (dev) {
       // Reduce CPU/memory from file watching

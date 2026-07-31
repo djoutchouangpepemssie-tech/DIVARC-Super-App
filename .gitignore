@@ -1,5 +1,12 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Variables d'environnement — ne JAMAIS committer les secrets (.env.example reste suivi)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
 # IDE and editors
 .idea/
 .vscode/

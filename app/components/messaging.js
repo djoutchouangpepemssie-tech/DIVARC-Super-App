@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
+import { onRealtime, sendRealtime, isOnline } from '@/lib/realtime'
 import {
   Plus, Search, ArrowLeft, Send as SendIcon, X, Lock, BadgeCheck, Users, Hash,
   Smile, Flame, Check, Sparkles, Globe, MessageCircle, UserPlus, Crown
@@ -133,6 +134,12 @@ export default function Messaging({ me }) {
   const prevLevel = useRef(null)
   const scrollRef = useRef()
   const [sending, setSending] = useState(false)
+  const activeRef = useRef(null)
+  useEffect(() => { activeRef.current = active }, [active])
+  const [, setPresenceTick] = useState(0) // force le re-rendu quand la présence change
+  const [typingConvo, setTypingConvo] = useState(null) // conv où "l'autre" écrit
+  const typingTimer = useRef(null)
+  const lastTypingSent = useRef(0)
 
   const loadConvos = useCallback(async () => {
     const c = await api('/conversations'); if (Array.isArray(c)) setConvos(c)
@@ -153,13 +160,32 @@ export default function Messaging({ me }) {
   }, [])
 
   useEffect(() => { loadConvos(); loadCommunities() }, [loadConvos, loadCommunities])
-  // poll conversation list
-  useEffect(() => { const t = setInterval(loadConvos, 5000); return () => clearInterval(t) }, [loadConvos])
-  // poll active chat
+  // Temps réel : messages instantanés, présence, "en train d'écrire"
+  useEffect(() => {
+    const offMsg = onRealtime('message', (m) => {
+      loadConvos()
+      if (m.conversationId === activeRef.current) { loadDetail(activeRef.current); setTypingConvo(null) }
+    })
+    const offReact = onRealtime('reaction', (m) => {
+      if (m.conversationId === activeRef.current) loadDetail(activeRef.current)
+    })
+    const offPres = onRealtime('presence', () => setPresenceTick((v) => v + 1))
+    const offPresState = onRealtime('presence_state', () => setPresenceTick((v) => v + 1))
+    const offTyping = onRealtime('typing', (m) => {
+      if (m.conversationId === activeRef.current) {
+        setTypingConvo(m.conversationId)
+        if (typingTimer.current) clearTimeout(typingTimer.current)
+        typingTimer.current = setTimeout(() => setTypingConvo(null), 3000)
+      }
+    })
+    return () => { offMsg(); offReact(); offPres(); offPresState(); offTyping() }
+  }, [loadConvos, loadDetail])
+  // Fallback lent si le WebSocket est indisponible
+  useEffect(() => { const t = setInterval(loadConvos, 15000); return () => clearInterval(t) }, [loadConvos])
   useEffect(() => {
     if (!active) return
     loadDetail(active)
-    const t = setInterval(() => loadDetail(active), 2500)
+    const t = setInterval(() => loadDetail(active), 10000)
     return () => clearInterval(t)
   }, [active, loadDetail])
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [detail?.messages?.length])
@@ -280,7 +306,13 @@ export default function Messaging({ me }) {
                     {conv?.other?.verified && <BadgeCheck size={13} className="text-primary" />}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {conv?.type === 'dm' ? 'en ligne' : `${conv?.memberCount} membres`}
+                    {conv?.type === 'dm'
+                      ? (typingConvo === active
+                          ? <span className="text-primary">en train d'écrire…</span>
+                          : (isOnline(conv?.other?.id)
+                              ? <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />en ligne</span>
+                              : 'hors ligne'))
+                      : `${conv?.memberCount} membres`}
                   </div>
                 </div>
                 <Lock size={16} className="text-muted-foreground" title="Chiffré de bout en bout" />
@@ -295,7 +327,7 @@ export default function Messaging({ me }) {
 
               {/* input */}
               <div className="p-3 border-t border-border/60 flex items-center gap-2">
-                <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()}
+                <input value={input} onChange={(e) => { setInput(e.target.value); const t = Date.now(); if (active && t - lastTypingSent.current > 1500) { lastTypingSent.current = t; sendRealtime({ type: 'typing', conversationId: active }) } }} onKeyDown={(e) => e.key === 'Enter' && send()}
                   placeholder="Message…" className="flex-1 rounded-full border border-border bg-card/60 px-4 py-2.5 text-sm" />
                 <button onClick={send} disabled={!input.trim()} aria-label="Envoyer"
                   className="press w-10 h-10 rounded-full grid place-items-center text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>

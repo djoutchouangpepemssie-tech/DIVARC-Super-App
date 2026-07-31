@@ -1,0 +1,16 @@
+# Environnement Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Variables d'environnement (secrets)
+.env
+.env.local
+
+# Tests locaux
+.pytest_cache/
+
+# Scripts de dev/diagnostic locaux (captures, tests manuels)
+_*.py

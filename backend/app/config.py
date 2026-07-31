@@ -1,0 +1,37 @@
+"""Configuration 12-factor : toutes les valeurs viennent des variables d'environnement."""
+from __future__ import annotations
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # --- Base de données (obligatoire) ---
+    MONGO_URL: str = "mongodb://localhost:27017"
+    DB_NAME: str = "divarc"
+
+    # --- Assistant IA (optionnel) ---
+    ANTHROPIC_API_KEY: str = ""
+    AI_MODEL: str = "claude-sonnet-4-5-20250929"
+
+    # --- E-mails OTP via Resend (optionnel) ---
+    RESEND_API_KEY: str = ""
+    RESEND_FROM: str = "DIVARC <onboarding@resend.dev>"
+
+    # --- Géolocalisation (optionnel) ---
+    GEOAPIFY_API_KEY: str = ""
+
+    # --- CORS ---
+    # Liste d'origines séparées par des virgules, ou "*" pour tout autoriser.
+    CORS_ORIGINS: str = "*"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        raw = (self.CORS_ORIGINS or "*").strip()
+        if raw == "*":
+            return ["*"]
+        return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+settings = Settings()

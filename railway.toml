@@ -1,0 +1,15 @@
+# Configuration Railway — Service FRONTEND (Next.js). Root Directory = / (racine).
+# Le backend Python a sa propre config dans backend/railway.toml.
+# Ce service a besoin de la variable BACKEND_URL (URL du service api) pour le proxy /api/*.
+# Docs : https://docs.railway.com/reference/config-as-code
+
+[build]
+builder = "NIXPACKS"
+# Nixpacks détecte Node/yarn via package.json et exécute `yarn install` + `yarn build`.
+
+[deploy]
+# `yarn start` lance `next start -H 0.0.0.0 -p ${PORT:-3000}` (voir package.json).
+# Railway injecte automatiquement la variable PORT.
+startCommand = "yarn start"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

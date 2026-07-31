@@ -12,7 +12,9 @@ import {
   Landmark, CreditCard, Settings2, Trash2, Download, Users, Play
 } from 'lucide-react'
 import { api, getToken, setToken, clearToken, flushQueue, pendingCount } from '@/lib/api'
+import { connectRealtime, disconnectRealtime } from '@/lib/realtime'
 import Messaging from './components/messaging'
+import NotificationBell from './components/notifications'
 import Social from './components/social'
 import Marketplace from './components/marketplace'
 import AdsManager from './components/ads'
@@ -249,7 +251,7 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab }) {
               <div className="font-semibold leading-tight">{user?.name?.split(' ')[0]}</div>
             </div>
           </div>
-          <Glass className="w-10 h-10 grid place-items-center press"><Bell size={18} /></Glass>
+          <NotificationBell />
         </div>
 
         {/* balance hero — carte premium */}
@@ -1104,6 +1106,11 @@ function App() {
       setBooted(true)
     })()
   }, [load])
+
+  // Connexion temps réel (WebSocket) tant qu'un utilisateur est authentifié
+  useEffect(() => {
+    if (user) { connectRealtime(); return () => disconnectRealtime() }
+  }, [user])
 
   // Réseau : online/offline + rejeu de la file d'attente
   useEffect(() => {
