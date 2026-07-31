@@ -17,7 +17,15 @@ from .routers import admin, ads, assistant, auth, market, messaging, notificatio
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db = await connect_to_mongo()
-    await ensure_indexes(db)
+    # Le démarrage ne doit JAMAIS être bloqué par la base : si Mongo tarde/est injoignable,
+    # on démarre quand même (le healthcheck /api/health répond) et les index se créeront
+    # au prochain démarrage. Un ping court évite de geler sur des timeouts longs.
+    try:
+        await db.command("ping")
+        n = await ensure_indexes(db)
+        print(f"[startup] MongoDB OK, {n} index prêts")
+    except Exception as e:  # noqa: BLE001
+        print(f"[startup] MongoDB indisponible au démarrage (l'app démarre quand même): {e}")
     yield
     await close_mongo()
 

@@ -20,7 +20,11 @@ async def connect_to_mongo() -> AsyncIOMotorDatabase:
     global _client, _db
     if _db is None:
         # tz_aware=True : les dates relues de Mongo restent en UTC "aware", cohérent avec helpers.now()
-        _client = AsyncIOMotorClient(settings.MONGO_URL, uuidRepresentation="standard", tz_aware=True)
+        # timeouts courts : si Mongo est injoignable, on échoue vite au lieu de geler le démarrage
+        _client = AsyncIOMotorClient(
+            settings.MONGO_URL, uuidRepresentation="standard", tz_aware=True,
+            serverSelectionTimeoutMS=5000, connectTimeoutMS=5000,
+        )
         _db = _client[settings.DB_NAME]
     return _db
 
