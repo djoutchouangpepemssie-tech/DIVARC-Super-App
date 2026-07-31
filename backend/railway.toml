@@ -6,7 +6,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+# Pas de startCommand ici : Railway l'exécuterait sans shell et n'interpréterait pas ${PORT}.
+# On laisse le CMD du Dockerfile (qui passe par `sh -c` et gère ${PORT}) faire le démarrage.
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 healthcheckPath = "/api/health"
