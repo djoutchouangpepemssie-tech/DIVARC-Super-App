@@ -61,7 +61,7 @@ async def debug_db():
     """Diagnostic temporaire : teste la connexion MongoDB et renvoie l'erreur exacte (credentials masqués)."""
     import re
     from .db import get_db
-    url = settings.MONGO_URL or ""
+    url = settings.mongo_uri or ""
     masked = re.sub(r"://[^@]+@", "://***@", url) if url else "VIDE"
     info = {"db_name": settings.DB_NAME, "mongo_url": masked, "url_set": bool(url)}
     try:

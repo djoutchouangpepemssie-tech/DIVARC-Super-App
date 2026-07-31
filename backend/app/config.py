@@ -9,7 +9,14 @@ class Settings(BaseSettings):
 
     # --- Base de données (obligatoire) ---
     MONGO_URL: str = "mongodb://localhost:27017"
+    # Sur Railway, l'URL interne (*.railway.internal) ne résout pas toujours ; si MONGO_PUBLIC_URL
+    # est fournie, on l'utilise en priorité (proxy public, fiable partout).
+    MONGO_PUBLIC_URL: str = ""
     DB_NAME: str = "divarc"
+
+    @property
+    def mongo_uri(self) -> str:
+        return self.MONGO_PUBLIC_URL.strip() or self.MONGO_URL
 
     # --- Assistant IA (optionnel) ---
     ANTHROPIC_API_KEY: str = ""
