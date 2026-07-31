@@ -56,5 +56,25 @@ async def health():
     return {"service": "DIVARC API", "status": "live", "time": now().isoformat()}
 
 
+@app.get("/api/debug/db")
+async def debug_db():
+    """Diagnostic temporaire : teste la connexion MongoDB et renvoie l'erreur exacte (credentials masqués)."""
+    import re
+    from .db import get_db
+    url = settings.MONGO_URL or ""
+    masked = re.sub(r"://[^@]+@", "://***@", url) if url else "VIDE"
+    info = {"db_name": settings.DB_NAME, "mongo_url": masked, "url_set": bool(url)}
+    try:
+        db = get_db()
+        r = await db.command("ping")
+        info["ok"] = True
+        info["ping"] = r
+        info["users_count"] = await db.users.count_documents({})
+    except Exception as e:  # noqa: BLE001
+        info["ok"] = False
+        info["error"] = f"{type(e).__name__}: {str(e)[:400]}"
+    return info
+
+
 for r in (auth, wallet, messaging, social, market, ads, store, admin, assistant, ws, notifications):
     app.include_router(r.router, prefix="/api")
