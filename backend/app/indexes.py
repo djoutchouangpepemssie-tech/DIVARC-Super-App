@@ -90,6 +90,10 @@ _INDEXES: list[tuple[str, object, dict]] = [
     ("invites", "inviterId", {}),
     ("nearby_pings", "userId", {"unique": True}),
     ("nearby_pings", "expiresAt", {"expireAfterSeconds": 0}),  # purge auto des pings expirés
+
+    # Notifications push Web
+    ("push_subscriptions", "endpoint", {"unique": True}),
+    ("push_subscriptions", "userId", {}),
 ]
 
 

@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # --- Géolocalisation (optionnel) ---
     GEOAPIFY_API_KEY: str = ""
 
+    # --- Notifications push Web (VAPID) ---
+    # Générées une fois puis stockées en variables Railway. Sans elles, le push est simplement désactivé.
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_SUBJECT: str = "mailto:djoutchouangpepemssie@gmail.com"
+
     # --- CORS ---
     # Liste d'origines séparées par des virgules, ou "*" pour tout autoriser.
     CORS_ORIGINS: str = "*"

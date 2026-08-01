@@ -12,7 +12,7 @@ from .config import settings
 from .db import close_mongo, connect_to_mongo
 from .indexes import ensure_indexes
 from .routers import (admin, ads, assistant, auth, discovery, market, messaging, notifications, pay,
-                      social, store, wallet, ws)
+                      push, social, store, wallet, ws)
 
 
 @asynccontextmanager
@@ -57,5 +57,5 @@ async def health():
     return {"service": "DIVARC API", "status": "live", "time": now().isoformat()}
 
 
-for r in (auth, wallet, messaging, social, market, ads, store, admin, assistant, ws, notifications, pay, discovery):
+for r in (auth, wallet, messaging, social, market, ads, store, admin, assistant, ws, notifications, pay, discovery, push):
     app.include_router(r.router, prefix="/api")

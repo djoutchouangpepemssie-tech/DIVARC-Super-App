@@ -14,6 +14,7 @@ import {
 import { api, getToken, setToken, clearToken, flushQueue, pendingCount } from '@/lib/api'
 import { connectRealtime, disconnectRealtime, onRealtime } from '@/lib/realtime'
 import { installAudioUnlock, playPing, soundEnabled, setSoundEnabled } from '@/lib/sound'
+import { registerServiceWorker, getPushStatus, enablePush, disablePush } from '@/lib/push'
 import Messaging from './components/messaging'
 import NotificationBell from './components/notifications'
 import Social from './components/social'
@@ -983,6 +984,30 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout }) {
   const [snd, setSnd] = useState(true)
   useEffect(() => { setSnd(soundEnabled()) }, [])
   const toggleSound = () => { const v = !snd; setSnd(v); setSoundEnabled(v); if (v) playPing() }
+
+  // Notifications push (système) : état + activation
+  const [push, setPush] = useState({ supported: true, permission: 'default', subscribed: false })
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushMsg, setPushMsg] = useState('')
+  useEffect(() => { getPushStatus().then(setPush) }, [])
+  const togglePush = async () => {
+    setPushBusy(true); setPushMsg('')
+    if (push.subscribed) {
+      await disablePush()
+    } else {
+      const r = await enablePush()
+      if (!r.ok) {
+        setPushMsg(
+          r.reason === 'denied' ? 'Autorisation refusée. Active-la dans les réglages du navigateur.'
+          : r.reason === 'unsupported' ? "Non supporté ici. Sur iPhone : ajoute l'app à l'écran d'accueil d'abord."
+          : r.reason === 'no-vapid' ? 'Push pas encore configuré côté serveur (clés VAPID).'
+          : "Impossible d'activer pour le moment."
+        )
+      }
+    }
+    setPush(await getPushStatus())
+    setPushBusy(false)
+  }
   return (
     <Screen>
       <div className="cascade space-y-5">
@@ -1050,8 +1075,16 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout }) {
               <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><EyeOff size={18} /></div><span className="font-medium text-sm">Mode Confiance (masquer montants)</span></div>
               <Toggle on={mask} onClick={() => setMask((m) => !m)} />
             </div>
+            <div className="p-3.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><Bell size={18} /></div>
+                  <div><div className="font-medium text-sm">Notifications sur le téléphone</div><div className="text-xs text-muted-foreground">Même quand l'app est fermée</div></div></div>
+                {pushBusy ? <RefreshCw size={18} className="animate-spin text-muted-foreground" /> : <Toggle on={push.subscribed} onClick={togglePush} />}
+              </div>
+              {pushMsg && <p className="text-xs text-destructive mt-2 ml-[52px]">{pushMsg}</p>}
+            </div>
             <div className="flex items-center justify-between p-3.5">
-              <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><Bell size={18} /></div><span className="font-medium text-sm">Sons de notification</span></div>
+              <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><Bell size={18} /></div><span className="font-medium text-sm">Sons dans l'app</span></div>
               <Toggle on={snd} onClick={toggleSound} />
             </div>
             <Row icon={<Globe size={18} />} title="Langue" sub="Français" />
@@ -1353,6 +1386,9 @@ function App() {
 
   // Audio débloqué au 1er geste (politique autoplay iOS/Android)
   useEffect(() => { installAudioUnlock() }, [])
+
+  // Enregistre le Service Worker (nécessaire aux notifications push système)
+  useEffect(() => { registerServiceWorker() }, [])
 
   // Son + vibration à chaque notification reçue en temps réel (messages, paiements…)
   useEffect(() => {
