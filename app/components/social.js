@@ -287,7 +287,7 @@ function BottomSheet({ children, onClose, title }) {
     <motion.div className="fixed inset-0 z-50 flex items-end justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }} className="relative w-full sm:max-w-md">
-        <Glass className="glass-sheen glass-strong p-5 pt-3 rounded-b-none max-h-[80dvh] overflow-y-auto no-scrollbar">
+        <Glass className="glass-sheen glass-strong p-5 pt-3 pb-safe rounded-b-none max-h-[80dvh] overflow-y-auto overscroll-contain no-scrollbar">
           <div className="w-10 h-1.5 rounded-full bg-foreground/15 mx-auto mb-4" />
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-display text-2xl">{title}</h3>

@@ -35,6 +35,13 @@ export default function NotificationBell() {
     return off
   }, [])
 
+  // Verrou du scroll de fond quand le panneau est ouvert
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    document.body.classList.toggle('overlay-open', open)
+    return () => document.body.classList.remove('overlay-open')
+  }, [open])
+
   const openPanel = async () => {
     setOpen(true)
     if (unread > 0) {
@@ -61,7 +68,7 @@ export default function NotificationBell() {
           <motion.div className="fixed inset-0 z-[60]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setOpen(false)} />
             <motion.div
-              className="absolute right-0 top-0 h-full w-full max-w-sm border-l border-border p-4 overflow-y-auto shadow-2xl"
+              className="absolute right-0 top-0 h-full w-full max-w-sm border-l border-border p-4 pt-safe pb-safe overflow-y-auto overscroll-contain shadow-2xl"
               style={{ backgroundColor: 'hsl(var(--card))' }}
               initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 280 }}>

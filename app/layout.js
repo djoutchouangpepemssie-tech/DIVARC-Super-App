@@ -18,6 +18,8 @@ export const viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
+  viewportFit: 'cover', // gère les encoches / safe-areas
+  interactiveWidget: 'resizes-content', // le clavier redimensionne le contenu au lieu de tout décaler
 }
 
 export default function RootLayout({ children }) {

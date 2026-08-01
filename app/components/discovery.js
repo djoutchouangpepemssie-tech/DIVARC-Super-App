@@ -69,9 +69,16 @@ export default function Discovery({ onClose, onOpenConversation }) {
     loadRequests()
   }
 
+  // Verrou du scroll de fond tant que le panneau est ouvert
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    document.body.classList.add('overlay-open')
+    return () => document.body.classList.remove('overlay-open')
+  }, [])
+
   return (
     <motion.div className="fixed inset-0 z-[70] flex flex-col bg-app-gradient" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <div className="flex items-center gap-3 p-4 border-b border-border/60">
+      <div className="flex items-center gap-3 p-4 pt-safe border-b border-border/60">
         <button onClick={onClose} className="press"><X size={22} /></button>
         <h1 className="font-display text-2xl">Ajouter des contacts</h1>
       </div>
@@ -101,7 +108,7 @@ export default function Discovery({ onClose, onOpenConversation }) {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-8">
+      <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-safe">
         {tab === 'search' && <SearchTab onMessage={message} onAdd={addContact} busy={busy} />}
         {tab === 'contacts' && <ContactsTab onMessage={message} onAdd={addContact} busy={busy} />}
         {tab === 'nearby' && <NearbyTab onMessage={message} onAdd={addContact} busy={busy} />}

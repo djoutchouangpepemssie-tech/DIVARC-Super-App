@@ -200,7 +200,7 @@ function ConnectorDetail({ c, onClose, onConnect, onDisconnect }) {
     <motion.div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} />
       <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }} className="relative w-full sm:max-w-md">
-        <Glass sheen strong className="p-5 rounded-b-none sm:rounded-b-[var(--radius)] max-h-[92dvh] overflow-y-auto no-scrollbar">
+        <Glass sheen strong className="p-5 pb-safe rounded-b-none sm:rounded-b-[var(--radius)] overlay-scroll no-scrollbar">
           <div className="flex justify-end mb-2"><button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60"><X size={18} /></button></div>
           <div className="flex items-center gap-4 mb-4">
             <ConnIcon c={c} size={64} />
@@ -256,7 +256,7 @@ function AddDocSheet({ onClose, onAdd }) {
     <motion.div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} />
       <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }} className="relative w-full sm:max-w-md">
-        <Glass sheen strong className="p-5 rounded-b-none sm:rounded-b-[var(--radius)]">
+        <Glass sheen strong className="p-5 pb-safe rounded-b-none sm:rounded-b-[var(--radius)] overlay-scroll no-scrollbar">
           <div className="flex items-center justify-between mb-4"><h3 className="font-display text-xl">Nouveau document</h3><button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60"><X size={18} /></button></div>
           <label className="text-xs text-muted-foreground">Intitulé</label>
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex. Quittance de loyer" className="w-full mt-1 mb-3 rounded-2xl border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary" />
@@ -282,7 +282,7 @@ function ShareSheet({ d, onClose, onCopy }) {
     <motion.div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} />
       <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }} className="relative w-full sm:max-w-md">
-        <Glass sheen strong className="p-5 rounded-b-none sm:rounded-b-[var(--radius)]">
+        <Glass sheen strong className="p-5 pb-safe rounded-b-none sm:rounded-b-[var(--radius)] overlay-scroll no-scrollbar">
           <div className="flex items-center justify-between mb-4"><h3 className="font-display text-xl">Partage sécurisé</h3><button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60"><X size={18} /></button></div>
           <div className="text-center mb-4"><div className="text-3xl mb-1">{d.emoji}</div><div className="font-semibold">{d.title}</div></div>
           <Glass className="p-3 flex items-center gap-2 mb-3">

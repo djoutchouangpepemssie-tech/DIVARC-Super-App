@@ -12,7 +12,8 @@ import {
   Landmark, CreditCard, Settings2, Trash2, Download, Users, Play, AtSign, Phone
 } from 'lucide-react'
 import { api, getToken, setToken, clearToken, flushQueue, pendingCount } from '@/lib/api'
-import { connectRealtime, disconnectRealtime } from '@/lib/realtime'
+import { connectRealtime, disconnectRealtime, onRealtime } from '@/lib/realtime'
+import { installAudioUnlock, playPing, soundEnabled, setSoundEnabled } from '@/lib/sound'
 import Messaging from './components/messaging'
 import NotificationBell from './components/notifications'
 import Social from './components/social'
@@ -979,6 +980,9 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout }) {
     { name: 'Billetterie', pseudo: 'divarc-2be8', since: '28 fév', icon: Ticket, c: '#00BBF9' },
   ]
   const [revoked, setRevoked] = useState([])
+  const [snd, setSnd] = useState(true)
+  useEffect(() => { setSnd(soundEnabled()) }, [])
+  const toggleSound = () => { const v = !snd; setSnd(v); setSoundEnabled(v); if (v) playPing() }
   return (
     <Screen>
       <div className="cascade space-y-5">
@@ -1045,6 +1049,10 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout }) {
             <div className="flex items-center justify-between p-3.5">
               <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><EyeOff size={18} /></div><span className="font-medium text-sm">Mode Confiance (masquer montants)</span></div>
               <Toggle on={mask} onClick={() => setMask((m) => !m)} />
+            </div>
+            <div className="flex items-center justify-between p-3.5">
+              <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><Bell size={18} /></div><span className="font-medium text-sm">Sons de notification</span></div>
+              <Toggle on={snd} onClick={toggleSound} />
             </div>
             <Row icon={<Globe size={18} />} title="Langue" sub="Français" />
           </Glass>
@@ -1280,7 +1288,7 @@ function Sheet({ children, onClose, title, gold }) {
       <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} />
       <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }}
         className="relative w-full sm:max-w-md">
-        <Glass strong className="p-5 rounded-b-none sm:rounded-b-[var(--radius)] max-h-[92dvh] overflow-y-auto no-scrollbar">
+        <Glass strong className="p-5 pb-safe rounded-b-none sm:rounded-b-[var(--radius)] overlay-scroll no-scrollbar">
           <div className="flex items-center justify-between mb-4">
             <h3 className={cx('font-display text-2xl', gold && 'gold-text')}>{title}</h3>
             <button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60"><X size={18} /></button>
@@ -1342,6 +1350,22 @@ function App() {
   useEffect(() => {
     if (user) { connectRealtime(); return () => disconnectRealtime() }
   }, [user])
+
+  // Audio débloqué au 1er geste (politique autoplay iOS/Android)
+  useEffect(() => { installAudioUnlock() }, [])
+
+  // Son + vibration à chaque notification reçue en temps réel (messages, paiements…)
+  useEffect(() => {
+    if (!user) return
+    return onRealtime('notification', () => playPing())
+  }, [user])
+
+  // Verrou du scroll de fond quand un overlay de l'App est ouvert
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    document.body.classList.toggle('overlay-open', !!overlay)
+    return () => document.body.classList.remove('overlay-open')
+  }, [overlay])
 
   // Réseau : online/offline + rejeu de la file d'attente
   useEffect(() => {

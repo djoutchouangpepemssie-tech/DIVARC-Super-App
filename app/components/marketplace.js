@@ -616,7 +616,7 @@ function Sheet({ onClose, title, children }) {
     <motion.div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} />
       <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }} className="relative w-full sm:max-w-md">
-        <Glass sheen strong className="p-5 rounded-b-none sm:rounded-b-[var(--radius)] max-h-[90dvh] overflow-y-auto no-scrollbar">
+        <Glass sheen strong className="p-5 pb-safe rounded-b-none sm:rounded-b-[var(--radius)] max-h-[90dvh] overflow-y-auto overscroll-contain no-scrollbar">
           <div className="flex items-center justify-between mb-4"><h3 className="font-display text-xl">{title}</h3><button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60"><X size={18} /></button></div>
           {children}
         </Glass>

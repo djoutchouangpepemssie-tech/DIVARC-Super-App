@@ -86,9 +86,24 @@
     font-family: 'Manrope', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Empêche le « rebond » iOS et le scroll de l'arrière-plan qui chaîne */
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html, body {
+    min-height: 100%;
+    /* Pas de scroll horizontal parasite quand le clavier/anim décale un élément */
+    overflow-x: hidden;
   }
   html {
     scroll-behavior: smooth;
+    /* Empêche l'ajustement auto de la taille du texte quand le clavier sort (iOS) */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  /* Blocage du scroll de fond quand un overlay est ouvert */
+  body.overlay-open {
+    overflow: hidden;
   }
   ::selection {
     background: rgba(67, 83, 240, 0.22);
@@ -157,6 +172,30 @@
   .glow-gold { box-shadow: 0 16px 40px -14px rgba(226,170,43,0.5); }
   .hairline { box-shadow: inset 0 1px 0 rgba(255,255,255,0.5); }
   .dark .hairline { box-shadow: inset 0 1px 0 rgba(255,255,255,0.12); }
+}
+
+/* ---- Champs de saisie : lisibles dans les 2 thèmes + pas de zoom iOS ----
+   Volontairement HORS @layer : ces règles doivent l'emporter sur les classes
+   utilitaires Tailwind (text-sm/text-xs), sinon iOS re-zoome au focus (« tout saute »). */
+input, textarea, select {
+  color: hsl(var(--foreground));
+  font-size: 16px; /* iOS zoome automatiquement si < 16px */
+}
+input::placeholder, textarea::placeholder {
+  color: hsl(var(--muted-foreground));
+  opacity: 1;
+}
+/* Autofill : évite le texte noir sur fond sombre (texte invisible) */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: hsl(var(--foreground));
+  caret-color: hsl(var(--foreground));
+  transition: background-color 9999s ease-out 0s;
+}
+/* Sur grand écran avec souris, tailles plus fines sans risque de zoom */
+@media (min-width: 640px) and (pointer: fine) {
+  input, textarea, select { font-size: 14px; }
 }
 
 /* ============ LIQUID GLASS RECIPE ============ */
@@ -261,6 +300,17 @@
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Conteneurs scrollables d'overlay : le scroll reste dans la carte (ne « fuit » pas vers le fond),
+   la carte ne dépasse jamais l'écran et laisse la place au clavier / à la safe-area. */
+.overlay-scroll {
+  max-height: 88dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
+.pt-safe { padding-top: max(env(safe-area-inset-top), 0.75rem); }
 
 /* ============ SKELETON SHIMMER ============ */
 .skeleton {
