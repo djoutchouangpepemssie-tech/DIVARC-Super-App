@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     TURN_USERNAME: str = ""
     TURN_PASSWORD: str = ""
 
+    # --- Mode démo ---
+    # False (défaut) = vraie app : nouveaux comptes à 0 €, aucune donnée fictive.
+    # True = remplit l'app de contenus de démonstration (faux amis/annonces/vidéos, solde fictif).
+    DEMO_MODE: bool = False
+
     # --- CORS ---
     # Liste d'origines séparées par des virgules, ou "*" pour tout autoriser.
     CORS_ORIGINS: str = "*"

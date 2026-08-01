@@ -980,12 +980,6 @@ const SocialTeaser = () => (
 
 /* ============================= PROFILE ============================= */
 function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout }) {
-  const accesses = [
-    { name: 'Livraison', pseudo: 'divarc-a91f', since: '12 mai', icon: Utensils, c: '#F15BB5' },
-    { name: 'Mobilité', pseudo: 'divarc-7c02', since: '3 avr', icon: Car, c: '#3FB68B' },
-    { name: 'Billetterie', pseudo: 'divarc-2be8', since: '28 fév', icon: Ticket, c: '#00BBF9' },
-  ]
-  const [revoked, setRevoked] = useState([])
   const [snd, setSnd] = useState(true)
   useEffect(() => { setSnd(soundEnabled()) }, [])
   const toggleSound = () => { const v = !snd; setSnd(v); setSoundEnabled(v); if (v) playPing() }
@@ -1026,7 +1020,9 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout }) {
             <div className="flex-1">
               <div className="font-semibold text-lg leading-tight text-white">{user?.name}</div>
               <div className="text-sm text-white/70">{user?.handle}</div>
-              <Pill className="bg-white/15 text-white backdrop-blur mt-1.5"><BadgeCheck size={12} className="text-gold" /> Vérifié {user?.kyc}</Pill>
+              {user?.verified
+                ? <Pill className="bg-white/15 text-white backdrop-blur mt-1.5"><BadgeCheck size={12} className="text-gold" /> Vérifié · {user?.kyc}</Pill>
+                : <Pill className="bg-white/15 text-white backdrop-blur mt-1.5"><Shield size={12} /> Compte non vérifié</Pill>}
             </div>
             <button className="press w-10 h-10 rounded-full grid place-items-center bg-white/15 text-white backdrop-blur" aria-label="Mon QR"><QrCode size={20} /></button>
           </div>
@@ -1036,32 +1032,19 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout }) {
         <div>
           <SectionTitle title="Centre de sécurité" />
           <Glass className="divide-y divide-border/60">
-            <Row icon={<Fingerprint size={18} />} title="Passkeys" sub="1 passkey active" ok />
-            <Row icon={<Shield size={18} />} title="Double authentification" sub="Activée" ok />
-            <Row icon={<CreditCard size={18} />} title="Appareils connectés" sub="Chrome sur macOS · France" />
+            <Row icon={<Fingerprint size={18} />} title="Connexion sans mot de passe" sub="Par code e-mail à usage unique" ok />
+            <Row icon={<Shield size={18} />} title="Données protégées" sub="Conforme RGPD · hébergé dans l'UE" ok />
+            <Row icon={<Lock size={18} />} title="Messages chiffrés" sub="Conversations privées" ok />
           </Glass>
         </div>
 
         {/* who sees what */}
         <div>
-          <SectionTitle title="Qui voit quoi" />
-          <Glass className="divide-y divide-border/60">
-            {accesses.map((a) => {
-              const isRev = revoked.includes(a.name)
-              return (
-                <div key={a.name} className="flex items-center gap-3 p-3.5">
-                  <div className="w-10 h-10 rounded-2xl grid place-items-center text-white" style={{ background: a.c }}><a.icon size={18} /></div>
-                  <div className="flex-1">
-                    <div className="font-medium text-sm">{a.name}</div>
-                    <div className="text-xs text-muted-foreground">Pseudonyme {a.pseudo} · depuis {a.since}</div>
-                  </div>
-                  <button onClick={() => setRevoked((p) => isRev ? p.filter((x) => x !== a.name) : [...p, a.name])}
-                    className={cx('press text-xs font-semibold px-3 py-1.5 rounded-full', isRev ? 'bg-muted text-muted-foreground' : 'bg-destructive/10 text-destructive')}>
-                    {isRev ? 'Annuler' : 'Révoquer'}
-                  </button>
-                </div>
-              )
-            })}
+          <SectionTitle title="Applications connectées" />
+          <Glass className="p-6 text-center">
+            <Shield size={26} className="mx-auto mb-2 text-muted-foreground opacity-50" />
+            <div className="text-sm font-medium">Aucune application connectée</div>
+            <div className="text-xs text-muted-foreground mt-1">Quand tu connecteras un service, il apparaîtra ici avec un pseudonyme — révocable à tout moment.</div>
           </Glass>
         </div>
 

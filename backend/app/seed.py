@@ -3,11 +3,29 @@ from __future__ import annotations
 
 import random
 
+from .config import settings
 from .data import BOTS, CITIES, COLORS, MARKET_IMGS, STORE_APPS, VIDS
 from .helpers import hash_email, hash_phone, initials_of, now, uid
 
+# Compte officiel DIVARC (émetteur du message de bienvenue). Ce n'est pas un « ami ».
+OFFICIAL_ID = "divarc-official"
+
+
+async def ensure_official_account(db) -> None:
+    """Crée le compte officiel DIVARC (idempotent). Toujours présent, même hors démo."""
+    if not await db.users.find_one({"id": OFFICIAL_ID}):
+        await db.users.insert_one({
+            "id": OFFICIAL_ID, "email": "official@divarc.fr", "handle": "@divarc", "name": "DIVARC",
+            "initials": "D", "avatarColor": "#4353F0", "verified": True, "kyc": "eIDAS",
+            "bio": "Compte officiel DIVARC", "isBot": True, "official": True, "createdAt": now(),
+        })
+
 
 async def ensure_demo_users(db) -> None:
+    # Le compte officiel existe toujours ; les faux amis/communautés uniquement en mode démo.
+    await ensure_official_account(db)
+    if not settings.DEMO_MODE:
+        return
     for b in BOTS:
         ex = await db.users.find_one({"id": b["id"]})
         if not ex:
@@ -70,33 +88,37 @@ async def provision_user(db, email: str, name: str | None = None, phone: str | N
         "createdAt": now(),
     }
     await db.users.insert_one(dict(user))
+    # Solde de départ : fictif en démo, sinon 0 € (vraie app)
+    start_balance = 480000 if settings.DEMO_MODE else 0
     await db.wallets.insert_one({
-        "id": uid(), "userId": _id, "balanceCents": 480000, "currency": "EUR",
+        "id": uid(), "userId": _id, "balanceCents": start_balance, "currency": "EUR",
         "sepaInstant": True, "carbonMonthKg": 0, "createdAt": now(),
     })
-    await db.coffres.insert_many([
-        {"id": uid(), "userId": _id, "name": "Vacances", "emoji": "🏖️", "balanceCents": 500, "goalCents": 150000, "rule": "round_up", "color": "#4353F0"},
-        {"id": uid(), "userId": _id, "name": "Fonds d’urgence", "emoji": "🛟", "balanceCents": 0, "goalCents": 300000, "rule": "receive_over", "color": "#E2AA2B"},
-    ])
-    await db.transactions.insert_one({
-        "id": uid(), "userId": _id, "label": "Bienvenue sur DIVARC 🎁", "category": "Cadeau",
-        "amountCents": 480000, "carbonKg": 0, "icon": "🎁", "route": None, "createdAt": now(),
+    if settings.DEMO_MODE:
+        await db.coffres.insert_many([
+            {"id": uid(), "userId": _id, "name": "Vacances", "emoji": "🏖️", "balanceCents": 500, "goalCents": 150000, "rule": "round_up", "color": "#4353F0"},
+            {"id": uid(), "userId": _id, "name": "Fonds d’urgence", "emoji": "🛟", "balanceCents": 0, "goalCents": 300000, "rule": "receive_over", "color": "#E2AA2B"},
+        ])
+        await db.transactions.insert_one({
+            "id": uid(), "userId": _id, "label": "Bienvenue sur DIVARC 🎁", "category": "Cadeau",
+            "amountCents": 480000, "carbonKg": 0, "icon": "🎁", "route": None, "createdAt": now(),
+        })
+
+    # Conversation de bienvenue du compte OFFICIEL DIVARC (pas un ami, pas de réponse auto)
+    await ensure_official_account(db)
+    conv_id = uid()
+    await db.conversations.insert_one({
+        "id": conv_id, "type": "dm", "name": None, "avatarColor": None,
+        "memberIds": [_id, OFFICIAL_ID], "createdBy": "system", "reads": {},
+        "lastText": "Bienvenue sur DIVARC 🎉",
+        "lastMessageAt": now(), "createdAt": now(),
     })
-    await ensure_demo_users(db)
-    marie = await db.users.find_one({"id": "bot-marie"})
-    if marie:
-        conv_id = uid()
-        await db.conversations.insert_one({
-            "id": conv_id, "type": "dm", "name": None, "avatarColor": None,
-            "memberIds": [_id, marie["id"]], "createdBy": "system", "reads": {},
-            "lastText": "Bienvenue ! Envoie-moi un message pour lancer ta première flamme 🔥",
-            "lastMessageAt": now(), "createdAt": now(),
-        })
-        await db.messages.insert_one({
-            "id": uid(), "conversationId": conv_id, "senderId": marie["id"], "senderName": marie["name"],
-            "text": "Salut et bienvenue sur DIVARC ! 🎉 Réponds-moi pour démarrer ta première flamme 🔥 et faire monter votre score d’amitié.",
-            "kind": "text", "reactions": [], "createdAt": now(),
-        })
+    await db.messages.insert_one({
+        "id": uid(), "conversationId": conv_id, "senderId": OFFICIAL_ID, "senderName": "DIVARC",
+        "text": ("Bienvenue sur DIVARC 🎉\n\nTon compte est prêt. Ajoute tes amis, discute, "
+                 "envoie de l'argent et découvre les mini-apps. Bonne visite !"),
+        "kind": "text", "reactions": [], "createdAt": now(),
+    })
     return strip(user)
 
 
@@ -108,6 +130,8 @@ def strip(doc: dict) -> dict:
 # ---------------- Seeds ----------------
 
 async def ensure_social_seed(db) -> None:
+    if not settings.DEMO_MODE:
+        return
     if await db.posts.count_documents({}) > 0:
         return
     await ensure_demo_users(db)
@@ -151,6 +175,8 @@ _MARKET_SEED = [
 
 
 async def ensure_market_seed(db) -> None:
+    if not settings.DEMO_MODE:
+        return
     if await db.listings.count_documents({}) > 0:
         return
     await ensure_demo_users(db)
@@ -174,9 +200,12 @@ async def ensure_app_store_seed(db) -> None:
         return
     docs = []
     for a in STORE_APPS:
-        docs.append({
-            **a, "rating": round(4.2 + random.random() * 0.75, 1),
-            "users": random.randint(80, 979) * 1000000,
-            "reviews": random.randint(200, 4199) * 1000,
-        })
+        if settings.DEMO_MODE:
+            stats = {"rating": round(4.2 + random.random() * 0.75, 1),
+                     "users": random.randint(80, 979) * 1000000,
+                     "reviews": random.randint(200, 4199) * 1000}
+        else:
+            # Vraie app : pas de chiffres gonflés
+            stats = {"rating": None, "users": 0, "reviews": 0}
+        docs.append({**a, **stats})
     await db.store_apps.insert_many(docs)

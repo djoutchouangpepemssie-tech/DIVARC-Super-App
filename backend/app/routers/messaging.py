@@ -178,7 +178,7 @@ async def send_message(cid: str, request: Request, me: dict = Depends(require_us
         other_id = next((m for m in conv["memberIds"] if m != me["id"]), None)
         friendship = await bump_friendship(db, me["id"], other_id, 10)
         other = await db.users.find_one({"id": other_id})
-        if other and other.get("isBot"):
+        if other and other.get("isBot") and not other.get("official"):
             reply = random.choice(BOT_REPLIES)
             reply_at = now() + timedelta(milliseconds=900)
             bot_msg = {"id": uid(), "conversationId": cid, "senderId": other["id"],

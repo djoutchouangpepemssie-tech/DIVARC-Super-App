@@ -62,11 +62,19 @@ def test_enveloppe_somme_egale_total(client, auth):
         assert sum(s["amountCents"] for s in shares) == 3333
 
 
-def test_messagerie_xp_et_bot_reply(client, auth):
+def test_conversation_bienvenue_officielle(client, auth):
     H, _ = auth()
     convos = client.get("/api/conversations", headers=H).json()
-    assert len(convos) >= 1  # DM de bienvenue avec Marie
-    cid = convos[0]["id"]
+    # DM de bienvenue du compte OFFICIEL DIVARC (pas d'un ami)
+    assert any(c.get("title") == "DIVARC" for c in convos)
+
+
+def test_messagerie_xp_et_bot_reply(client, auth):
+    H, _ = auth()
+    client.get("/api/conversations", headers=H)  # provisionne les bots démo
+    # DM avec un bot démo (Marie) -> réponse automatique
+    conv = client.post("/api/conversations", headers=H, json={"type": "dm", "memberHandles": ["@marie"]}).json()
+    cid = conv["id"]
     r = client.post(f"/api/conversations/{cid}/messages", headers=H, json={"text": "Salut !"})
     # +10 (moi) puis +10 (réponse du bot) = 20
     assert r.json()["friendship"]["xp"] == 20

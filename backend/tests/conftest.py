@@ -3,12 +3,15 @@ import pytest
 from fastapi.testclient import TestClient
 from mongomock_motor import AsyncMongoMockClient
 
+import app.config as configmod
 import app.db as dbmod
 import app.main as mainmod
 
 
 @pytest.fixture
 def client(monkeypatch):
+    # La plupart des tests s'appuient sur les données de démo (solde, annonces, bots)
+    monkeypatch.setattr(configmod.settings, "DEMO_MODE", True)
     # Base MongoDB en mémoire, neuve pour chaque test
     dbmod._db = AsyncMongoMockClient(tz_aware=True)["divarc_test"]
 
