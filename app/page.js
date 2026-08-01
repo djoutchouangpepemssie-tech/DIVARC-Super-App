@@ -8,7 +8,7 @@ import {
   Sun, Moon, ArrowUpRight, ArrowDownLeft, Gift, Split, Leaf, Shield, ChevronRight,
   Sparkles, X, Check, Fingerprint, Mail, ArrowLeft, Search, Bell, TrendingUp,
   Wallet as WalletIcon, Zap, Lock, ScanLine, RefreshCw, Delete, BadgeCheck,
-  Utensils, Car, ShoppingBag, Ticket, HeartPulse, Globe, ChevronDown, Info,
+  Utensils, Car, ShoppingBag, Ticket, HeartPulse, Heart, Globe, ChevronDown, Info,
   Landmark, CreditCard, Settings2, Trash2, Download, Users, Play, AtSign, Phone
 } from 'lucide-react'
 import { api, getToken, setToken, clearToken, flushQueue, pendingCount } from '@/lib/api'
@@ -17,6 +17,7 @@ import { installAudioUnlock, playPing, soundEnabled, setSoundEnabled } from '@/l
 import { registerServiceWorker, getPushStatus, enablePush, disablePush } from '@/lib/push'
 import CallLayer from './components/call'
 import EclatsSheet, { EclatsCard } from './components/eclats'
+import DatingModule from './components/dating'
 import Messaging from './components/messaging'
 import NotificationBell from './components/notifications'
 import Social from './components/social'
@@ -889,7 +890,7 @@ const MINIAPPS = [
   { id: 'health', name: 'Santé', cat: 'Santé', icon: HeartPulse, grad: 'linear-gradient(135deg,#EF476F,#FF8FA8)', why: 'RDV & téléconsultation' },
   { id: 'assistant', name: 'Assistant', cat: 'IA', icon: Sparkles, grad: 'linear-gradient(135deg,#2C39C7,#4353F0)', why: 'Copilote qui agit' },
 ]
-function Discover({ onTab }) {
+function Discover({ onTab, onOpenDating }) {
   const [why, setWhy] = useState(null)
   const cats = ['Tout', 'Repas', 'Transport', 'Shopping', 'Événements', 'Santé']
   const [cat, setCat] = useState('Tout')
@@ -901,6 +902,18 @@ function Discover({ onTab }) {
           <h1 className="font-display text-3xl">Découvrir</h1>
           <Glass className="w-10 h-10 grid place-items-center press"><Search size={18} /></Glass>
         </div>
+        {/* Rencontres — vedette */}
+        <button onClick={onOpenDating} className="press w-full text-left rounded-[var(--radius)] p-5 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#EF476F,#9B5DE5)' }}>
+          <div className="relative flex items-center gap-4 text-white">
+            <div className="w-14 h-14 rounded-2xl grid place-items-center bg-white/15 backdrop-blur"><Heart size={26} fill="#fff" /></div>
+            <div className="flex-1 min-w-0">
+              <div className="font-display text-2xl leading-tight">Rencontres</div>
+              <div className="text-sm text-white/85">Vérifiées, sûres et respectueuses · 18+</div>
+            </div>
+            <ChevronRight size={22} className="text-white/80" />
+          </div>
+        </button>
+
         <Glass className="p-3 flex items-center gap-2 text-sm text-muted-foreground">
           <Info size={16} className="text-primary shrink-0" />
           <span>Classement <b className="text-foreground">transparent</b> et paramétrable (anti-DMA). Touche « Pourquoi ? » sur chaque app.</span>
@@ -1487,7 +1500,7 @@ function App() {
           {tab === 'wallet' && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
           {tab === 'messages' && <Messaging me={user} openConvId={pendingConv} onConsumed={() => setPendingConv(null)} openDiscovery={pendingDiscovery} onDiscoveryConsumed={() => setPendingDiscovery(false)} />}
           {tab === 'qr' && <QRScreen user={user} onDone={() => load()} initialCode={pendingPay} onConsumed={() => setPendingPay(null)} />}
-          {tab === 'discover' && <Discover onTab={goTab} />}
+          {tab === 'discover' && <Discover onTab={goTab} onOpenDating={() => setOverlay('dating')} />}
           {tab === 'profile' && <Profile user={user} setUser={setUser} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}
           {tab === 'social' && <Social me={user} onBack={() => setTab('hub')} />}
           {tab === 'market' && <Marketplace me={user} onWalletRefresh={load} onImmersive={setMktImmersive} />}
@@ -1514,6 +1527,7 @@ function App() {
         {overlay === 'enveloppe' && <EnveloppeSheet wallet={wallet} onClose={() => setOverlay(null)} onDone={() => load()} />}
         {overlay === 'coffre' && <Sheet onClose={() => setOverlay(null)} title="Nouveau coffre"><ComingSoon /></Sheet>}
         {overlay === 'eclats' && <EclatsSheet onClose={() => setOverlay(null)} />}
+        {overlay === 'dating' && <DatingModule me={user} onClose={() => setOverlay(null)} onOpenConversation={(id) => { setOverlay(null); setPendingConv(id); goTab('messages') }} />}
       </AnimatePresence>
 
       {/* Couche d'appels audio/vidéo (WebRTC) — disponible partout */}

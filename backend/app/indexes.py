@@ -100,6 +100,15 @@ _INDEXES: list[tuple[str, object, dict]] = [
     # Notifications push Web
     ("push_subscriptions", "endpoint", {"unique": True}),
     ("push_subscriptions", "userId", {}),
+
+    # Rencontres
+    ("dating_profiles", "userId", {"unique": True}),
+    ("dating_profiles", [("active", 1), ("paused", 1)], {}),
+    ("dating_swipes", [("swiperId", 1), ("targetId", 1)], {"unique": True}),
+    ("dating_swipes", [("targetId", 1), ("action", 1)], {}),
+    ("dating_matches", "key", {"unique": True}),
+    ("dating_matches", "users", {}),
+    ("dating_reports", [("status", 1), ("createdAt", -1)], {}),
 ]
 
 

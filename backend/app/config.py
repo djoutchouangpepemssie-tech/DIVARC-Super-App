@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     ECLATS_BOOST_LISTING: int = 50  # coût en Éclats pour booster une annonce
     ECLATS_BOOST_POST: int = 40     # coût en Éclats pour booster un post social
     ECLATS_BOOST_HOURS: int = 24    # durée d'un boost
+    # Rencontres (puits d'Éclats)
+    ECLATS_SUPERLIKE: int = 15      # coût d'un super-like
+    ECLATS_DATING_BOOST: int = 60   # coût d'un boost de profil Rencontres
+    ECLATS_REVEAL_LIKES: int = 30   # coût pour révéler qui t'a liké
+    DATING_DAILY_LIKES: int = 30    # likes gratuits par jour (au-delà : super-like ou attendre)
+    DATING_MIN_AGE: int = 18
 
     # --- Mode démo ---
     # False (défaut) = vraie app : nouveaux comptes à 0 €, aucune donnée fictive.
