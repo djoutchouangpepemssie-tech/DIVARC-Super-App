@@ -7,8 +7,8 @@ from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import (Bookmark, Circle, CircleMember, Comment, Edge, HiddenPost, Post, Profile,
-                     Reaction)
+from .models import (Bookmark, Circle, CircleMember, Comment, Edge, Group, GroupMember, HiddenPost,
+                     Post, Profile, Reaction, Story, StoryView)
 
 
 class SqlAlchemyPostRepository:
@@ -35,6 +35,12 @@ class SqlAlchemyPostRepository:
             stmt = stmt.where(or_(Post.created_at < before_time,
                                   and_(Post.created_at == before_time, Post.id < (before_id or ""))))
         stmt = stmt.order_by(Post.created_at.desc(), Post.id.desc()).limit(limit)
+        return list((await self.session.scalars(stmt)).all())
+
+    async def list_by_group(self, group_id: str, limit: int = 30) -> list[Post]:
+        stmt = (select(Post).options(selectinload(Post.media))
+                .where(Post.group_id == group_id, Post.deleted_at.is_(None))
+                .order_by(Post.created_at.desc(), Post.id.desc()).limit(limit))
         return list((await self.session.scalars(stmt)).all())
 
     async def search_public(self, q: str, limit: int = 20) -> list[Post]:
@@ -156,6 +162,84 @@ class SqlAlchemyCircleRepository:
         """Cercles de `owner` qui contiennent `member` (pour la visibilité CIRCLES)."""
         return set((await self.session.scalars(select(CircleMember.circle_id).where(
             CircleMember.owner_id == owner_id, CircleMember.member_id == member_id))).all())
+
+
+class SqlAlchemyGroupRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, group: Group) -> None:
+        self.session.add(group)
+
+    async def get(self, group_id: str) -> Group | None:
+        return await self.session.get(Group, group_id)
+
+    async def add_member(self, group_id: str, user_id: str, role: str = "member", status: str = "active") -> GroupMember:
+        m = GroupMember(group_id=group_id, user_id=user_id, role=role, status=status)
+        self.session.add(m)
+        return m
+
+    async def membership(self, group_id: str, user_id: str) -> GroupMember | None:
+        return await self.session.scalar(select(GroupMember).where(
+            GroupMember.group_id == group_id, GroupMember.user_id == user_id))
+
+    async def is_member(self, group_id: str, user_id: str) -> bool:
+        return (await self.session.scalar(select(GroupMember.id).where(
+            GroupMember.group_id == group_id, GroupMember.user_id == user_id,
+            GroupMember.status == "active"))) is not None
+
+    async def remove_member(self, group_id: str, user_id: str) -> None:
+        await self.session.execute(delete(GroupMember).where(
+            GroupMember.group_id == group_id, GroupMember.user_id == user_id))
+
+    async def members(self, group_id: str, status: str = "active") -> list[GroupMember]:
+        return list((await self.session.scalars(select(GroupMember).where(
+            GroupMember.group_id == group_id, GroupMember.status == status))).all())
+
+    async def my_groups(self, user_id: str) -> list[Group]:
+        stmt = (select(Group).join(GroupMember, GroupMember.group_id == Group.id)
+                .where(GroupMember.user_id == user_id, GroupMember.status == "active")
+                .order_by(Group.created_at.desc()))
+        return list((await self.session.scalars(stmt)).all())
+
+    async def discover(self, user_id: str, limit: int = 20) -> list[Group]:
+        # groupes publics dont je ne suis pas membre
+        sub = select(GroupMember.group_id).where(GroupMember.user_id == user_id)
+        stmt = (select(Group).where(Group.privacy == "public", Group.id.not_in(sub))
+                .order_by(Group.created_at.desc()).limit(limit))
+        return list((await self.session.scalars(stmt)).all())
+
+    async def member_count(self, group_id: str) -> int:
+        return await self.session.scalar(select(func.count()).select_from(GroupMember).where(
+            GroupMember.group_id == group_id, GroupMember.status == "active")) or 0
+
+
+class SqlAlchemyStoryRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def add(self, story: Story) -> None:
+        self.session.add(story)
+
+    async def get(self, story_id: str) -> Story | None:
+        return await self.session.get(Story, story_id)
+
+    async def active_by_authors(self, author_ids: list[str], nowdt) -> list[Story]:
+        if not author_ids:
+            return []
+        stmt = (select(Story).where(Story.author_id.in_(author_ids), Story.expires_at > nowdt)
+                .order_by(Story.created_at.asc()))
+        return list((await self.session.scalars(stmt)).all())
+
+    async def record_view(self, story_id: str, user_id: str) -> None:
+        exists = await self.session.scalar(select(StoryView.id).where(
+            StoryView.story_id == story_id, StoryView.user_id == user_id))
+        if not exists:
+            self.session.add(StoryView(story_id=story_id, user_id=user_id))
+
+    async def viewer_ids(self, story_id: str) -> list[str]:
+        return list((await self.session.scalars(
+            select(StoryView.user_id).where(StoryView.story_id == story_id))).all())
 
 
 class SqlAlchemyProfileRepository:

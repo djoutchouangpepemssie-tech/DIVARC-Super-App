@@ -49,7 +49,7 @@ export default function NetworkModule({ me, onClose }) {
 
       {!unavailable && (
         <div className="flex gap-1 p-1 mx-4 mt-3 rounded-2xl bg-muted/60">
-          {[['feed', 'Fil'], ['friends', 'Amis']].map(([id, label]) => (
+          {[['feed', 'Fil'], ['friends', 'Amis'], ['groups', 'Groupes']].map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)} className={cx('press flex-1 py-2 rounded-xl text-sm font-medium', tab === id ? 'bg-card shadow text-foreground' : 'text-muted-foreground')}>{label}</button>
           ))}
         </div>
@@ -64,8 +64,11 @@ export default function NetworkModule({ me, onClose }) {
           </div>
         ) : tab === 'friends' ? (
           <FriendsPanel onOpenProfile={setProfileId} />
+        ) : tab === 'groups' ? (
+          <GroupsPanel me={me} onOpenProfile={setProfileId} />
         ) : (
           <>
+            <StoriesBar me={me} />
             <Composer me={me} onPublished={onPublished} />
             <div className="flex items-center gap-2 mb-3 text-xs">
               <span className="text-muted-foreground">Fil :</span>
@@ -469,6 +472,163 @@ function CommentsSection({ postId, comments, setComments, setCCount, postOwner }
           className="flex-1 rounded-full border border-border bg-background/60 px-3 py-2 text-sm outline-none focus:border-primary" />
         <button onClick={send} disabled={!text.trim()} className="press w-9 h-9 rounded-full grid place-items-center text-white disabled:opacity-40 shrink-0" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><Send size={16} /></button>
       </div>
+    </div>
+  )
+}
+
+/* ---------------- Stories ---------------- */
+function StoriesBar({ me }) {
+  const [groups, setGroups] = useState([])
+  const [viewer, setViewer] = useState(null)
+  const fileRef = useRef(null)
+  const load = useCallback(async () => { const r = await api('/net/stories'); if (!r.error) setGroups(r.items) }, [])
+  useEffect(() => { load() }, [load])
+  const addStory = async (e) => {
+    const f = e.target.files?.[0]; e.target.value = ''
+    if (!f) return
+    if (f.size > 6.5 * 1024 * 1024) return alert('Trop lourd (max ~6 Mo)')
+    const dataUrl = await fileToDataUrl(f)
+    const up = await api('/chat/upload', { method: 'POST', body: JSON.stringify({ data: dataUrl }) })
+    if (up.url) { await api('/net/stories', { method: 'POST', body: JSON.stringify({ mediaUrl: up.url }) }); load() }
+  }
+  return (
+    <div className="flex gap-3 overflow-x-auto no-scrollbar mb-4 pb-1">
+      <button onClick={() => fileRef.current?.click()} className="press flex flex-col items-center gap-1 shrink-0">
+        <div className="w-16 h-16 rounded-full border-2 border-dashed border-primary grid place-items-center text-primary"><span className="text-2xl">+</span></div>
+        <span className="text-[10px] text-muted-foreground">Ta story</span>
+      </button>
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={addStory} />
+      {groups.map((g) => (
+        <button key={g.author.id} onClick={() => setViewer({ ...g, index: 0 })} className="press flex flex-col items-center gap-1 shrink-0">
+          <div className="w-16 h-16 rounded-full p-0.5" style={{ background: 'linear-gradient(135deg,#EF476F,#9B5DE5,#4353F0)' }}>
+            <div className="w-full h-full rounded-full grid place-items-center text-white font-semibold border-2 border-background" style={{ background: g.author.avatarColor || '#4353F0' }}>{g.author.initials}</div>
+          </div>
+          <span className="text-[10px] truncate max-w-[64px]">{g.mine ? 'Toi' : (g.author.name || '').split(' ')[0]}</span>
+        </button>
+      ))}
+      <AnimatePresence>{viewer && <StoryViewer group={viewer} onClose={() => setViewer(null)} />}</AnimatePresence>
+    </div>
+  )
+}
+
+function StoryViewer({ group, onClose }) {
+  const [i, setI] = useState(group.index || 0)
+  const story = group.items[i]
+  useEffect(() => { if (story) api(`/net/stories/${story.id}/view`, { method: 'POST' }) }, [story])
+  const next = () => { if (i + 1 < group.items.length) setI(i + 1); else onClose() }
+  const prev = () => { if (i > 0) setI(i - 1) }
+  if (!story) return null
+  return (
+    <motion.div className="fixed inset-0 z-[85] bg-ink flex flex-col" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <div className="flex gap-1 p-2 pt-safe">
+        {group.items.map((_, k) => <div key={k} className={cx('flex-1 h-0.5 rounded-full', k <= i ? 'bg-white' : 'bg-white/30')} />)}
+      </div>
+      <div className="flex items-center gap-2 px-3 pb-2 text-white">
+        <div className="w-8 h-8 rounded-full grid place-items-center text-xs font-semibold" style={{ background: group.author.avatarColor || '#4353F0' }}>{group.author.initials}</div>
+        <span className="text-sm font-medium flex-1">{group.author.name}</span>
+        <button onClick={onClose} className="press"><X size={22} /></button>
+      </div>
+      <div className="flex-1 relative grid place-items-center">
+        <img src={story.mediaUrl} alt="" className="max-h-full max-w-full object-contain" />
+        {story.caption && <div className="absolute bottom-10 inset-x-0 text-center text-white px-6 text-sm drop-shadow">{story.caption}</div>}
+        <button onClick={prev} className="absolute left-0 top-0 h-full w-1/3" aria-label="Précédent" />
+        <button onClick={next} className="absolute right-0 top-0 h-full w-2/3" aria-label="Suivant" />
+      </div>
+    </motion.div>
+  )
+}
+
+/* ---------------- Groupes ---------------- */
+function GroupsPanel({ me, onOpenProfile }) {
+  const [data, setData] = useState(null)
+  const [active, setActive] = useState(null)
+  const [creating, setCreating] = useState(false)
+  const [name, setName] = useState('')
+  const [privacy, setPrivacy] = useState('public')
+  const load = useCallback(async () => { const r = await api('/net/groups'); if (!r.error) setData(r) }, [])
+  useEffect(() => { load() }, [load])
+  const create = async () => {
+    if (!name.trim()) return
+    const r = await api('/net/groups', { method: 'POST', body: JSON.stringify({ name, privacy }) })
+    if (!r.error) { setCreating(false); setName(''); load() }
+  }
+  if (active) return <GroupView me={me} groupId={active} onBack={() => { setActive(null); load() }} onOpenProfile={onOpenProfile} />
+  if (!data) return <div className="grid place-items-center py-16"><RefreshCw className="animate-spin text-muted-foreground" /></div>
+  return (
+    <div className="py-4 space-y-5">
+      <button onClick={() => setCreating((v) => !v)} className="press w-full py-3 rounded-2xl text-white font-semibold text-sm" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>+ Créer un groupe</button>
+      {creating && (
+        <div className="rounded-2xl border border-border bg-card/60 p-4 space-y-2">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom du groupe" className="w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
+          <div className="flex gap-2">
+            {[['public', 'Public'], ['private', 'Privé'], ['secret', 'Secret']].map(([v, l]) => (
+              <button key={v} onClick={() => setPrivacy(v)} className={cx('press flex-1 py-2 rounded-xl text-xs font-medium border', privacy === v ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border')}>{l}</button>
+            ))}
+          </div>
+          <button onClick={create} className="press w-full py-2.5 rounded-xl bg-primary text-white text-sm font-semibold">Créer</button>
+        </div>
+      )}
+      <GroupList title="Mes groupes" groups={data.mine} empty="Tu n'es dans aucun groupe." onOpen={setActive} />
+      <GroupList title="À découvrir" groups={data.discover} empty="Aucun groupe public à découvrir." onOpen={setActive} />
+    </div>
+  )
+}
+
+function GroupList({ title, groups, empty, onOpen }) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-muted-foreground mb-2">{title}</div>
+      {!groups?.length ? <div className="text-sm text-muted-foreground text-center py-4">{empty}</div> : (
+        <div className="space-y-2">
+          {groups.map((g) => (
+            <button key={g.id} onClick={() => onOpen(g.id)} className="press w-full flex items-center gap-3 p-3 rounded-2xl border border-border bg-card/60 text-left">
+              <div className="w-11 h-11 rounded-2xl grid place-items-center text-white font-semibold" style={{ background: g.avatarColor || '#4353F0' }}><Users size={20} /></div>
+              <div className="flex-1 min-w-0"><div className="font-medium text-sm truncate">{g.name}</div><div className="text-[11px] text-muted-foreground">{g.memberCount} membre{g.memberCount > 1 ? 's' : ''} · {g.privacy}</div></div>
+              {g.myRole && <UserCheck size={16} className="text-muted-foreground" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GroupView({ me, groupId, onBack, onOpenProfile }) {
+  const [g, setG] = useState(null)
+  const [feed, setFeed] = useState(null)
+  const [body, setBody] = useState('')
+  const load = useCallback(async () => {
+    const d = await api(`/net/groups/${groupId}`); if (!d.error) setG(d)
+    const f = await api(`/net/groups/${groupId}/feed`); setFeed(f.error ? [] : f.items)
+  }, [groupId])
+  useEffect(() => { load() }, [load])
+  const join = async () => { await api(`/net/groups/${groupId}/join`, { method: 'POST' }); load() }
+  const leave = async () => { await api(`/net/groups/${groupId}/leave`, { method: 'POST' }); load() }
+  const post = async () => { if (!body.trim()) return; const r = await api(`/net/groups/${groupId}/posts`, { method: 'POST', body: JSON.stringify({ body }) }); if (!r.error) { setBody(''); load() } }
+  if (!g) return <div className="grid place-items-center py-16"><RefreshCw className="animate-spin text-muted-foreground" /></div>
+  const isMember = g.myStatus === 'active'
+  return (
+    <div className="py-4">
+      <button onClick={onBack} className="press text-sm text-muted-foreground mb-3">‹ Retour</button>
+      <div className="rounded-2xl p-5 text-white mb-4" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+        <div className="font-display text-2xl">{g.name}</div>
+        <div className="text-sm text-white/80">{g.memberCount} membre{g.memberCount > 1 ? 's' : ''} · {g.privacy}</div>
+        {g.description && <p className="text-sm text-white/90 mt-2">{g.description}</p>}
+        <div className="mt-3">
+          {isMember ? <button onClick={leave} className="press px-4 py-1.5 rounded-full bg-white/15 text-sm font-medium">Quitter</button>
+            : g.myStatus === 'pending' ? <span className="px-4 py-1.5 rounded-full bg-white/15 text-sm">Demande envoyée</span>
+            : <button onClick={join} className="press px-4 py-1.5 rounded-full bg-white text-primary text-sm font-semibold">Rejoindre</button>}
+        </div>
+      </div>
+      {isMember && (
+        <div className="rounded-2xl border border-border bg-card/60 p-3 mb-4 flex items-center gap-2">
+          <input value={body} onChange={(e) => setBody(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && post()} placeholder="Publier dans le groupe…" className="flex-1 rounded-full border border-border bg-background/60 px-3 py-2 text-sm outline-none" />
+          <button onClick={post} disabled={!body.trim()} className="press w-9 h-9 rounded-full grid place-items-center text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><Send size={16} /></button>
+        </div>
+      )}
+      {feed === null ? <div className="grid place-items-center py-10"><RefreshCw className="animate-spin text-muted-foreground" /></div>
+        : feed.length === 0 ? <div className="text-sm text-muted-foreground text-center py-8">{isMember ? 'Aucune publication. Sois le premier !' : 'Rejoins le groupe pour voir les publications.'}</div>
+        : <div className="space-y-3">{feed.map((p) => <PostCard key={p.id} p={p} onDeleted={() => load()} onOpenProfile={onOpenProfile} />)}</div>}
     </div>
   )
 }

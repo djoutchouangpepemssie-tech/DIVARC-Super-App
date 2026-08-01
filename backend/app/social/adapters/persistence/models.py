@@ -107,6 +107,49 @@ class Bookmark(Base):
     __table_args__ = (UniqueConstraint("user_id", "post_id", name="uq_bookmark_once"),)
 
 
+class Group(Base):
+    __tablename__ = "social_groups"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str | None] = mapped_column(Text)
+    privacy: Mapped[str] = mapped_column(String(10), default="public")  # public | private | secret
+    owner_id: Mapped[str] = mapped_column(String(64), index=True)
+    avatar_color: Mapped[str | None] = mapped_column(String(16))
+    require_approval: Mapped[bool] = mapped_column(Boolean, default=False)  # file de validation des posts
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+
+
+class GroupMember(Base):
+    __tablename__ = "social_group_members"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    group_id: Mapped[str] = mapped_column(String(26), index=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    role: Mapped[str] = mapped_column(String(10), default="member")  # admin | moderator | member
+    status: Mapped[str] = mapped_column(String(10), default="active")  # active | pending
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+    __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_group_member"),)
+
+
+class Story(Base):
+    __tablename__ = "social_stories"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    author_id: Mapped[str] = mapped_column(String(64), index=True)
+    media_url: Mapped[str] = mapped_column(String(512))
+    kind: Mapped[str] = mapped_column(String(10), default="image")  # image | video
+    caption: Mapped[str | None] = mapped_column(String(300))
+    expires_at: Mapped[datetime] = mapped_column(TZDateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+
+
+class StoryView(Base):
+    __tablename__ = "social_story_views"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    story_id: Mapped[str] = mapped_column(String(26), index=True)
+    user_id: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+    __table_args__ = (UniqueConstraint("story_id", "user_id", name="uq_story_view"),)
+
+
 class HiddenPost(Base):
     """« Voir moins » : posts masqués par un utilisateur (exclus de son fil)."""
     __tablename__ = "social_hidden_posts"

@@ -18,8 +18,10 @@ from ...security import require_user
 from ..adapters.persistence.uow import SqlAlchemyUnitOfWork
 from ..application import discovery as disc
 from ..application import graph as gr
+from ..application import groups as grp
 from ..application import interactions as ix
 from ..application import posts as uc
+from ..application import stories as st
 from ..domain.policy import PolicyService
 
 router = APIRouter()
@@ -594,3 +596,182 @@ async def search(request: Request, me: dict = Depends(require_user), uow=Depends
     posts = await disc.search_posts(uow, _policy, me["id"], q, limit=15)
     posts_out = await _serialize_posts(uow, mongo, posts, me["id"])
     return ok({"people": people, "posts": posts_out})
+
+
+# ========== Groupes (Couche 6a) ==========
+async def _group_out(uow, g, me_id):
+    m = await uow.groups.membership(g.id, me_id)
+    return {"id": g.id, "name": g.name, "description": g.description, "privacy": g.privacy,
+            "avatarColor": g.avatar_color, "ownerId": g.owner_id,
+            "memberCount": await uow.groups.member_count(g.id),
+            "myRole": (m.role if m and m.status == "active" else None),
+            "myStatus": (m.status if m else None)}
+
+
+@router.post("/net/groups")
+async def create_group(request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    body = await request.json() if await request.body() else {}
+    try:
+        g = await grp.create_group(uow, me["id"], body.get("name") or "",
+                                   body.get("description"), body.get("privacy") or "public")
+    except ValueError as e:
+        return err(str(e))
+    await uow.commit()
+    return ok(await _group_out(uow, g, me["id"]))
+
+
+@router.get("/net/groups")
+async def my_groups(me: dict = Depends(require_user), uow=Depends(get_uow)):
+    mine = await uow.groups.my_groups(me["id"])
+    disc_g = await uow.groups.discover(me["id"], limit=15)
+    return ok({"mine": [await _group_out(uow, g, me["id"]) for g in mine],
+               "discover": [await _group_out(uow, g, me["id"]) for g in disc_g]})
+
+
+@router.get("/net/groups/{group_id}")
+async def group_detail(group_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    g = await uow.groups.get(group_id)
+    if not g:
+        return err("Groupe introuvable", 404)
+    return ok(await _group_out(uow, g, me["id"]))
+
+
+@router.post("/net/groups/{group_id}/join")
+async def join_group(group_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    try:
+        status = await grp.join_group(uow, me["id"], group_id)
+    except LookupError:
+        return err("Groupe introuvable", 404)
+    await uow.commit()
+    return ok({"status": status})
+
+
+@router.post("/net/groups/{group_id}/leave")
+async def leave_group(group_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    await grp.leave_group(uow, me["id"], group_id)
+    await uow.commit()
+    return ok({"ok": True})
+
+
+@router.get("/net/groups/{group_id}/members")
+async def group_members(group_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    g = await uow.groups.get(group_id)
+    if not g:
+        return err("Groupe introuvable", 404)
+    active = await uow.groups.members(group_id, "active")
+    authors = await _authors_map(get_mongo(), [m.user_id for m in active])
+    my_role = None
+    mine = await uow.groups.membership(group_id, me["id"])
+    if mine and mine.status == "active":
+        my_role = mine.role
+    out = {"members": [{**_author(authors, m.user_id), "role": m.role} for m in active]}
+    if my_role in ("admin", "moderator"):
+        pending = await uow.groups.members(group_id, "pending")
+        pa = await _authors_map(get_mongo(), [m.user_id for m in pending])
+        out["pending"] = [_author(pa, m.user_id) for m in pending]
+    return ok(out)
+
+
+@router.post("/net/groups/{group_id}/members/{user_id}/approve")
+async def group_approve(group_id: str, user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    try:
+        await grp.approve_member(uow, me["id"], group_id, user_id)
+    except PermissionError:
+        return err("Réservé aux modérateurs", 403)
+    except LookupError:
+        return err("Aucune demande", 404)
+    await uow.commit()
+    return ok({"ok": True})
+
+
+@router.post("/net/groups/{group_id}/members/{user_id}/reject")
+async def group_reject(group_id: str, user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    try:
+        await grp.reject_member(uow, me["id"], group_id, user_id)
+    except PermissionError:
+        return err("Réservé aux modérateurs", 403)
+    await uow.commit()
+    return ok({"ok": True})
+
+
+@router.put("/net/groups/{group_id}/members/{user_id}/role")
+async def group_set_role(group_id: str, user_id: str, request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    body = await request.json() if await request.body() else {}
+    try:
+        await grp.set_role(uow, me["id"], group_id, user_id, body.get("role") or "member")
+    except PermissionError:
+        return err("Réservé au propriétaire", 403)
+    except (ValueError, LookupError) as e:
+        return err(str(e) or "Invalide")
+    await uow.commit()
+    return ok({"ok": True})
+
+
+@router.post("/net/groups/{group_id}/posts")
+async def group_post(group_id: str, request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    if not await grp.can_post_to_group(uow, me["id"], group_id):
+        return err("Réservé aux membres du groupe", 403)
+    body = await request.json() if await request.body() else {}
+    try:
+        post = await uc.publish_post(uow, me["id"], body=body.get("body"), visibility="group",
+                                     media=body.get("media"), post_type="status", group_id=group_id)
+    except ValueError as e:
+        return err(str(e))
+    await uow.commit()
+    post = await uow.posts.get(post.id)
+    return ok((await _serialize_posts(uow, get_mongo(), [post], me["id"]))[0])
+
+
+@router.get("/net/groups/{group_id}/feed")
+async def group_feed(group_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    posts = await grp.group_feed(uow, _policy, me["id"], group_id, limit=30)
+    if posts is None:
+        return err("Groupe introuvable ou réservé", 404)
+    return ok({"items": await _serialize_posts(uow, get_mongo(), posts, me["id"])})
+
+
+# ========== Stories (Couche 6a) ==========
+@router.post("/net/stories")
+async def create_story(request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    body = await request.json() if await request.body() else {}
+    try:
+        s = await st.post_story(uow, me["id"], body.get("mediaUrl") or "",
+                                body.get("kind") or "image", body.get("caption"))
+    except ValueError as e:
+        return err(str(e))
+    await uow.commit()
+    return ok({"id": s.id, "mediaUrl": s.media_url, "kind": s.kind, "expiresAt": s.expires_at})
+
+
+@router.get("/net/stories")
+async def stories_feed(me: dict = Depends(require_user), uow=Depends(get_uow)):
+    stories = await st.stories_feed(uow, me["id"])
+    authors = await _authors_map(get_mongo(), {s.author_id for s in stories})
+    # regroupées par auteur, dans l'ordre
+    grouped: dict = {}
+    for s in stories:
+        g = grouped.setdefault(s.author_id, {"author": _author(authors, s.author_id), "items": []})
+        g["items"].append({"id": s.id, "mediaUrl": s.media_url, "kind": s.kind,
+                           "caption": s.caption, "createdAt": s.created_at, "mine": s.author_id == me["id"]})
+    return ok({"items": list(grouped.values())})
+
+
+@router.post("/net/stories/{story_id}/view")
+async def view_story(story_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    try:
+        s = await st.view_story(uow, me["id"], story_id)
+    except PermissionError:
+        return err("Non autorisé", 403)
+    except LookupError:
+        return err("Story expirée ou introuvable", 404)
+    await uow.commit()
+    return ok({"id": s.id, "mediaUrl": s.media_url, "kind": s.kind, "caption": s.caption})
+
+
+@router.get("/net/stories/{story_id}/viewers")
+async def story_viewers(story_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    ids = await st.story_viewers(uow, me["id"], story_id)
+    if ids is None:
+        return err("Non autorisé", 403)
+    authors = await _authors_map(get_mongo(), ids)
+    return ok({"items": [_author(authors, i) for i in ids], "count": len(ids)})

@@ -7,7 +7,7 @@ from ...helpers import now as _now
 from ..domain.policy import PolicyService
 from .posts import audience_of
 from .ranking import score_post
-from .relations import resolve_relation
+from .access import view_relation
 
 
 async def get_ranked_feed(uow, policy: PolicyService, viewer_id: str, *, limit: int = 20):
@@ -30,7 +30,7 @@ async def get_ranked_feed(uow, policy: PolicyService, viewer_id: str, *, limit: 
         else:
             rel = rel_cache.get(p.author_id)
             if rel is None:
-                rel = await resolve_relation(uow, viewer_id, p.author_id)
+                rel = await view_relation(uow, viewer_id, p)
                 rel_cache[p.author_id] = rel
             if not policy.can_view_post(viewer_id, audience_of(p), rel):
                 continue

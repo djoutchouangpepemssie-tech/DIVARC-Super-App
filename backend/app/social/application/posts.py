@@ -10,7 +10,7 @@ from ...helpers import now as _now
 from ..adapters.persistence.models import Post, PostMedia
 from ..domain.policy import PolicyService
 from ..domain.visibility import PostAudience, Visibility
-from .relations import resolve_relation
+from .access import view_relation
 
 
 def audience_of(p: Post) -> PostAudience:
@@ -68,7 +68,7 @@ async def get_feed(uow, policy: PolicyService, viewer_id: str, *, limit: int = 2
         else:
             rel = rel_cache.get(p.author_id)
             if rel is None:
-                rel = await resolve_relation(uow, viewer_id, p.author_id)
+                rel = await view_relation(uow, viewer_id, p)
                 rel_cache[p.author_id] = rel
             if policy.can_view_post(viewer_id, audience_of(p), rel):
                 out.append(p)
@@ -81,7 +81,7 @@ async def get_post(uow, policy: PolicyService, viewer_id: str, post_id: str) -> 
     p = await uow.posts.get(post_id)
     if not p or p.deleted_at is not None:
         return None
-    rel = await resolve_relation(uow, viewer_id, p.author_id)
+    rel = await view_relation(uow, viewer_id, p)
     return p if policy.can_view_post(viewer_id, audience_of(p), rel) else None
 
 
@@ -92,7 +92,7 @@ async def edit_post(uow, policy: PolicyService, viewer_id: str, post_id: str, *,
     p = await uow.posts.get(post_id)
     if not p or p.deleted_at is not None:
         return None
-    if not policy.can_edit(viewer_id, audience_of(p), await resolve_relation(uow, viewer_id, p.author_id)):
+    if not policy.can_edit(viewer_id, audience_of(p), await view_relation(uow, viewer_id, p)):
         raise PermissionError("Édition non autorisée")
     if body is not None:
         p.body_text = body.strip() or None
@@ -109,7 +109,7 @@ async def delete_post(uow, policy: PolicyService, viewer_id: str, post_id: str) 
     p = await uow.posts.get(post_id)
     if not p or p.deleted_at is not None:
         return False
-    if not policy.can_delete(viewer_id, audience_of(p), await resolve_relation(uow, viewer_id, p.author_id)):
+    if not policy.can_delete(viewer_id, audience_of(p), await view_relation(uow, viewer_id, p)):
         raise PermissionError("Suppression non autorisée")
     p.deleted_at = _now()
     return True

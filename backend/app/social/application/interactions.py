@@ -5,7 +5,7 @@ from ...helpers import now as _now
 from ..adapters.persistence.models import Comment, Post
 from ..domain.policy import PolicyService
 from .posts import audience_of
-from .relations import resolve_relation
+from .access import view_relation
 
 REACTIONS = {"like", "love", "bravo", "support", "haha", "wow", "sad", "grr"}
 _MAX_DEPTH = 6
@@ -24,7 +24,7 @@ async def react_post(uow, policy: PolicyService, viewer_id: str, post_id: str, r
     post = await uow.posts.get(post_id)
     if not post or post.deleted_at is not None:
         raise LookupError("Introuvable")
-    rel = await resolve_relation(uow, viewer_id, post.author_id)
+    rel = await view_relation(uow, viewer_id, post)
     if not policy.can_react(viewer_id, audience_of(post), rel):
         raise PermissionError("Non autorisé")
     await uow.reactions.set("post", post_id, viewer_id, rtype)
@@ -48,7 +48,7 @@ async def react_comment(uow, policy: PolicyService, viewer_id: str, comment_id: 
     if not c or c.deleted_at is not None:
         raise LookupError("Introuvable")
     post = await uow.posts.get(c.post_id)
-    rel = await resolve_relation(uow, viewer_id, post.author_id)
+    rel = await view_relation(uow, viewer_id, post)
     if not policy.can_react(viewer_id, audience_of(post), rel):
         raise PermissionError("Non autorisé")
     await uow.reactions.set("comment", comment_id, viewer_id, rtype)
@@ -67,7 +67,7 @@ async def add_comment(uow, policy: PolicyService, viewer_id: str, post_id: str,
     post = await uow.posts.get(post_id)
     if not post or post.deleted_at is not None:
         raise LookupError("Introuvable")
-    rel = await resolve_relation(uow, viewer_id, post.author_id)
+    rel = await view_relation(uow, viewer_id, post)
     if not policy.can_comment(viewer_id, audience_of(post), rel):
         raise PermissionError("Non autorisé")
     depth, path = 0, ""
@@ -89,7 +89,7 @@ async def list_comments(uow, policy: PolicyService, viewer_id: str, post_id: str
     post = await uow.posts.get(post_id)
     if not post or post.deleted_at is not None:
         return None
-    rel = await resolve_relation(uow, viewer_id, post.author_id)
+    rel = await view_relation(uow, viewer_id, post)
     if not policy.can_view_post(viewer_id, audience_of(post), rel):
         return None
     return await uow.comments.list_by_post(post_id)
@@ -118,7 +118,7 @@ async def share_post(uow, policy: PolicyService, viewer_id: str, post_id: str, *
     original = await uow.posts.get(post_id)
     if not original or original.deleted_at is not None:
         raise LookupError("Introuvable")
-    rel = await resolve_relation(uow, viewer_id, original.author_id)
+    rel = await view_relation(uow, viewer_id, original)
     aud = audience_of(original)
     if not policy.can_view_post(viewer_id, aud, rel):
         raise LookupError("Introuvable")  # ne révèle pas l'existence d'un post non visible
@@ -137,7 +137,7 @@ async def toggle_bookmark(uow, policy: PolicyService, viewer_id: str, post_id: s
     post = await uow.posts.get(post_id)
     if not post or post.deleted_at is not None:
         raise LookupError("Introuvable")
-    rel = await resolve_relation(uow, viewer_id, post.author_id)
+    rel = await view_relation(uow, viewer_id, post)
     if not policy.can_view_post(viewer_id, audience_of(post), rel):
         raise PermissionError("Non autorisé")
     return await uow.bookmarks.toggle(viewer_id, post_id)
@@ -150,7 +150,7 @@ async def list_bookmarks(uow, policy: PolicyService, viewer_id: str) -> list[Pos
         p = await uow.posts.get(pid)
         if not p or p.deleted_at is not None:
             continue
-        rel = await resolve_relation(uow, viewer_id, p.author_id)
+        rel = await view_relation(uow, viewer_id, p)
         if policy.can_view_post(viewer_id, audience_of(p), rel):
             out.append(p)
     return out
