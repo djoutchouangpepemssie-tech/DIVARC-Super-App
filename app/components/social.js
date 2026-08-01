@@ -6,7 +6,7 @@ import { api } from '@/lib/api'
 import { FeedSkeleton, EmptyState, ErrorState } from './states'
 import {
   Heart, MessageCircle, Bookmark, Share2, Volume2, VolumeX, Plus, X, ArrowLeft,
-  ShoppingBag, Info, BadgeCheck, Sparkles, Check, UserPlus, UserCheck, EyeOff, Send as SendIcon, Gift, Cpu, ChevronRight
+  ShoppingBag, Info, BadgeCheck, Sparkles, Check, UserPlus, UserCheck, EyeOff, Send as SendIcon, Gift, Cpu, ChevronRight, Zap
 } from 'lucide-react'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -73,6 +73,11 @@ export default function Social({ me, onBack }) {
     if (r.error) return showToast('⚠️ ' + r.error)
     showToast(`Acheté ✓ ${p.product.title} · ${eur(r.amountCents)} €`)
   }
+  const boostPost = async (p) => {
+    const r = await api(`/social/posts/${p.id}/boost`, { method: 'POST' })
+    if (r.error) return showToast('⚠️ ' + r.error)
+    showToast(`Publication boostée 🚀 · -${r.cost} ⚡`)
+  }
   const onTip = async (p, amountCents) => {
     const r = await api(`/social/posts/${p.id}/tip`, { method: 'POST', body: JSON.stringify({ amountCents }) })
     setTipFor(null)
@@ -94,9 +99,9 @@ export default function Social({ me, onBack }) {
           </div>
         )}
         {feed.map((p, i) => (
-          <PostCard key={p.id} p={p} muted={muted} setMuted={setMuted}
+          <PostCard key={p.id} p={p} me={me} muted={muted} setMuted={setMuted}
             onLike={onLike} onSave={onSave} onFollow={onFollow} onComments={() => setCommentsFor(p)}
-            onTip={() => setTipFor(p)} onBuy={onBuy} onNotInterested={onNotInterested} showToast={showToast} />
+            onTip={() => setTipFor(p)} onBuy={onBuy} onNotInterested={onNotInterested} onBoost={boostPost} showToast={showToast} />
         ))}
         {!loading && feed.length > 0 && <WellnessCard />}
       </div>
@@ -133,7 +138,7 @@ export default function Social({ me, onBack }) {
   )
 }
 
-function PostCard({ p, muted, setMuted, onLike, onSave, onFollow, onComments, onTip, onBuy, onNotInterested, showToast }) {
+function PostCard({ p, me, muted, setMuted, onLike, onSave, onFollow, onComments, onTip, onBuy, onNotInterested, onBoost, showToast }) {
   const vidRef = useRef()
   const cardRef = useRef()
   const [showWhy, setShowWhy] = useState(false)
@@ -207,7 +212,9 @@ function PostCard({ p, muted, setMuted, onLike, onSave, onFollow, onComments, on
         <RailBtn onClick={() => onSave(p)} active={p.saved} icon={<Bookmark size={28} fill={p.saved ? '#E2AA2B' : 'none'} color={p.saved ? '#E2AA2B' : '#fff'} />} label={kf(p.saves)} />
         <RailBtn onClick={() => onTip(p)} icon={<Gift size={28} color="#F0CE7E" />} label="Pourboire" />
         <RailBtn onClick={() => showToast('Lien copié · partage dans le Chat')} icon={<Share2 size={28} />} label="Partager" />
-        <RailBtn onClick={() => onNotInterested(p)} icon={<EyeOff size={24} />} label="Moins" />
+        {p.author?.id === me?.id
+          ? <RailBtn onClick={() => onBoost(p)} icon={<Zap size={26} color="#E2AA2B" />} label="Booster" />
+          : <RailBtn onClick={() => onNotInterested(p)} icon={<EyeOff size={24} />} label="Moins" />}
       </div>
 
       {/* bottom info */}

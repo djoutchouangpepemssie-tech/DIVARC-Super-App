@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     ECLATS_DAILY_STREAK_MAX: int = 6   # bonus max ajouté pour une longue série
     ECLATS_REFERRAL: int = 50      # parrainage : Éclats pour le parrain ET le filleul
     ECLATS_CASHBACK_BPS: int = 200  # cashback en Éclats sur les vrais achats (200 = 2,00%)
+    ECLATS_BOOST_LISTING: int = 50  # coût en Éclats pour booster une annonce
+    ECLATS_BOOST_POST: int = 40     # coût en Éclats pour booster un post social
+    ECLATS_BOOST_HOURS: int = 24    # durée d'un boost
 
     # --- Mode démo ---
     # False (défaut) = vraie app : nouveaux comptes à 0 €, aucune donnée fictive.

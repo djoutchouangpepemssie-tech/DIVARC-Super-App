@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import random
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
 
+from .. import eclats as ec
+from ..config import settings
 from ..db import get_db
 from ..helpers import body_of, credit_wallet, err, get_sponsored, inject_ads, now, ok, post_ledger, uid
 from ..notify import notify
@@ -61,6 +64,9 @@ async def social_feed(request: Request, me: dict = Depends(require_user)):
         scored.sort(key=lambda p: p["createdAt"], reverse=True)
     else:
         scored.sort(key=lambda p: p["score"], reverse=True)
+    # Posts boostés (Éclats) en tête (tri stable)
+    _t = now()
+    scored.sort(key=lambda p: 0 if (p.get("boostedUntil") and p["boostedUntil"] > _t) else 1)
 
     out = []
     for p in scored:
@@ -200,6 +206,26 @@ async def buy_or_tip(pid: str, request: Request, me: dict = Depends(require_user
                  f"{amount / 100:.2f} € de {me.get('name')}", {"postId": pid})
     updated = await db.wallets.find_one({"userId": me["id"]}, {"_id": 0})
     return ok({"ok": True, "balanceCents": updated["balanceCents"], "amountCents": amount})
+
+
+@router.post("/social/posts/{pid}/boost")
+async def boost_post(pid: str, me: dict = Depends(require_user)):
+    """Booster sa publication (mise en avant dans le fil) — payé en Éclats (puits)."""
+    db = get_db()
+    post = await db.posts.find_one({"id": pid})
+    if not post:
+        return err("Publication introuvable", 404)
+    if post["authorId"] != me["id"]:
+        return err("Seul l'auteur peut booster sa publication", 403)
+    cost = settings.ECLATS_BOOST_POST
+    op = uid()
+    spent = await ec.spend(db, me["id"], cost, "boost_post",
+                           {"label": "Boost de publication", "postId": pid}, idem=f"boostpost:{op}")
+    if not spent.get("ok"):
+        return err(spent.get("error") or "Solde d'Éclats insuffisant", 402)
+    until = now() + timedelta(hours=settings.ECLATS_BOOST_HOURS)
+    await db.posts.update_one({"id": pid}, {"$set": {"boostedUntil": until}})
+    return ok({"ok": True, "boostedUntil": until, "cost": cost, "eclatsBalance": spent.get("balance")})
 
 
 @router.post("/social/interests")

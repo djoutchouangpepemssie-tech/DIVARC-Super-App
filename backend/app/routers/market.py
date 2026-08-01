@@ -6,7 +6,10 @@ import re
 
 from fastapi import APIRouter, Depends, Request, Response
 
+from .. import eclats as ec
+from ..config import settings
 from ..data import CONDITIONS, MARKET_CATEGORIES
+from datetime import timedelta
 from ..db import get_db
 from ..helpers import (body_of, credit_wallet, err, geo_autocomplete, geo_reverse, haversine_km,
                        now, ok, post_ledger, uid)
@@ -122,6 +125,9 @@ async def list_listings(request: Request, me: dict = Depends(require_user)):
         items.sort(key=lambda a: a.get("distanceKm") if a.get("distanceKm") is not None else 1e9)
     else:
         items.sort(key=lambda a: a["createdAt"], reverse=True)
+    # Les annonces boostées (Éclats) remontent en tête (tri stable : conserve l'ordre ci-dessus)
+    _t = now()
+    items.sort(key=lambda a: 0 if (a.get("boostedUntil") and a["boostedUntil"] > _t) else 1)
 
     favs = {f["listingId"] for f in await db.market_favorites.find({"userId": me["id"]}).to_list(length=None)}
     out = []
@@ -234,8 +240,33 @@ async def buy_listing(lid: str, request: Request, me: dict = Depends(require_use
                            {"account": f"user:{l['sellerId']}", "direction": "credit", "amountCents": price_cents}])
     await notify(db, l["sellerId"], "sale", "🛍️ Article vendu",
                  f"{l['title']} — {price_cents / 100:.2f} €", {"listingId": l["id"]})
+    # Cashback en Éclats pour l'acheteur (flywheel : dépenser du vrai € -> gagner des Éclats)
+    cashback_pts = await ec.cashback(db, me["id"], price_cents,
+                                     {"label": f"Cashback : {l['title']}", "orderId": order["id"]},
+                                     idem=f"cashback:order:{order['id']}")
     updated = await db.wallets.find_one({"userId": me["id"]}, {"_id": 0})
-    return ok({"ok": True, "order": {"id": order["id"]}, "balanceCents": updated["balanceCents"]})
+    return ok({"ok": True, "order": {"id": order["id"]}, "balanceCents": updated["balanceCents"],
+               "eclatsCashback": cashback_pts})
+
+
+@router.post("/market/listings/{lid}/boost")
+async def boost_listing(lid: str, me: dict = Depends(require_user)):
+    """Booster son annonce (la remonte en tête) — payé en Éclats (puits)."""
+    db = get_db()
+    l = await db.listings.find_one({"id": lid})
+    if not l:
+        return err("Annonce introuvable", 404)
+    if l["sellerId"] != me["id"]:
+        return err("Seul le vendeur peut booster son annonce", 403)
+    cost = settings.ECLATS_BOOST_LISTING
+    op = uid()
+    spent = await ec.spend(db, me["id"], cost, "boost_listing",
+                           {"label": f"Boost annonce : {l['title']}", "listingId": lid}, idem=f"boost:{op}")
+    if not spent.get("ok"):
+        return err(spent.get("error") or "Solde d'Éclats insuffisant", 402)
+    until = now() + timedelta(hours=settings.ECLATS_BOOST_HOURS)
+    await db.listings.update_one({"id": lid}, {"$set": {"boostedUntil": until}})
+    return ok({"ok": True, "boostedUntil": until, "cost": cost, "eclatsBalance": spent.get("balance")})
 
 
 # ---------------- Chat & offres ----------------

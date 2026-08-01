@@ -7,7 +7,7 @@ import { ListingsSkeleton, EmptyState, ErrorState } from './states'
 import {
   Search, X, Heart, MapPin, SlidersHorizontal, Plus, ChevronRight, ChevronLeft, Camera,
   MessageCircle, Store, Compass, Check, Crosshair, Loader2, Send, Tag, Trash2, ShieldCheck,
-  ArrowLeft, Eye, Sparkles, Home, Car, Building2, HandCoins,
+  ArrowLeft, Eye, Sparkles, Home, Car, Building2, HandCoins, Zap, RefreshCw,
 } from 'lucide-react'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -184,7 +184,7 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
         </div>
       )}
 
-      {view === 'detail' && detail && <DetailView l={detail} me={me} onBack={() => { setView('browse'); load() }} onFav={() => toggleFav(detail.id)} onOpenListing={openDetail} onChat={openChat} onBought={() => { onWalletRefresh?.(); showToast('Achat effectué ✅'); setView('browse'); load() }} showToast={showToast} />}
+      {view === 'detail' && detail && <DetailView l={detail} me={me} onBack={() => { setView('browse'); load() }} onFav={() => toggleFav(detail.id)} onOpenListing={openDetail} onChat={openChat} onBought={(cb) => { onWalletRefresh?.(); showToast(cb > 0 ? `Achat effectué ✅ · +${cb} ⚡` : 'Achat effectué ✅'); setView('browse'); load() }} showToast={showToast} />}
 
       {view === 'sell' && <SellView cats={cats} conditions={conditions} onCancel={() => setView('browse')} onPublished={() => { showToast('Annonce publiée 🎉'); setView('browse'); load() }} showToast={showToast} />}
 
@@ -227,11 +227,19 @@ function ListingCard({ l, onOpen, onFav }) {
 function DetailView({ l, me, onBack, onFav, onOpenListing, onChat, onBought, showToast }) {
   const [idx, setIdx] = useState(0)
   const [msg, setMsg] = useState('')
+  const [boosting, setBoosting] = useState(false)
   const cat = null
   const buy = async () => {
     const r = await api(`/market/listings/${l.id}/buy`, { method: 'POST' })
     if (r.error) return showToast('⚠️ ' + r.error)
-    onBought()
+    onBought(r.eclatsCashback)
+  }
+  const boost = async () => {
+    setBoosting(true)
+    const r = await api(`/market/listings/${l.id}/boost`, { method: 'POST' })
+    setBoosting(false)
+    if (r.error) return showToast('⚠️ ' + r.error)
+    showToast(`Annonce boostée 🚀 · -${r.cost} ⚡`)
   }
   const attrs = Object.entries(l.attributes || {}).filter(([, v]) => v !== '' && v != null && v !== false)
   return (
@@ -314,7 +322,18 @@ function DetailView({ l, me, onBack, onFav, onOpenListing, onChat, onBought, sho
           </div>
         </div>
       ) : (
-        <div className="fixed bottom-0 inset-x-0 z-30 p-3 bg-app-gradient/95 backdrop-blur border-t border-border"><div className="mx-auto max-w-3xl text-center text-sm text-muted-foreground py-1">C'est ton annonce</div></div>
+        <div className="fixed bottom-0 inset-x-0 z-30 p-3 bg-app-gradient/95 backdrop-blur border-t border-border">
+          <div className="mx-auto max-w-3xl flex items-center gap-3">
+            <div className="flex-1 text-sm text-muted-foreground">C'est ton annonce</div>
+            {l.boostedUntil && new Date(l.boostedUntil) > new Date() ? (
+              <span className="px-4 py-3 rounded-2xl font-semibold text-gold bg-gold/12 border border-gold/30 flex items-center gap-1.5"><Zap size={16} /> Boostée ✓</span>
+            ) : (
+              <button onClick={boost} disabled={boosting} className="press px-4 py-3 rounded-2xl font-semibold text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#7a5b12,#E2AA2B)' }}>
+                {boosting ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} />} Booster · 50 ⚡
+              </button>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )
