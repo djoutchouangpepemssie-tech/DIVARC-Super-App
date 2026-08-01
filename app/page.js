@@ -9,7 +9,7 @@ import {
   Sparkles, X, Check, Fingerprint, Mail, ArrowLeft, Search, Bell, TrendingUp,
   Wallet as WalletIcon, Zap, Lock, ScanLine, RefreshCw, Delete, BadgeCheck,
   Utensils, Car, ShoppingBag, Ticket, HeartPulse, Globe, ChevronDown, Info,
-  Landmark, CreditCard, Settings2, Trash2, Download, Users, Play
+  Landmark, CreditCard, Settings2, Trash2, Download, Users, Play, AtSign, Phone
 } from 'lucide-react'
 import { api, getToken, setToken, clearToken, flushQueue, pendingCount } from '@/lib/api'
 import { connectRealtime, disconnectRealtime } from '@/lib/realtime'
@@ -66,10 +66,20 @@ function Login({ onAuthed }) {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
   const [isNew, setIsNew] = useState(false)
   const [preview, setPreview] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Code de parrainage lu depuis l'URL (?invite=CODE), conservé pour l'inscription
+  const [invite, setInvite] = useState('')
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href)
+      const inv = u.searchParams.get('invite') || localStorage.getItem('divarc_invite')
+      if (inv) { setInvite(inv); localStorage.setItem('divarc_invite', inv) }
+    } catch {}
+  }, [])
 
   const sendCode = async () => {
     setError('')
@@ -84,10 +94,11 @@ function Login({ onAuthed }) {
     setError('')
     if (code.length < 6) { setError('Entre les 6 chiffres'); return }
     setBusy(true)
-    const r = await api('/auth/otp/verify', { method: 'POST', body: JSON.stringify({ email, code, name: name || undefined }) })
+    const r = await api('/auth/otp/verify', { method: 'POST', body: JSON.stringify({ email, code, name: name || undefined, phone: phone || undefined, invite: invite || undefined }) })
     setBusy(false)
     if (r.error) { setError(r.error); return }
     setToken(r.token)
+    try { localStorage.removeItem('divarc_invite') } catch {}
     onAuthed(r.user, r.isNew)
   }
 
@@ -148,10 +159,22 @@ function Login({ onAuthed }) {
                 </InputOTP>
               </div>
               {isNew && (
-                <div className="mb-4">
-                  <label className="text-xs text-muted-foreground">Ton prénom & nom</label>
-                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex. Camille Dubois"
-                    className="w-full rounded-2xl border border-border bg-card/60 px-4 py-3 mt-1.5 text-sm focus:border-primary outline-none transition-colors" />
+                <>
+                  <div className="mb-3">
+                    <label className="text-xs text-muted-foreground">Ton prénom & nom</label>
+                    <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex. Camille Dubois"
+                      className="w-full rounded-2xl border border-border bg-card/60 px-4 py-3 mt-1.5 text-sm focus:border-primary outline-none transition-colors" />
+                  </div>
+                  <div className="mb-4">
+                    <label className="text-xs text-muted-foreground">Ton numéro <span className="opacity-60">(optionnel · pour que tes contacts te retrouvent)</span></label>
+                    <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" inputMode="tel" placeholder="06 12 34 56 78"
+                      className="w-full rounded-2xl border border-border bg-card/60 px-4 py-3 mt-1.5 text-sm focus:border-primary outline-none transition-colors" />
+                  </div>
+                </>
+              )}
+              {isNew && invite && (
+                <div className="mb-4 rounded-2xl bg-emerald-500/12 border border-emerald-500/30 px-4 py-2.5 text-sm flex items-center gap-2">
+                  <span className="text-lg">🎁</span> Invitation reçue — ton parrain gagne un bonus à ton inscription.
                 </div>
               )}
               {error && <p className="text-xs text-destructive mb-2">{error}</p>}
@@ -949,7 +972,7 @@ const SocialTeaser = () => (
 )
 
 /* ============================= PROFILE ============================= */
-function Profile({ user, theme, setTheme, mask, setMask, onLogout }) {
+function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout }) {
   const accesses = [
     { name: 'Livraison', pseudo: 'divarc-a91f', since: '12 mai', icon: Utensils, c: '#F15BB5' },
     { name: 'Mobilité', pseudo: 'divarc-7c02', since: '3 avr', icon: Car, c: '#3FB68B' },
@@ -1008,6 +1031,9 @@ function Profile({ user, theme, setTheme, mask, setMask, onLogout }) {
           </Glass>
         </div>
 
+        {/* découverte & confidentialité */}
+        <DiscoverySettings user={user} setUser={setUser} />
+
         {/* preferences */}
         <div>
           <SectionTitle title="Préférences" />
@@ -1040,6 +1066,103 @@ function Profile({ user, theme, setTheme, mask, setMask, onLogout }) {
         <div className="text-center text-xs text-muted-foreground pb-2">DIVARC · Hébergé dans l\u2019UE · divarc.fr</div>
       </div>
     </Screen>
+  )
+}
+function DiscoverySettings({ user, setUser }) {
+  const disc = user?.discoverable || {}
+  const [handle, setHandle] = useState((user?.handle || '').replace(/^@/, ''))
+  const [phone, setPhone] = useState(user?.phone || '')
+  const [avail, setAvail] = useState(null) // null | true | false
+  const [checking, setChecking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const locked = !!user?.handleChanged
+  const currentHandle = (user?.handle || '').replace(/^@/, '')
+  const handleChanged = handle && handle !== currentHandle
+  const validFmt = /^[a-z0-9_]{3,20}$/.test(handle)
+
+  // Vérifie la disponibilité du @handle (anti-rebond)
+  useEffect(() => {
+    if (locked || !handleChanged) { setAvail(null); return }
+    if (!validFmt) { setAvail(false); return }
+    let alive = true
+    setChecking(true)
+    const t = setTimeout(async () => {
+      const r = await api(`/handle/available?handle=${encodeURIComponent(handle)}`)
+      if (alive) { setAvail(!!r.available); setChecking(false) }
+    }, 400)
+    return () => { alive = false; clearTimeout(t) }
+  }, [handle, handleChanged, validFmt, locked])
+
+  const toggle = async (key) => {
+    const next = { ...disc, [key]: !disc[key] }
+    setUser((u) => ({ ...u, discoverable: next }))
+    await api('/users/me', { method: 'PATCH', body: JSON.stringify({ discoverable: { [key]: !disc[key] } }) })
+  }
+
+  const save = async () => {
+    setMsg(''); setBusy(true)
+    const payload = {}
+    if (!locked && handleChanged && validFmt && avail) payload.handle = handle
+    if ((phone || '') !== (user?.phone || '')) payload.phone = phone
+    if (!Object.keys(payload).length) { setBusy(false); setMsg('Rien à enregistrer'); return }
+    const r = await api('/users/me', { method: 'PATCH', body: JSON.stringify(payload) })
+    setBusy(false)
+    if (r.error) { setMsg(r.error); return }
+    setUser((u) => ({ ...u, ...r }))
+    setMsg('Enregistré ✓')
+  }
+
+  return (
+    <div>
+      <SectionTitle title="Découverte & confidentialité" />
+      <Glass className="p-4 space-y-4">
+        {/* @handle */}
+        <div>
+          <label className="text-xs text-muted-foreground">Ton identifiant public</label>
+          <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3 py-2.5 mt-1.5 focus-within:border-primary transition-colors">
+            <span className="text-muted-foreground">@</span>
+            <input value={handle} disabled={locked}
+              onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              placeholder="ton_nom" maxLength={20}
+              className="flex-1 bg-transparent outline-none text-sm disabled:opacity-60" />
+            {handleChanged && !locked && (checking
+              ? <RefreshCw size={15} className="animate-spin text-muted-foreground" />
+              : avail === true ? <Check size={15} className="text-green-500" />
+              : avail === false ? <span className="text-[11px] text-destructive">indispo</span> : null)}
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            {locked ? 'Déjà modifié une fois — non modifiable.' : 'Modifiable une seule fois · 3–20 caractères (a–z, 0–9, _).'}
+          </p>
+        </div>
+        {/* numéro */}
+        <div>
+          <label className="text-xs text-muted-foreground">Ton numéro <span className="opacity-60">(jamais affiché en clair)</span></label>
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" inputMode="tel" placeholder="06 12 34 56 78"
+            className="w-full rounded-2xl border border-border bg-card/60 px-3 py-2.5 mt-1.5 text-sm focus:border-primary outline-none transition-colors" />
+        </div>
+        {msg && <p className={cx('text-xs', msg.includes('✓') ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground')}>{msg}</p>}
+        <PrimaryBtn onClick={save} full disabled={busy}>
+          {busy ? <RefreshCw className="animate-spin" size={16} /> : <>Enregistrer</>}
+        </PrimaryBtn>
+      </Glass>
+
+      <Glass className="divide-y divide-border/60 mt-3">
+        {[
+          { k: 'byHandle', icon: <AtSign size={18} />, t: 'Trouvable par identifiant', s: 'Via la recherche @handle / nom' },
+          { k: 'byPhone', icon: <Phone size={18} />, t: 'Trouvable par numéro', s: 'Tes contacts te retrouvent (haché)' },
+          { k: 'byEmail', icon: <Mail size={18} />, t: 'Trouvable par e-mail', s: 'Via le carnet d’adresses (haché)' },
+        ].map((o) => (
+          <div key={o.k} className="flex items-center justify-between p-3.5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60 text-muted-foreground">{o.icon}</div>
+              <div><div className="font-medium text-sm">{o.t}</div><div className="text-xs text-muted-foreground">{o.s}</div></div>
+            </div>
+            <Toggle on={!!disc[o.k]} onClick={() => toggle(o.k)} />
+          </div>
+        ))}
+      </Glass>
+    </div>
   )
 }
 const Row = ({ icon, title, sub, ok }) => (
@@ -1290,7 +1413,7 @@ function App() {
           {tab === 'messages' && <Messaging me={user} />}
           {tab === 'qr' && <QRScreen user={user} onDone={() => load()} initialCode={pendingPay} onConsumed={() => setPendingPay(null)} />}
           {tab === 'discover' && <Discover onTab={goTab} />}
-          {tab === 'profile' && <Profile user={user} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}
+          {tab === 'profile' && <Profile user={user} setUser={setUser} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}
           {tab === 'social' && <Social me={user} onBack={() => setTab('hub')} />}
           {tab === 'market' && <Marketplace me={user} onWalletRefresh={load} onImmersive={setMktImmersive} />}
           {tab === 'ads' && <AdsManager me={user} onWalletRefresh={load} onImmersive={setMktImmersive} />}

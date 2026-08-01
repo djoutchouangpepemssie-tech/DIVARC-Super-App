@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
 import { onRealtime, sendRealtime, isOnline } from '@/lib/realtime'
+import Discovery from './discovery'
 import {
   Plus, Search, ArrowLeft, Send as SendIcon, X, Lock, BadgeCheck, Users, Hash,
   Smile, Flame, Check, Sparkles, Globe, MessageCircle, UserPlus, Crown
@@ -340,7 +341,9 @@ export default function Messaging({ me }) {
       </div>
 
       <AnimatePresence>
-        {newOpen && <NewChat me={me} onClose={() => setNewOpen(false)} onOpen={(id) => { setNewOpen(false); setTab('dm'); loadConvos(); openConv(id) }} />}
+        <AnimatePresence>
+          {newOpen && <Discovery onClose={() => setNewOpen(false)} onOpenConversation={(id) => { setNewOpen(false); setTab('dm'); loadConvos(); openConv(id) }} />}
+        </AnimatePresence>
       </AnimatePresence>
     </div>
   )
