@@ -8,6 +8,7 @@ from datetime import timedelta
 import segno
 from fastapi import APIRouter, Depends, Request
 
+from ..config import settings
 from ..db import get_db
 from ..helpers import body_of, credit_wallet, err, now, ok, post_ledger, uid
 from ..notify import notify
@@ -46,9 +47,13 @@ async def qr_create(request: Request, me: dict = Depends(require_user)):
     }
     await db.payment_requests.insert_one(dict(pr))
 
-    qr = segno.make(code, error="m")
+    # Le QR encode une URL de paiement : scanné par l'appareil photo, il ouvre l'app pré-remplie.
+    base = (settings.APP_URL or "").rstrip("/")
+    pay_url = f"{base}/?pay={code}" if base else code
+    qr = segno.make(pay_url, error="m")
     data_uri = qr.svg_data_uri(scale=6, dark="#2C39C7", light=None, border=2)
-    return ok({"code": code, "amountCents": amount, "note": pr["note"], "qr": data_uri, "expiresAt": pr["expiresAt"]})
+    return ok({"code": code, "amountCents": amount, "note": pr["note"], "qr": data_uri,
+               "payUrl": pay_url, "expiresAt": pr["expiresAt"]})
 
 
 @router.get("/pay/qr/{code}")

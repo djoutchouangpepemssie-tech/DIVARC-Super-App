@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Liste d'origines séparées par des virgules, ou "*" pour tout autoriser.
     CORS_ORIGINS: str = "*"
 
+    # --- URL publique du front (pour les QR scannables par appareil photo) ---
+    APP_URL: str = "https://www.divarc.fr"
+
     @property
     def cors_origins_list(self) -> list[str]:
         raw = (self.CORS_ORIGINS or "*").strip()

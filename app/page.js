@@ -682,8 +682,9 @@ function GoldParticles() {
 /* ============================= QR ============================= */
 const money = (c) => eur(c) + ' €'
 
-function QRScreen({ user, onDone }) {
-  const [mode, setMode] = useState('receive')
+function QRScreen({ user, onDone, initialCode, onConsumed }) {
+  const [mode, setMode] = useState(initialCode ? 'pay' : 'receive')
+  useEffect(() => { if (initialCode) setMode('pay') }, [initialCode])
   return (
     <Screen>
       <div className="cascade space-y-5">
@@ -696,7 +697,7 @@ function QRScreen({ user, onDone }) {
             </button>
           ))}
         </div>
-        {mode === 'receive' ? <QRReceive user={user} /> : <QRPay onDone={onDone} />}
+        {mode === 'receive' ? <QRReceive user={user} /> : <QRPay onDone={onDone} initialCode={initialCode} onConsumed={onConsumed} />}
       </div>
     </Screen>
   )
@@ -754,23 +755,31 @@ function QRReceive({ user }) {
   )
 }
 
-function QRPay({ onDone }) {
-  const [code, setCode] = useState('')
+function QRPay({ onDone, initialCode, onConsumed }) {
+  const [code, setCode] = useState(initialCode || '')
   const [detail, setDetail] = useState(null)
   const [payAmount, setPayAmount] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(null)
 
-  const check = async () => {
+  const check = async (codeArg) => {
+    const c = (typeof codeArg === 'string' ? codeArg : code).trim().toUpperCase()
+    if (c.length < 8) return
     setError(''); setBusy(true)
-    const r = await api(`/pay/qr/${code.trim().toUpperCase()}`)
+    const r = await api(`/pay/qr/${c}`)
     if (r.error) setError('Code introuvable')
     else if (r.status !== 'pending') setError('Cette demande a déjà été réglée ou a expiré')
     else if (r.isMine) setError('C’est ta propre demande')
     else setDetail(r)
     setBusy(false)
   }
+
+  // QR scanné : code fourni via l'URL -> vérification automatique
+  useEffect(() => {
+    if (initialCode) { setCode(initialCode); check(initialCode); onConsumed && onConsumed() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCode])
   const pay = async () => {
     setError(''); setBusy(true)
     const cents = detail.amountCents || (payAmount ? Math.round(parseFloat(String(payAmount).replace(',', '.')) * 100) : 0)
@@ -1175,6 +1184,18 @@ function App() {
   const [online, setOnline] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [pending, setPending] = useState(0)
+  const [pendingPay, setPendingPay] = useState(null)
+
+  // QR scanné par l'appareil photo -> URL /?pay=CODE : on ouvre l'écran de paiement pré-rempli
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const code = new URLSearchParams(window.location.search).get('pay')
+    if (code) {
+      setPendingPay(code.toUpperCase())
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+  }, [])
+  useEffect(() => { if (user && pendingPay) setTab('qr') }, [user, pendingPay])
 
   const load = useCallback(async () => {
     const [w, t, c] = await Promise.all([api('/wallet'), api('/transactions'), api('/contacts')])
@@ -1267,7 +1288,7 @@ function App() {
           {tab === 'hub' && <Hub user={user} wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} onTab={goTab} />}
           {tab === 'wallet' && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
           {tab === 'messages' && <Messaging me={user} />}
-          {tab === 'qr' && <QRScreen user={user} onDone={() => load()} />}
+          {tab === 'qr' && <QRScreen user={user} onDone={() => load()} initialCode={pendingPay} onConsumed={() => setPendingPay(null)} />}
           {tab === 'discover' && <Discover onTab={goTab} />}
           {tab === 'profile' && <Profile user={user} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}
           {tab === 'social' && <Social me={user} onBack={() => setTab('hub')} />}
