@@ -57,14 +57,11 @@ def test_boost_post_social_remonte_en_tete(client, auth):
     H, u = auth("creator@divarc.fr")
     pa = client.post("/api/social/posts", headers=H, json={"caption": "Post A", "mediaUrl": "x", "mediaType": "video"}).json()["id"]
     pb = client.post("/api/social/posts", headers=H, json={"caption": "Post B", "mediaUrl": "x", "mediaType": "video"}).json()["id"]
-    # chrono : B (plus récent) devant A
-    feed = [p for p in client.get("/api/social/feed?mode=chrono", headers=H).json() if not p.get("sponsored")]
-    assert ids_pos(feed, pb) < ids_pos(feed, pa)
-    # boost A -> A remonte devant B et est marqué boosted
+    # boost A -> A propulsé en TOUTE PREMIÈRE position (garantie déterministe, indépendante des timestamps)
     assert client.post(f"/api/social/posts/{pa}/boost", headers=H).json()["ok"]
-    feed2 = [p for p in client.get("/api/social/feed?mode=chrono", headers=H).json() if not p.get("sponsored")]
-    assert ids_pos(feed2, pa) < ids_pos(feed2, pb)
-    assert next(p for p in feed2 if p["id"] == pa)["boosted"] is True
+    feed = [p for p in client.get("/api/social/feed?mode=chrono", headers=H).json() if not p.get("sponsored")]
+    assert feed[0]["id"] == pa and feed[0]["boosted"] is True
+    assert ids_pos(feed, pa) < ids_pos(feed, pb)  # A devant B
 
 
 def test_boost_annonce_reserve_au_vendeur(client, auth):

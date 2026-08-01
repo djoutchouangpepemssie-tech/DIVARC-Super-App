@@ -68,6 +68,23 @@ class Settings(BaseSettings):
     ARCADE_ENTRY: int = 5            # coût d'une partie en Éclats (après la partie gratuite du jour)
     ARCADE_FREE_DAILY: int = 1       # parties gratuites par jour et par jeu
 
+    # --- Réseau social (bounded context 'social' sur PostgreSQL, cohabite avec Mongo) ---
+    # Railway fournit DATABASE_URL (postgres). Vide en local -> SQLite async pour les tests.
+    SOCIAL_DATABASE_URL: str = ""
+    REDIS_URL: str = ""  # pour le temps réel/fan-out à l'échelle (couches ultérieures)
+
+    @property
+    def social_db_url(self) -> str:
+        raw = (self.SOCIAL_DATABASE_URL or "").strip()
+        if not raw:
+            return "sqlite+aiosqlite:///:memory:"
+        # Normalise vers le driver async
+        if raw.startswith("postgres://"):
+            raw = "postgresql+asyncpg://" + raw[len("postgres://"):]
+        elif raw.startswith("postgresql://"):
+            raw = "postgresql+asyncpg://" + raw[len("postgresql://"):]
+        return raw
+
     # --- Mode démo ---
     # False (défaut) = vraie app : nouveaux comptes à 0 €, aucune donnée fictive.
     # True = remplit l'app de contenus de démonstration (faux amis/annonces/vidéos, solde fictif).
