@@ -4,7 +4,7 @@
 // Appelle le nouveau contexte social /api/net/* (PostgreSQL). Réactions/commentaires = Couche 3.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight, UserPlus, UserCheck, Check, Clock, UserX } from 'lucide-react'
+import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight, UserPlus, UserCheck, Check, Clock, UserX, EyeOff, Info, Search } from 'lucide-react'
 import { api } from '@/lib/api'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -22,19 +22,20 @@ const fileToDataUrl = (f) => new Promise((res, rej) => { const r = new FileReade
 export default function NetworkModule({ me, onClose }) {
   const [tab, setTab] = useState('feed') // feed | friends
   const [profileId, setProfileId] = useState(null)
+  const [mode, setMode] = useState('ranked') // ranked | recent
   const [items, setItems] = useState(null)
   const [cursor, setCursor] = useState(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [unavailable, setUnavailable] = useState(false)
 
   const load = useCallback(async (cur) => {
-    const r = await api(`/net/feed${cur ? `?cursor=${encodeURIComponent(cur)}` : ''}`)
+    const r = await api(`/net/feed?mode=${mode}${cur ? `&cursor=${encodeURIComponent(cur)}` : ''}`)
     if (r?.error) { setUnavailable(true); setItems([]); return }
     setUnavailable(false)
     setItems((prev) => (cur && prev ? [...prev, ...r.items] : r.items))
     setCursor(r.nextCursor || null)
-  }, [])
-  useEffect(() => { load() }, [load])
+  }, [mode])
+  useEffect(() => { setItems(null); load() }, [load])
 
   const onPublished = (post) => setItems((prev) => [post, ...(prev || [])])
   const onDeleted = (id) => setItems((prev) => (prev || []).filter((p) => p.id !== id))
@@ -66,6 +67,12 @@ export default function NetworkModule({ me, onClose }) {
         ) : (
           <>
             <Composer me={me} onPublished={onPublished} />
+            <div className="flex items-center gap-2 mb-3 text-xs">
+              <span className="text-muted-foreground">Fil :</span>
+              {[['ranked', 'Classé'], ['recent', 'Récent']].map(([id, label]) => (
+                <button key={id} onClick={() => setMode(id)} className={cx('press px-3 py-1 rounded-full border', mode === id ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>{label}</button>
+              ))}
+            </div>
             {items === null ? (
               <div className="grid place-items-center py-16"><RefreshCw className="animate-spin text-muted-foreground" /></div>
             ) : items.length === 0 ? (
@@ -95,15 +102,74 @@ export default function NetworkModule({ me, onClose }) {
 function FriendsPanel({ onOpenProfile }) {
   const [reqs, setReqs] = useState(null)
   const [friends, setFriends] = useState(null)
+  const [sugg, setSugg] = useState([])
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState(null)
   const load = useCallback(async () => {
     const r = await api('/net/friends/requests'); if (!r.error) setReqs(r)
     const f = await api('/net/friends'); if (!f.error) setFriends(f.items)
+    const s = await api('/net/suggestions'); if (!s.error) setSugg(s.items)
   }, [])
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (q.trim().length < 2) { setResults(null); return }
+    let alive = true
+    const t = setTimeout(async () => { const r = await api(`/net/search?q=${encodeURIComponent(q)}`); if (alive && !r.error) setResults(r) }, 350)
+    return () => { alive = false; clearTimeout(t) }
+  }, [q])
   const respond = async (id, action) => { await api(`/net/friends/${action}/${id}`, { method: 'POST' }); load() }
+  const addFriend = async (id) => { await api(`/net/friends/request/${id}`, { method: 'POST' }); setSugg((s) => s.filter((u) => u.id !== id)) }
   if (!reqs) return <div className="grid place-items-center py-16"><RefreshCw className="animate-spin text-muted-foreground" /></div>
   return (
     <div className="py-4 space-y-5">
+      {/* Recherche */}
+      <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3">
+        <Search size={16} className="text-muted-foreground" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher personnes, publications…"
+          className="flex-1 bg-transparent py-2.5 text-sm outline-none" autoCapitalize="none" />
+        {q && <button onClick={() => setQ('')} className="press"><X size={15} className="text-muted-foreground" /></button>}
+      </div>
+      {results && (
+        <div className="space-y-3">
+          {results.people?.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-2">Personnes</div>
+              <div className="space-y-2">
+                {results.people.map((u) => (
+                  <button key={u.id} onClick={() => onOpenProfile(u.id)} className="press w-full flex items-center gap-3 p-2.5 rounded-2xl border border-border bg-card/60 text-left">
+                    <div className="w-9 h-9 rounded-full grid place-items-center text-white text-sm font-semibold" style={{ background: u.avatarColor || '#4353F0' }}>{u.initials}</div>
+                    <div className="flex-1 min-w-0"><div className="text-sm font-medium truncate">{u.name}</div>{u.handle && <div className="text-[11px] text-muted-foreground">@{u.handle}</div>}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {results.posts?.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-2">Publications</div>
+              <div className="space-y-3">{results.posts.map((p) => <PostCard key={p.id} p={p} onDeleted={() => {}} onOpenProfile={onOpenProfile} />)}</div>
+            </div>
+          )}
+          {(!results.people?.length && !results.posts?.length) && <div className="text-sm text-muted-foreground text-center py-6">Aucun résultat.</div>}
+        </div>
+      )}
+
+      {!results && sugg.length > 0 && (
+        <div>
+          <div className="text-xs font-medium text-muted-foreground mb-2">Suggestions</div>
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+            {sugg.map((u) => (
+              <div key={u.id} className="min-w-[130px] rounded-2xl border border-border bg-card/60 p-3 text-center">
+                <button onClick={() => onOpenProfile(u.id)} className="w-14 h-14 rounded-full grid place-items-center text-white text-lg font-semibold mx-auto mb-2" style={{ background: u.avatarColor || '#4353F0' }}>{u.initials}</button>
+                <div className="text-sm font-medium truncate">{u.name}</div>
+                <div className="text-[10px] text-muted-foreground mb-2">{u.reason}</div>
+                <button onClick={() => addFriend(u.id)} className="press w-full py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium flex items-center justify-center gap-1"><UserPlus size={12} /> Ajouter</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {reqs.incoming?.length > 0 && (
         <div>
           <div className="text-xs font-medium text-muted-foreground mb-2">Demandes reçues ({reqs.incoming.length})</div>
@@ -271,6 +337,7 @@ function PostCard({ p, onDeleted, onOpenProfile }) {
   const VisIcon = (VIS.find((v) => v[0] === p.visibility) || VIS[0])[2]
 
   const del = async () => { setMenu(false); if (confirm('Supprimer cette publication ?')) { await api(`/net/posts/${p.id}`, { method: 'DELETE' }); onDeleted(p.id) } }
+  const hide = async () => { setMenu(false); await api(`/net/posts/${p.id}/hide`, { method: 'POST' }); onDeleted(p.id) }
   const react = async (type) => {
     setPalette(false)
     if (mine === type) {
@@ -308,11 +375,18 @@ function PostCard({ p, onDeleted, onOpenProfile }) {
           {menu && (
             <div className="absolute right-0 top-9 z-10 rounded-xl border border-border bg-card shadow-lg overflow-hidden min-w-[160px]">
               <button onClick={share} className="press w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm"><Share2 size={15} /> Partager</button>
+              {!p.mine && <button onClick={hide} className="press w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm"><EyeOff size={15} /> Voir moins</button>}
               {p.mine && <button onClick={del} className="press w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm text-destructive"><Trash2 size={15} /> Supprimer</button>}
             </div>
           )}
         </div>
       </div>
+
+      {p.reason && (
+        <div className="mt-2 inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full" title="Transparence : pourquoi ce post t'est montré">
+          <Info size={10} /> {p.reason}
+        </div>
+      )}
 
       <PostBody p={p} />
 

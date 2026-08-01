@@ -7,7 +7,8 @@ from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import Bookmark, Circle, CircleMember, Comment, Edge, Post, Profile, Reaction
+from .models import (Bookmark, Circle, CircleMember, Comment, Edge, HiddenPost, Post, Profile,
+                     Reaction)
 
 
 class SqlAlchemyPostRepository:
@@ -35,6 +36,29 @@ class SqlAlchemyPostRepository:
                                   and_(Post.created_at == before_time, Post.id < (before_id or ""))))
         stmt = stmt.order_by(Post.created_at.desc(), Post.id.desc()).limit(limit)
         return list((await self.session.scalars(stmt)).all())
+
+    async def search_public(self, q: str, limit: int = 20) -> list[Post]:
+        like = f"%{q.lower()}%"
+        stmt = (select(Post).options(selectinload(Post.media))
+                .where(Post.visibility == "public", Post.deleted_at.is_(None),
+                       func.lower(Post.body_text).like(like))
+                .order_by(Post.created_at.desc()).limit(limit))
+        return list((await self.session.scalars(stmt)).all())
+
+
+class SqlAlchemyHiddenRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def hide(self, user_id: str, post_id: str) -> None:
+        exists = await self.session.scalar(select(HiddenPost.id).where(
+            HiddenPost.user_id == user_id, HiddenPost.post_id == post_id))
+        if not exists:
+            self.session.add(HiddenPost(user_id=user_id, post_id=post_id))
+
+    async def hidden_ids(self, user_id: str) -> set[str]:
+        return set((await self.session.scalars(
+            select(HiddenPost.post_id).where(HiddenPost.user_id == user_id))).all())
 
 
 class SqlAlchemyEdgeRepository:

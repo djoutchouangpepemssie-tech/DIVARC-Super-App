@@ -107,6 +107,16 @@ class Bookmark(Base):
     __table_args__ = (UniqueConstraint("user_id", "post_id", name="uq_bookmark_once"),)
 
 
+class HiddenPost(Base):
+    """« Voir moins » : posts masqués par un utilisateur (exclus de son fil)."""
+    __tablename__ = "social_hidden_posts"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    post_id: Mapped[str] = mapped_column(String(26))
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+    __table_args__ = (UniqueConstraint("user_id", "post_id", name="uq_hidden_once"),)
+
+
 class Circle(Base):
     """Liste/cercle d'amis d'un utilisateur (audience CIRCLES d'un post)."""
     __tablename__ = "social_circles"

@@ -72,9 +72,9 @@ def test_feed_pagination_par_curseur(client, auth):
     H, u = auth("cursor@divarc.fr")
     for i in range(5):
         client.post("/api/net/posts", headers=H, json={"body": f"p{i}"})
-    page1 = client.get("/api/net/feed?limit=2", headers=H).json()
+    page1 = client.get("/api/net/feed?mode=recent&limit=2", headers=H).json()
     assert len(page1["items"]) == 2 and page1["nextCursor"]
-    page2 = client.get(f"/api/net/feed?limit=2&cursor={page1['nextCursor']}", headers=H).json()
+    page2 = client.get(f"/api/net/feed?mode=recent&limit=2&cursor={page1['nextCursor']}", headers=H).json()
     ids1 = {p["id"] for p in page1["items"]}
     ids2 = {p["id"] for p in page2["items"]}
     assert len(page2["items"]) == 2 and ids1.isdisjoint(ids2)  # pas de doublon entre pages

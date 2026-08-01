@@ -16,6 +16,7 @@ from ...helpers import err, ok
 from ...realtime import manager
 from ...security import require_user
 from ..adapters.persistence.uow import SqlAlchemyUnitOfWork
+from ..application import discovery as disc
 from ..application import graph as gr
 from ..application import interactions as ix
 from ..application import posts as uc
@@ -134,10 +135,22 @@ async def feed(request: Request, me: dict = Depends(require_user), uow=Depends(g
         limit = max(1, min(int(request.query_params.get("limit") or 20), 50))
     except ValueError:
         limit = 20
+    mode = request.query_params.get("mode") or "ranked"
+    if mode == "ranked":
+        # Fil CLASSÉ transparent : chaque post expose sa raison (« Pourquoi je vois ça »)
+        pairs = await disc.get_ranked_feed(uow, _policy, me["id"], limit=limit)
+        posts = [p for p, _r in pairs]
+        data = await _serialize_posts(uow, get_mongo(), posts, me["id"])
+        for d, (_p, reason) in zip(data, pairs):
+            d["reason"] = reason
+        return ok({"items": data, "nextCursor": None, "mode": "ranked"})
+    # Fil chronologique (bascule permanente) : pagination par curseur
     bt, bi = _decode_cursor(request.query_params.get("cursor")) if request.query_params.get("cursor") else (None, None)
     items = await uc.get_feed(uow, _policy, me["id"], limit=limit, before_time=bt, before_id=bi)
     data = await _serialize_posts(uow, get_mongo(), items, me["id"])
-    return ok({"items": data, "nextCursor": _encode_cursor(items[-1]) if len(items) == limit else None})
+    for d in data:
+        d["reason"] = "Ordre chronologique"
+    return ok({"items": data, "nextCursor": _encode_cursor(items[-1]) if len(items) == limit else None, "mode": "recent"})
 
 
 @router.get("/net/posts/{post_id}")
@@ -541,3 +554,43 @@ async def public_profile(user_id: str, me: dict = Depends(require_user), uow=Dep
     prof = await uow.profiles.get(user_id)
     rel = await gr.relationship(uow, me["id"], user_id)
     return ok(_profile_out(prof, u, rel))
+
+
+# ========== Découverte & recherche (Couche 5) ==========
+@router.post("/net/posts/{post_id}/hide")
+async def hide_post(post_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    """« Voir moins » : masque ce post du fil de l'utilisateur."""
+    await uow.hidden.hide(me["id"], post_id)
+    await uow.commit()
+    return ok({"hidden": True})
+
+
+@router.get("/net/suggestions")
+async def suggestions(me: dict = Depends(require_user), uow=Depends(get_uow)):
+    pairs = await disc.suggestions(uow, me["id"], limit=12)
+    authors = await _authors_map(get_mongo(), [uid for uid, _ in pairs])
+    return ok({"items": [{**_author(authors, uid), "mutual": n,
+                          "reason": f"{n} ami{'s' if n > 1 else ''} en commun"} for uid, n in pairs]})
+
+
+@router.get("/net/search")
+async def search(request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    q = (request.query_params.get("q") or "").strip()
+    if len(q) < 2:
+        return ok({"people": [], "posts": []})
+    mongo = get_mongo()
+    # personnes : par nom ou @handle (exclut bots, soi, bloqués)
+    blocked = await uow.edges.blocked_ids(me["id"])
+    import re as _re
+    rx = _re.compile(_re.escape(q), _re.I)
+    users = await mongo.users.find(
+        {"$or": [{"name": {"$regex": rx}}, {"handle": {"$regex": rx}}],
+         "isBot": {"$ne": True}}, {"_id": 0, "email": 0}).limit(15).to_list(length=15)
+    people = [{"id": u["id"], "name": u.get("name"), "initials": u.get("initials"),
+               "avatarColor": u.get("avatarColor"), "verified": bool(u.get("verified")),
+               "handle": u.get("handle")}
+              for u in users if u["id"] != me["id"] and u["id"] not in blocked]
+    # posts publics contenant q
+    posts = await disc.search_posts(uow, _policy, me["id"], q, limit=15)
+    posts_out = await _serialize_posts(uow, mongo, posts, me["id"])
+    return ok({"people": people, "posts": posts_out})
