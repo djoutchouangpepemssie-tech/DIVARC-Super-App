@@ -31,6 +31,7 @@ _INDEXES: list[tuple[str, object, dict]] = [
     ("conversations", "memberIds", {}),
     ("conversations", [("type", 1), ("isPublic", 1)], {}),
     ("messages", [("conversationId", 1), ("createdAt", 1)], {}),
+    ("chat_media", "id", {"unique": True}),
     ("friendships", "key", {"unique": True}),
 
     # Social

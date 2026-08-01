@@ -1,10 +1,12 @@
-"""Routes messagerie : conversations, communautés, messages, réactions, amitié."""
+"""Routes messagerie : conversations, communautés, messages, réactions, amitié, médias."""
 from __future__ import annotations
 
+import base64
 import random
+import re
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 
 from ..data import BOT_REPLIES, COLORS
 from ..db import get_db
@@ -17,6 +19,43 @@ from ..security import require_user
 router = APIRouter()
 
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+# Médias autorisés dans le chat (image / vidéo / audio) en data-URL base64
+_MEDIA_RE = re.compile(r"^data:((?:image|video|audio)/[\w.+-]+);base64,(.+)$", re.S)
+_MEDIA_LABELS = {"image": "📷 Photo", "video": "🎥 Vidéo", "audio": "🎤 Message vocal"}
+
+
+# ---------------- Médias du chat ----------------
+@router.get("/chat/media/{media_id}")
+async def chat_media(media_id: str):
+    """Sert un média (les balises <img>/<video> n'envoient pas de Bearer -> route publique)."""
+    db = get_db()
+    m = await db.chat_media.find_one({"id": media_id})
+    if not m:
+        return err("Média introuvable", 404)
+    raw = base64.b64decode(m["data"])
+    return Response(content=raw, media_type=m.get("contentType") or "application/octet-stream",
+                    headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+
+@router.post("/chat/upload")
+async def chat_upload(request: Request, me: dict = Depends(require_user)):
+    db = get_db()
+    body = await body_of(request)
+    data = str(body.get("data") or "")
+    m = _MEDIA_RE.match(data)
+    if not m:
+        return err("Média invalide (format attendu : data-URL image/vidéo/audio)")
+    content_type = m.group(1)
+    b64 = m.group(2)
+    # ~9 Mo de base64 ≈ 6,7 Mo binaire : on reste sous la limite d'un document Mongo (16 Mo)
+    if len(b64) > 9_000_000:
+        return err("Fichier trop lourd (max ~6 Mo)", 413)
+    kind = content_type.split("/", 1)[0]  # image | video | audio
+    iid = uid()
+    await db.chat_media.insert_one({"id": iid, "userId": me["id"], "data": b64,
+                                    "contentType": content_type, "kind": kind, "createdAt": now()})
+    return ok({"id": iid, "url": f"/api/chat/media/{iid}", "kind": kind, "contentType": content_type})
 
 
 @router.get("/conversations")
@@ -113,12 +152,18 @@ async def send_message(cid: str, request: Request, me: dict = Depends(require_us
         return err("Conversation introuvable", 404)
     body = await body_of(request)
     text = str(body.get("text") or "").strip()
-    if not text:
+    kind = body.get("kind") or "text"
+    media_url = body.get("mediaUrl")
+    media_type = body.get("mediaType")  # image | video | audio
+    # Un message doit avoir du texte OU un média
+    if not text and not media_url:
         return err("Message vide")
     msg = {"id": uid(), "conversationId": cid, "senderId": me["id"], "senderName": me.get("name"), "text": text,
-           "kind": body.get("kind") or "text", "reactions": [], "createdAt": now()}
+           "kind": kind, "mediaUrl": media_url, "mediaType": media_type, "reactions": [], "createdAt": now()}
     await db.messages.insert_one(dict(msg))
-    await db.conversations.update_one({"id": cid}, {"$set": {"lastText": text, "lastMessageAt": now()}})
+    # Aperçu dans la liste : le texte, sinon un libellé média
+    preview = text or _MEDIA_LABELS.get(media_type, "Pièce jointe")
+    await db.conversations.update_one({"id": cid}, {"$set": {"lastText": preview, "lastMessageAt": now()}})
     msg.pop("_id", None)
     others = [m for m in conv["memberIds"] if m != me["id"]]
     # push temps réel du nouveau message aux autres membres
@@ -127,7 +172,7 @@ async def send_message(cid: str, request: Request, me: dict = Depends(require_us
     convo_label = conv.get("name") or me.get("name")
     for oid in others:
         if not oid.startswith("bot-"):
-            await notify(db, oid, "message", f"💬 {convo_label}", text[:80], {"conversationId": cid})
+            await notify(db, oid, "message", f"💬 {convo_label}", preview[:80], {"conversationId": cid})
     friendship = None
     if conv["type"] == "dm":
         other_id = next((m for m in conv["memberIds"] if m != me["id"]), None)

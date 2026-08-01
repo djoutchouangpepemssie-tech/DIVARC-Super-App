@@ -7,7 +7,7 @@ import { onRealtime, sendRealtime, isOnline } from '@/lib/realtime'
 import Discovery from './discovery'
 import {
   Plus, Search, ArrowLeft, Send as SendIcon, X, Lock, BadgeCheck, Users, Hash,
-  Smile, Flame, Check, Sparkles, Globe, MessageCircle, UserPlus, Crown
+  Smile, Flame, Check, Sparkles, Globe, MessageCircle, UserPlus, Crown, Paperclip, RefreshCw
 } from 'lucide-react'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -86,10 +86,26 @@ function Bubble({ m, me, onReact, isGroup }) {
     <div className={cx('flex flex-col', mine ? 'items-end' : 'items-start')}>
       {isGroup && !mine && <span className="text-[10px] text-muted-foreground ml-3 mb-0.5">{m.senderName}</span>}
       <div className={cx('group relative flex items-end gap-1', mine && 'flex-row-reverse')}>
-        <div onDoubleClick={() => onReact(m.id, '❤️')} onClick={() => setShowReacts((s) => !s)}
-          className={cx('max-w-[78%] px-4 py-2.5 rounded-2xl text-sm cursor-pointer select-none break-words',
-            mine ? 'bg-primary text-white rounded-br-md' : 'bg-card border border-border rounded-bl-md')}>
-          {m.text}
+        <div onDoubleClick={() => onReact(m.id, '❤️')} className={cx('max-w-[78%] flex flex-col gap-1', mine ? 'items-end' : 'items-start')}>
+          {m.mediaUrl && m.mediaType === 'image' && (
+            <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="block">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={m.mediaUrl} alt="Photo" loading="lazy" className="rounded-2xl max-h-72 w-auto object-cover border border-border" />
+            </a>
+          )}
+          {m.mediaUrl && m.mediaType === 'video' && (
+            <video src={m.mediaUrl} controls playsInline className="rounded-2xl max-h-72 w-auto border border-border bg-black" />
+          )}
+          {m.mediaUrl && m.mediaType === 'audio' && (
+            <audio src={m.mediaUrl} controls className="w-56 max-w-full" />
+          )}
+          {m.text && (
+            <div onClick={() => setShowReacts((s) => !s)}
+              className={cx('px-4 py-2.5 rounded-2xl text-sm cursor-pointer select-none break-words',
+                mine ? 'bg-primary text-white rounded-br-md' : 'bg-card border border-border rounded-bl-md')}>
+              {m.text}
+            </div>
+          )}
         </div>
         <button onClick={() => setShowReacts((s) => !s)} aria-label="Réagir"
           className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 grid place-items-center rounded-full text-muted-foreground">
@@ -135,6 +151,9 @@ export default function Messaging({ me, openConvId, onConsumed }) {
   const prevLevel = useRef(null)
   const scrollRef = useRef()
   const [sending, setSending] = useState(false)
+  const [pendingMedia, setPendingMedia] = useState(null) // { kind, dataUrl, preview, name }
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef(null)
   const activeRef = useRef(null)
   useEffect(() => { activeRef.current = active }, [active])
   const [, setPresenceTick] = useState(0) // force le re-rendu quand la présence change
@@ -201,12 +220,36 @@ export default function Messaging({ me, openConvId, onConsumed }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openConvId])
 
+  // Sélection d'une photo/vidéo/audio -> aperçu (converti en data-URL, uploadé à l'envoi)
+  const onPickFile = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // permet de re-choisir le même fichier
+    if (!file) return
+    if (file.size > 6.5 * 1024 * 1024) { alert('Fichier trop lourd (max ~6 Mo).'); return }
+    const kind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'audio'
+    const reader = new FileReader()
+    reader.onload = () => setPendingMedia({ kind, dataUrl: reader.result, preview: reader.result, name: file.name })
+    reader.readAsDataURL(file)
+  }
+
   const send = async () => {
-    const text = input.trim(); if (!text || sending) return
-    setSending(true); setInput('')
+    const text = input.trim()
+    if ((!text && !pendingMedia) || sending) return
+    setSending(true)
+    let media = null
+    // 1) upload du média s'il y en a un
+    if (pendingMedia) {
+      setUploading(true)
+      const up = await api('/chat/upload', { method: 'POST', body: JSON.stringify({ data: pendingMedia.dataUrl }) })
+      setUploading(false)
+      if (up.error) { alert(up.error); setSending(false); return }
+      media = { mediaUrl: up.url, mediaType: up.kind }
+    }
+    const payload = { text, ...(media || {}), kind: media ? media.mediaType : 'text' }
+    setInput(''); setPendingMedia(null)
     // optimistic
-    setDetail((d) => d ? { ...d, messages: [...d.messages, { id: 'tmp' + Date.now(), senderId: me.id, senderName: me.name, text, reactions: [], createdAt: new Date() }] } : d)
-    const r = await api(`/conversations/${active}/messages`, { method: 'POST', body: JSON.stringify({ text }) })
+    setDetail((d) => d ? { ...d, messages: [...d.messages, { id: 'tmp' + Date.now(), senderId: me.id, senderName: me.name, text, mediaUrl: media?.mediaUrl, mediaType: media?.mediaType, reactions: [], createdAt: new Date() }] } : d)
+    const r = await api(`/conversations/${active}/messages`, { method: 'POST', body: JSON.stringify(payload) })
     if (r.friendship) {
       if (prevLevel.current !== null && r.friendship.level > prevLevel.current) { setLevelUp(true); setTimeout(() => setLevelUp(false), 1400) }
       prevLevel.current = r.friendship.level
@@ -303,7 +346,7 @@ export default function Messaging({ me, openConvId, onConsumed }) {
               </div>
             </Glass>
           ) : (
-            <Glass className="flex flex-col h-[calc(100dvh-150px)] md:h-[calc(100dvh-120px)]">
+            <Glass className="flex flex-col h-[calc(var(--vvh)-var(--chat-offset))] md:h-[calc(100dvh-120px)]">
               {/* header */}
               <div className="flex items-center gap-3 p-4 border-b border-border/60">
                 <button onClick={() => setActive(null)} className="md:hidden press"><ArrowLeft size={20} /></button>
@@ -316,11 +359,9 @@ export default function Messaging({ me, openConvId, onConsumed }) {
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {conv?.type === 'dm'
-                      ? (typingConvo === active
-                          ? <span className="text-primary">en train d'écrire…</span>
-                          : (isOnline(conv?.other?.id)
-                              ? <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />en ligne</span>
-                              : 'hors ligne'))
+                      ? (isOnline(conv?.other?.id)
+                          ? <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />en ligne</span>
+                          : 'hors ligne')
                       : `${conv?.memberCount} membres`}
                   </div>
                 </div>
@@ -334,12 +375,45 @@ export default function Messaging({ me, openConvId, onConsumed }) {
                 {detail?.messages?.map((m) => <Bubble key={m.id} m={m} me={me} onReact={react} isGroup={isGroup} />)}
               </div>
 
+              {/* en train d'écrire — au pied du chat, juste au-dessus du champ */}
+              <AnimatePresence>
+                {typingConvo === active && (
+                  <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
+                    className="px-4 pb-1 flex items-center gap-2 text-xs text-primary">
+                    <span className="flex gap-0.5">
+                      <motion.span className="w-1.5 h-1.5 rounded-full bg-primary" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: 0 }} />
+                      <motion.span className="w-1.5 h-1.5 rounded-full bg-primary" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: 0.2 }} />
+                      <motion.span className="w-1.5 h-1.5 rounded-full bg-primary" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, repeat: Infinity, delay: 0.4 }} />
+                    </span>
+                    {conv?.type === 'dm' ? (conv.other?.name?.split(' ')[0] + ' écrit…') : 'Quelqu’un écrit…'}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* aperçu du média sélectionné avant envoi */}
+              {pendingMedia && (
+                <div className="px-3 pt-2 flex items-center gap-2">
+                  <div className="relative">
+                    {pendingMedia.kind === 'image'
+                      ? <img src={pendingMedia.preview} alt="" className="w-16 h-16 rounded-xl object-cover border border-border" />
+                      : <div className="w-16 h-16 rounded-xl border border-border grid place-items-center bg-muted/60 text-xs text-muted-foreground text-center px-1">{pendingMedia.kind === 'video' ? '🎥 Vidéo' : '🎤 Audio'}</div>}
+                    <button onClick={() => setPendingMedia(null)} aria-label="Retirer" className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-ink text-white grid place-items-center"><X size={12} /></button>
+                  </div>
+                  <span className="text-xs text-muted-foreground truncate">{pendingMedia.name}</span>
+                </div>
+              )}
+
               {/* input */}
-              <div className="p-3 border-t border-border/60 flex items-center gap-2">
+              <div className="p-3 pb-safe border-t border-border/60 flex items-center gap-2">
+                <input ref={fileRef} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={onPickFile} />
+                <button onClick={() => fileRef.current?.click()} disabled={uploading} aria-label="Joindre une photo ou vidéo"
+                  className="press w-10 h-10 rounded-full grid place-items-center bg-muted/60 text-muted-foreground shrink-0 disabled:opacity-50">
+                  {uploading ? <RefreshCw size={18} className="animate-spin" /> : <Paperclip size={18} />}
+                </button>
                 <input value={input} onChange={(e) => { setInput(e.target.value); const t = Date.now(); if (active && t - lastTypingSent.current > 1500) { lastTypingSent.current = t; sendRealtime({ type: 'typing', conversationId: active }) } }} onKeyDown={(e) => e.key === 'Enter' && send()}
                   placeholder="Message…" className="flex-1 rounded-full border border-border bg-card/60 px-4 py-2.5 text-sm" />
-                <button onClick={send} disabled={!input.trim()} aria-label="Envoyer"
-                  className="press w-10 h-10 rounded-full grid place-items-center text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+                <button onClick={send} disabled={(!input.trim() && !pendingMedia) || sending} aria-label="Envoyer"
+                  className="press w-10 h-10 rounded-full grid place-items-center text-white disabled:opacity-40 shrink-0" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
                   <SendIcon size={18} />
                 </button>
               </div>
