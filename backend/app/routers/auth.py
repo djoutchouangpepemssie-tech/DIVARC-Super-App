@@ -1,6 +1,7 @@
 """Routes d'authentification (OTP e-mail) et de profil."""
 from __future__ import annotations
 
+import asyncio
 import random
 import secrets
 from datetime import timedelta
@@ -9,7 +10,7 @@ from fastapi import APIRouter, Depends, Request
 
 from ..db import get_db
 from ..helpers import (body_of, credit_wallet, err, hash_email, hash_phone, initials_of, now, ok,
-                       send_otp_email, sha, uid)
+                       send_otp_email, send_welcome_email, sha, uid)
 from ..notify import notify
 from ..seed import ensure_demo_users, provision_user
 from ..security import require_user
@@ -97,6 +98,11 @@ async def otp_verify(request: Request):
     if not user:
         user = await provision_user(db, email, body.get("name"), body.get("phone"))
         is_new = True
+        # E-mail de bienvenue (envoi en tâche de fond : ne retarde pas la connexion)
+        try:
+            asyncio.create_task(send_welcome_email(email, user.get("name")))
+        except Exception:  # noqa: BLE001
+            pass
         # Bonus de parrainage : inscription via un lien d'invitation
         invite_code = (body.get("invite") or "").strip()
         if invite_code:

@@ -201,6 +201,30 @@ async def send_otp_email(email: str, code: str) -> dict:
         return {"error": str(e)}
 
 
+async def send_welcome_email(email: str, name: str | None = None) -> dict:
+    """E-mail de bienvenue à la création du compte (best effort, ne bloque jamais)."""
+    if not settings.RESEND_API_KEY:
+        return {"preview": True}
+    try:
+        from .emails import welcome_email_html, welcome_email_text
+        app_url = (settings.APP_URL or "https://www.divarc.fr").rstrip("/")
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+                json={"from": settings.RESEND_FROM, "to": [email],
+                      "subject": "Bienvenue sur DIVARC 🎉",
+                      "html": welcome_email_html(name or "", app_url),
+                      "text": welcome_email_text(name or "", app_url)},
+            )
+            j = r.json()
+            if isinstance(j, dict) and j.get("error"):
+                return {"error": str(j["error"])}
+            return {"sent": True}
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)}
+
+
 # ---------------- Géolocalisation (Geoapify + repli Nominatim) ----------------
 
 async def geo_autocomplete(q: str, country: str | None = None) -> list[dict]:
