@@ -222,6 +222,14 @@ export default function Messaging({ me, openConvId, onConsumed }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openConvId])
 
+  // Conversation ouverte sur mobile = couche plein écran -> on verrouille le scroll de fond
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const on = !!active && window.matchMedia('(max-width: 767px)').matches
+    document.body.classList.toggle('overlay-open', on)
+    return () => document.body.classList.remove('overlay-open')
+  }, [active])
+
   // Sélection d'une photo/vidéo/audio -> aperçu (converti en data-URL, uploadé à l'envoi)
   const onPickFile = (e) => {
     const file = e.target.files?.[0]
@@ -348,9 +356,9 @@ export default function Messaging({ me, openConvId, onConsumed }) {
               </div>
             </Glass>
           ) : (
-            <Glass className="flex flex-col h-[calc(var(--vvh)-var(--chat-offset))] md:h-[calc(100dvh-120px)]">
+            <Glass className="flex flex-col fixed left-0 right-0 top-0 z-[55] h-[var(--vvh,100dvh)] rounded-none md:static md:z-auto md:h-[calc(100dvh-120px)] md:rounded-[var(--radius)]">
               {/* header */}
-              <div className="flex items-center gap-3 p-4 border-b border-border/60">
+              <div className="flex items-center gap-3 p-4 pt-safe md:pt-4 border-b border-border/60">
                 <button onClick={() => setActive(null)} className="md:hidden press"><ArrowLeft size={20} /></button>
                 <Avatar c={conv?.type === 'dm' ? conv.other : { initials: conv?.name?.[0] || '#', avatarColor: '#4353F0' }} size={40}
                   ring={conv?.friendship ? LEVEL_COLORS[conv.friendship.level] : null} />
