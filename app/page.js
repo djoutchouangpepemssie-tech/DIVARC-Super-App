@@ -1068,7 +1068,7 @@ function Messages({ contacts }) {
   useEffect(() => { if (contacts?.length && !active) setActive(convos[0]) }, [contacts])
   return (
     <div className="min-h-[100dvh] bg-app-gradient">
-      <div className="mx-auto max-w-5xl px-4 pt-6 pb-28 grid md:grid-cols-[320px_1fr] gap-4">
+      <div className="mx-auto max-w-5xl px-4 pt-6 pb-40 grid md:grid-cols-[320px_1fr] gap-4">
         {/* list */}
         <div className={cx(active && 'hidden md:block')}>
           <h1 className="font-display text-3xl mb-4">Messages</h1>
@@ -1141,7 +1141,7 @@ function ChatView({ c, onBack }) {
 /* ============================= shells ============================= */
 const Screen = ({ children }) => (
   <div className="min-h-[100dvh] bg-app-gradient">
-    <div className="mx-auto max-w-md px-4 pt-6 pb-28">{children}</div>
+    <div className="mx-auto max-w-md px-4 pt-6 pb-40">{children}</div>
   </div>
 )
 const SectionTitle = ({ title, action, onAction }) => (
@@ -1302,7 +1302,7 @@ function App() {
 
       {tab !== 'social' && tab !== 'ai' && !(tab === 'market' && mktImmersive) && (
         <button onClick={() => setTab('ai')} aria-label="Ouvrir DIVA, l'assistant IA"
-          className="press fixed right-4 bottom-24 z-40 w-14 h-14 rounded-full grid place-items-center text-white shadow-xl"
+          className="press fixed right-4 bottom-24 z-40 w-14 h-14 rounded-full grid place-items-center text-white shadow-xl ring-4 ring-background"
           style={{ background: 'linear-gradient(135deg,#4353F0,#9B5DE5)' }}>
           <Sparkles size={24} />
           <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-gold border-2 border-background" />
