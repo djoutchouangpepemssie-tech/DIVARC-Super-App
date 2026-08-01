@@ -65,6 +65,10 @@ async def create_conversation(request: Request, me: dict = Depends(require_user)
         other_id = next((m for m in member_ids if m != me["id"]), None)
         if not other_id:
             return err("Destinataire introuvable", 404)
+        # Blocage : impossible de démarrer un DM si l'un a bloqué l'autre
+        if await db.blocks.find_one({"$or": [{"blockerId": me["id"], "blockedId": other_id},
+                                             {"blockerId": other_id, "blockedId": me["id"]}]}):
+            return err("Vous ne pouvez pas contacter cet utilisateur", 403)
         existing = await db.conversations.find_one({"type": "dm", "memberIds": {"$all": [me["id"], other_id], "$size": 2}})
         if existing:
             return ok({"id": existing["id"], "existing": True})

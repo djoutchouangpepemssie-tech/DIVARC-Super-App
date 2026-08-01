@@ -62,6 +62,28 @@ def sha(s: Any) -> str:
     return hashlib.sha256(str(s).encode("utf-8")).hexdigest()
 
 
+# ---------------- Découverte : normalisation + hachage (RGPD) ----------------
+
+def norm_email(email: str | None) -> str:
+    return (email or "").strip().lower()
+
+
+def norm_phone(phone: str | None) -> str:
+    """Numéro national = 9 derniers chiffres, pour matcher '06 12 34 56 78' et '+33 6 12 34 56 78'."""
+    digits = re.sub(r"\D", "", phone or "")
+    return digits[-9:] if len(digits) >= 9 else ""
+
+
+def hash_email(email: str | None) -> str | None:
+    e = norm_email(email)
+    return sha(e) if e else None
+
+
+def hash_phone(phone: str | None) -> str | None:
+    n = norm_phone(phone)
+    return sha(n) if n else None
+
+
 def today_str() -> str:
     return now().isoformat()[:10]
 

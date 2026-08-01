@@ -78,6 +78,18 @@ _INDEXES: list[tuple[str, object, dict]] = [
     # Paiement QR
     ("payment_requests", "code", {"unique": True}),
     ("payment_requests", "payeeId", {}),
+
+    # Découverte & contacts
+    ("users", "emailHash", {"sparse": True}),
+    ("users", "phoneHash", {"sparse": True}),
+    ("contacts_list", [("ownerId", 1), ("contactId", 1)], {"unique": True}),
+    ("contact_requests", [("toId", 1), ("status", 1)], {}),
+    ("contact_requests", [("fromId", 1), ("toId", 1)], {}),
+    ("blocks", [("blockerId", 1), ("blockedId", 1)], {"unique": True}),
+    ("invites", "code", {"unique": True}),
+    ("invites", "inviterId", {}),
+    ("nearby_pings", "userId", {"unique": True}),
+    ("nearby_pings", "expiresAt", {"expireAfterSeconds": 0}),  # purge auto des pings expirés
 ]
 
 

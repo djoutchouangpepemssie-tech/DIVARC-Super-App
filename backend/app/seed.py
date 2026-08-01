@@ -4,7 +4,7 @@ from __future__ import annotations
 import random
 
 from .data import BOTS, CITIES, COLORS, MARKET_IMGS, STORE_APPS, VIDS
-from .helpers import initials_of, now, uid
+from .helpers import hash_email, hash_phone, initials_of, now, uid
 
 
 async def ensure_demo_users(db) -> None:
@@ -46,7 +46,7 @@ async def unique_handle(db, base: str) -> str:
     return cand
 
 
-async def provision_user(db, email: str, name: str | None = None) -> dict:
+async def provision_user(db, email: str, name: str | None = None, phone: str | None = None) -> dict:
     _id = uid()
     if name:
         display_name = name
@@ -61,6 +61,12 @@ async def provision_user(db, email: str, name: str | None = None) -> dict:
         "initials": initials_of(display_name) or "U",
         "avatarColor": random.choice(COLORS),
         "verified": False, "kyc": "non vérifié", "bio": "", "isBot": False,
+        # --- découverte (RGPD : opt-in désactivé par défaut sauf @handle) ---
+        "phone": phone or None,
+        "emailHash": hash_email(email),
+        "phoneHash": hash_phone(phone),
+        "discoverable": {"byHandle": True, "byEmail": False, "byPhone": False, "byPhoto": False},
+        "handleChanged": False,
         "createdAt": now(),
     }
     await db.users.insert_one(dict(user))
