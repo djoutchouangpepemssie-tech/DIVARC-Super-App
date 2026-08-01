@@ -28,7 +28,7 @@ def audience_of(p: Post) -> PostAudience:
 async def publish_post(uow, author_id: str, *, body: str | None = None, visibility: str = "public",
                        audience: dict | None = None, media: list[dict] | None = None,
                        post_type: str = "status", lang: str | None = None,
-                       group_id: str | None = None) -> Post:
+                       group_id: str | None = None, author_type: str = "user") -> Post:
     vis = Visibility(visibility)  # lève ValueError si invalide
     clean_aud = {}
     if audience:
@@ -36,7 +36,7 @@ async def publish_post(uow, author_id: str, *, body: str | None = None, visibili
             clean_aud["circle_ids"] = [str(c) for c in audience["circle_ids"]]
         if audience.get("excluded_ids"):
             clean_aud["excluded_ids"] = [str(u) for u in audience["excluded_ids"]]
-    post = Post(author_id=author_id, body_text=((body or "").strip() or None),
+    post = Post(author_id=author_id, author_type=author_type, body_text=((body or "").strip() or None),
                 visibility=vis.value, audience=clean_aud, post_type=post_type, lang=lang, group_id=group_id)
     for i, m in enumerate((media or [])[:10]):
         url = (m.get("url") or "").strip()
@@ -55,8 +55,9 @@ async def get_feed(uow, policy: PolicyService, viewer_id: str, *, limit: int = 2
     following = await uow.edges.following_ids(viewer_id)
     blocked = await uow.edges.blocked_ids(viewer_id)
     muted = await uow.edges.muted_ids(viewer_id)
+    pages = await uow.pages.followed_ids(viewer_id)  # posts des pages suivies
     excluded = blocked | muted
-    authors = [a for a in ([viewer_id] + following) if a == viewer_id or a not in excluded]
+    authors = [a for a in ([viewer_id] + following + pages) if a == viewer_id or a not in excluded]
     # sur-échantillonnage : le filtrage par visibilité peut retirer des candidats
     candidates = await uow.posts.list_recent_by_authors(authors, limit=limit * 3,
                                                         before_time=before_time, before_id=before_id)

@@ -17,9 +17,11 @@ from ...realtime import manager
 from ...security import require_user
 from ..adapters.persistence.uow import SqlAlchemyUnitOfWork
 from ..application import discovery as disc
+from ..application import events as ev
 from ..application import graph as gr
 from ..application import groups as grp
 from ..application import interactions as ix
+from ..application import pages as pg_uc
 from ..application import posts as uc
 from ..application import stories as st
 from ..domain.policy import PolicyService
@@ -63,12 +65,22 @@ def _author(authors, uid) -> dict:
             "avatarColor": a.get("avatarColor"), "verified": bool(a.get("verified"))}
 
 
-def _post_base(p, authors, viewer_id) -> dict:
+def _author_of(p, authors, pages) -> dict:
+    if p.author_type == "page":
+        pg = pages.get(p.author_id)
+        if pg:
+            return {"id": pg.id, "name": pg.name, "initials": (pg.name[:2] or "PG").upper(),
+                    "avatarColor": pg.avatar_color or "#4353F0", "verified": bool(pg.verified), "isPage": True}
+    return {**_author(authors, p.author_id), "isPage": False}
+
+
+def _post_base(p, authors, pages, viewer_id) -> dict:
     return {
-        "id": p.id, "author": _author(authors, p.author_id),
+        "id": p.id, "author": _author_of(p, authors, pages),
         "body": p.body_text, "visibility": p.visibility, "type": p.post_type,
         "media": [{"url": m.media_url, "kind": m.kind, "alt": m.alt_text} for m in p.media],
-        "commentCount": p.comment_count, "mine": p.author_id == viewer_id,
+        "commentCount": p.comment_count,
+        "mine": p.author_type == "user" and p.author_id == viewer_id,
         "editedAt": p.edited_at, "createdAt": p.created_at,
     }
 
@@ -81,7 +93,9 @@ async def _serialize_posts(uow, mongo, posts, viewer_id) -> list[dict]:
         sp = await uow.posts.get(sid)
         if sp and sp.deleted_at is None:
             shared_map[sid] = sp
-    author_ids = {p.author_id for p in posts} | {sp.author_id for sp in shared_map.values()}
+    allp = list(posts) + list(shared_map.values())
+    author_ids = {p.author_id for p in allp if p.author_type == "user"}
+    pages = await uow.pages.get_many([p.author_id for p in allp if p.author_type == "page"])
     authors = await _authors_map(mongo, author_ids)
     keys = [p.id for p in posts] + list(shared_map.keys())
     summaries = await uow.reactions.summaries("post", keys)
@@ -89,7 +103,7 @@ async def _serialize_posts(uow, mongo, posts, viewer_id) -> list[dict]:
     marked = await uow.bookmarks.mine_set(viewer_id, [p.id for p in posts])
 
     def one(p, nested=True) -> dict:
-        d = _post_base(p, authors, viewer_id)
+        d = _post_base(p, authors, pages, viewer_id)
         d["reactions"] = summaries.get(p.id, {"total": 0, "byType": {}})
         d["myReaction"] = mine.get(p.id)
         d["bookmarked"] = p.id in marked
@@ -775,3 +789,144 @@ async def story_viewers(story_id: str, me: dict = Depends(require_user), uow=Dep
         return err("Non autorisé", 403)
     authors = await _authors_map(get_mongo(), ids)
     return ok({"items": [_author(authors, i) for i in ids], "count": len(ids)})
+
+
+# ========== Pages (Couche 6b) ==========
+async def _page_out(uow, pg, me_id):
+    return {"id": pg.id, "name": pg.name, "category": pg.category, "bio": pg.bio,
+            "avatarColor": pg.avatar_color, "verified": pg.verified,
+            "followerCount": await uow.pages.follower_count(pg.id),
+            "myRole": await uow.pages.role_of(pg.id, me_id),
+            "following": await uow.pages.is_following(pg.id, me_id)}
+
+
+@router.post("/net/pages")
+async def create_page(request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    body = await request.json() if await request.body() else {}
+    try:
+        p = await pg_uc.create_page(uow, me["id"], body.get("name") or "", body.get("category"), body.get("bio"))
+    except ValueError as e:
+        return err(str(e))
+    await uow.commit()
+    return ok(await _page_out(uow, p, me["id"]))
+
+
+@router.get("/net/pages")
+async def list_pages(me: dict = Depends(require_user), uow=Depends(get_uow)):
+    mine = await uow.pages.managed_by(me["id"])
+    disc_p = await uow.pages.discover(limit=15)
+    mine_ids = {p.id for p in mine}
+    return ok({"mine": [await _page_out(uow, p, me["id"]) for p in mine],
+               "discover": [await _page_out(uow, p, me["id"]) for p in disc_p if p.id not in mine_ids]})
+
+
+@router.get("/net/pages/{page_id}")
+async def page_detail(page_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    p = await uow.pages.get(page_id)
+    if not p:
+        return err("Page introuvable", 404)
+    return ok(await _page_out(uow, p, me["id"]))
+
+
+@router.post("/net/pages/{page_id}/follow")
+async def follow_page(page_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    if not await uow.pages.get(page_id):
+        return err("Page introuvable", 404)
+    await uow.pages.set_follow(page_id, me["id"], True)
+    await uow.commit()
+    return ok({"following": True})
+
+
+@router.delete("/net/pages/{page_id}/follow")
+async def unfollow_page(page_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    await uow.pages.set_follow(page_id, me["id"], False)
+    await uow.commit()
+    return ok({"following": False})
+
+
+@router.post("/net/pages/{page_id}/posts")
+async def page_post(page_id: str, request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    if not await pg_uc.can_publish(uow, me["id"], page_id):
+        return err("Réservé aux administrateurs de la page", 403)
+    body = await request.json() if await request.body() else {}
+    try:
+        post = await uc.publish_post(uow, page_id, body=body.get("body"), visibility="public",
+                                     media=body.get("media"), author_type="page")
+    except ValueError as e:
+        return err(str(e))
+    await uow.commit()
+    post = await uow.posts.get(post.id)
+    return ok((await _serialize_posts(uow, get_mongo(), [post], me["id"]))[0])
+
+
+@router.get("/net/pages/{page_id}/feed")
+async def page_feed(page_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    if not await uow.pages.get(page_id):
+        return err("Page introuvable", 404)
+    posts = await pg_uc.page_feed(uow, page_id, limit=30)
+    return ok({"items": await _serialize_posts(uow, get_mongo(), posts, me["id"])})
+
+
+# ========== Événements (Couche 6b) ==========
+async def _event_out(uow, mongo, e, me_id):
+    counts = await uow.events.rsvp_counts(e.id)
+    owner = await _mongo_user(mongo, e.owner_id)
+    return {"id": e.id, "title": e.title, "description": e.description, "location": e.location,
+            "online": e.online, "startsAt": e.starts_at, "endsAt": e.ends_at, "groupId": e.group_id,
+            "owner": {"id": e.owner_id, "name": (owner or {}).get("name"),
+                      "avatarColor": (owner or {}).get("avatarColor"), "initials": (owner or {}).get("initials")},
+            "going": counts.get("going", 0), "interested": counts.get("interested", 0),
+            "myRsvp": await uow.events.my_rsvp(e.id, me_id), "mine": e.owner_id == me_id}
+
+
+@router.post("/net/events")
+async def create_event(request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    body = await request.json() if await request.body() else {}
+    try:
+        e = await ev.create_event(uow, me["id"], title=body.get("title") or "",
+                                  starts_at=body.get("startsAt") or "", description=body.get("description"),
+                                  location=body.get("location"), online=bool(body.get("online")),
+                                  group_id=body.get("groupId"))
+    except ValueError as ex:
+        return err(str(ex))
+    await uow.commit()
+    return ok(await _event_out(uow, get_mongo(), e, me["id"]))
+
+
+@router.get("/net/events")
+async def list_events(me: dict = Depends(require_user), uow=Depends(get_uow)):
+    mine, upcoming = await ev.list_events(uow, me["id"])
+    mine_ids = {e.id for e in mine}
+    return ok({"mine": [await _event_out(uow, get_mongo(), e, me["id"]) for e in mine],
+               "upcoming": [await _event_out(uow, get_mongo(), e, me["id"]) for e in upcoming if e.id not in mine_ids]})
+
+
+@router.get("/net/events/{event_id}")
+async def event_detail(event_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    e = await uow.events.get(event_id)
+    if not e:
+        return err("Événement introuvable", 404)
+    return ok(await _event_out(uow, get_mongo(), e, me["id"]))
+
+
+@router.post("/net/events/{event_id}/rsvp")
+async def event_rsvp(event_id: str, request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    body = await request.json() if await request.body() else {}
+    try:
+        await ev.rsvp(uow, me["id"], event_id, body.get("status") or "going")
+    except ValueError as e:
+        return err(str(e))
+    except LookupError:
+        return err("Événement introuvable", 404)
+    await uow.commit()
+    e = await uow.events.get(event_id)
+    return ok(await _event_out(uow, get_mongo(), e, me["id"]))
+
+
+@router.get("/net/events/{event_id}/attendees")
+async def event_attendees(event_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    going = await uow.events.attendees(event_id, "going")
+    interested = await uow.events.attendees(event_id, "interested")
+    authors = await _authors_map(get_mongo(), going + interested)
+    return ok({"going": [_author(authors, i) for i in going],
+               "interested": [_author(authors, i) for i in interested]})

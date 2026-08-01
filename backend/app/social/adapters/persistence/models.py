@@ -130,6 +130,62 @@ class GroupMember(Base):
     __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_group_member"),)
 
 
+class Page(Base):
+    """Page (créateur/marque/asso) : publie en son nom, a des abonnés."""
+    __tablename__ = "social_pages"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    name: Mapped[str] = mapped_column(String(120))
+    category: Mapped[str | None] = mapped_column(String(60))
+    owner_id: Mapped[str] = mapped_column(String(64), index=True)
+    bio: Mapped[str | None] = mapped_column(Text)
+    avatar_color: Mapped[str | None] = mapped_column(String(16))
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+
+
+class PageRole(Base):
+    __tablename__ = "social_page_roles"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    page_id: Mapped[str] = mapped_column(String(26), index=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    role: Mapped[str] = mapped_column(String(10), default="editor")  # admin | editor
+    __table_args__ = (UniqueConstraint("page_id", "user_id", name="uq_page_role"),)
+
+
+class PageFollower(Base):
+    __tablename__ = "social_page_followers"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    page_id: Mapped[str] = mapped_column(String(26), index=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+    __table_args__ = (UniqueConstraint("page_id", "user_id", name="uq_page_follower"),)
+
+
+class Event(Base):
+    __tablename__ = "social_events"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    owner_id: Mapped[str] = mapped_column(String(64), index=True)
+    group_id: Mapped[str | None] = mapped_column(String(26), index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str | None] = mapped_column(Text)
+    location: Mapped[str | None] = mapped_column(String(200))
+    online: Mapped[bool] = mapped_column(Boolean, default=False)
+    starts_at: Mapped[datetime] = mapped_column(TZDateTime, index=True)
+    ends_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    cover_url: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+
+
+class EventRsvp(Base):
+    __tablename__ = "social_event_rsvps"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    event_id: Mapped[str] = mapped_column(String(26), index=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(10))  # going | interested
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+    __table_args__ = (UniqueConstraint("event_id", "user_id", name="uq_event_rsvp"),)
+
+
 class Story(Base):
     __tablename__ = "social_stories"
     id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)

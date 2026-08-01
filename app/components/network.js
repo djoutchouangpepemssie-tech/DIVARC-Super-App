@@ -49,7 +49,7 @@ export default function NetworkModule({ me, onClose }) {
 
       {!unavailable && (
         <div className="flex gap-1 p-1 mx-4 mt-3 rounded-2xl bg-muted/60">
-          {[['feed', 'Fil'], ['friends', 'Amis'], ['groups', 'Groupes']].map(([id, label]) => (
+          {[['feed', 'Fil'], ['friends', 'Amis'], ['espaces', 'Espaces']].map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)} className={cx('press flex-1 py-2 rounded-xl text-sm font-medium', tab === id ? 'bg-card shadow text-foreground' : 'text-muted-foreground')}>{label}</button>
           ))}
         </div>
@@ -64,8 +64,8 @@ export default function NetworkModule({ me, onClose }) {
           </div>
         ) : tab === 'friends' ? (
           <FriendsPanel onOpenProfile={setProfileId} />
-        ) : tab === 'groups' ? (
-          <GroupsPanel me={me} onOpenProfile={setProfileId} />
+        ) : tab === 'espaces' ? (
+          <EspacesPanel me={me} onOpenProfile={setProfileId} />
         ) : (
           <>
             <StoriesBar me={me} />
@@ -629,6 +629,150 @@ function GroupView({ me, groupId, onBack, onOpenProfile }) {
       {feed === null ? <div className="grid place-items-center py-10"><RefreshCw className="animate-spin text-muted-foreground" /></div>
         : feed.length === 0 ? <div className="text-sm text-muted-foreground text-center py-8">{isMember ? 'Aucune publication. Sois le premier !' : 'Rejoins le groupe pour voir les publications.'}</div>
         : <div className="space-y-3">{feed.map((p) => <PostCard key={p.id} p={p} onDeleted={() => load()} onOpenProfile={onOpenProfile} />)}</div>}
+    </div>
+  )
+}
+
+/* ---------------- Espaces (sous-nav) ---------------- */
+function EspacesPanel({ me, onOpenProfile }) {
+  const [sub, setSub] = useState('groups')
+  return (
+    <div className="py-3">
+      <div className="flex gap-1 p-1 rounded-2xl bg-muted/60 mb-2">
+        {[['groups', 'Groupes'], ['pages', 'Pages'], ['events', 'Événements']].map(([id, label]) => (
+          <button key={id} onClick={() => setSub(id)} className={cx('press flex-1 py-1.5 rounded-xl text-xs font-medium', sub === id ? 'bg-card shadow text-foreground' : 'text-muted-foreground')}>{label}</button>
+        ))}
+      </div>
+      {sub === 'groups' && <GroupsPanel me={me} onOpenProfile={onOpenProfile} />}
+      {sub === 'pages' && <PagesPanel me={me} onOpenProfile={onOpenProfile} />}
+      {sub === 'events' && <EventsPanel me={me} onOpenProfile={onOpenProfile} />}
+    </div>
+  )
+}
+
+/* ---------------- Pages ---------------- */
+function PagesPanel({ me, onOpenProfile }) {
+  const [data, setData] = useState(null)
+  const [active, setActive] = useState(null)
+  const [name, setName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const load = useCallback(async () => { const r = await api('/net/pages'); if (!r.error) setData(r) }, [])
+  useEffect(() => { load() }, [load])
+  const create = async () => { if (!name.trim()) return; const r = await api('/net/pages', { method: 'POST', body: JSON.stringify({ name }) }); if (!r.error) { setName(''); setCreating(false); load() } }
+  if (active) return <PageView me={me} pageId={active} onBack={() => { setActive(null); load() }} onOpenProfile={onOpenProfile} />
+  if (!data) return <div className="grid place-items-center py-12"><RefreshCw className="animate-spin text-muted-foreground" /></div>
+  return (
+    <div className="space-y-4">
+      <button onClick={() => setCreating((v) => !v)} className="press w-full py-3 rounded-2xl text-white font-semibold text-sm" style={{ background: 'linear-gradient(135deg,#9B5DE5,#4353F0)' }}>+ Créer une page</button>
+      {creating && (
+        <div className="rounded-2xl border border-border bg-card/60 p-4 space-y-2">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom de la page" className="w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
+          <button onClick={create} className="press w-full py-2.5 rounded-xl bg-primary text-white text-sm font-semibold">Créer</button>
+        </div>
+      )}
+      <PageList title="Mes pages" pages={data.mine} empty="Tu ne gères aucune page." onOpen={setActive} />
+      <PageList title="À découvrir" pages={data.discover} empty="Aucune page à découvrir." onOpen={setActive} />
+    </div>
+  )
+}
+
+function PageList({ title, pages, empty, onOpen }) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-muted-foreground mb-2">{title}</div>
+      {!pages?.length ? <div className="text-sm text-muted-foreground text-center py-3">{empty}</div> : (
+        <div className="space-y-2">{pages.map((p) => (
+          <button key={p.id} onClick={() => onOpen(p.id)} className="press w-full flex items-center gap-3 p-3 rounded-2xl border border-border bg-card/60 text-left">
+            <div className="w-11 h-11 rounded-full grid place-items-center text-white font-semibold" style={{ background: p.avatarColor || '#9B5DE5' }}>{(p.name || 'P').slice(0, 2).toUpperCase()}</div>
+            <div className="flex-1 min-w-0"><div className="font-medium text-sm truncate flex items-center gap-1">{p.name}{p.verified && <ShieldCheck size={12} className="text-primary" />}</div><div className="text-[11px] text-muted-foreground">{p.followerCount} abonné{p.followerCount > 1 ? 's' : ''}{p.category ? ` · ${p.category}` : ''}</div></div>
+            {p.following && <Check size={16} className="text-primary" />}
+          </button>
+        ))}</div>
+      )}
+    </div>
+  )
+}
+
+function PageView({ me, pageId, onBack, onOpenProfile }) {
+  const [p, setP] = useState(null)
+  const [feed, setFeed] = useState(null)
+  const [body, setBody] = useState('')
+  const load = useCallback(async () => {
+    const d = await api(`/net/pages/${pageId}`); if (!d.error) setP(d)
+    const f = await api(`/net/pages/${pageId}/feed`); setFeed(f.error ? [] : f.items)
+  }, [pageId])
+  useEffect(() => { load() }, [load])
+  const toggleFollow = async () => { await api(`/net/pages/${pageId}/follow`, { method: p?.following ? 'DELETE' : 'POST' }); load() }
+  const publish = async () => { if (!body.trim()) return; const r = await api(`/net/pages/${pageId}/posts`, { method: 'POST', body: JSON.stringify({ body }) }); if (!r.error) { setBody(''); load() } }
+  if (!p) return <div className="grid place-items-center py-12"><RefreshCw className="animate-spin text-muted-foreground" /></div>
+  const canPublish = p.myRole === 'admin' || p.myRole === 'editor'
+  return (
+    <div>
+      <button onClick={onBack} className="press text-sm text-muted-foreground mb-3">‹ Retour</button>
+      <div className="rounded-2xl p-5 text-white mb-4" style={{ background: 'linear-gradient(135deg,#9B5DE5,#4353F0)' }}>
+        <div className="font-display text-2xl flex items-center gap-1">{p.name}{p.verified && <ShieldCheck size={16} />}</div>
+        <div className="text-sm text-white/80">{p.followerCount} abonné{p.followerCount > 1 ? 's' : ''}{p.category ? ` · ${p.category}` : ''}</div>
+        {p.bio && <p className="text-sm text-white/90 mt-2">{p.bio}</p>}
+        {!canPublish && <button onClick={toggleFollow} className="press mt-3 px-4 py-1.5 rounded-full bg-white text-primary text-sm font-semibold">{p.following ? 'Abonné ✓' : "S'abonner"}</button>}
+      </div>
+      {canPublish && (
+        <div className="rounded-2xl border border-border bg-card/60 p-3 mb-4 flex items-center gap-2">
+          <input value={body} onChange={(e) => setBody(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && publish()} placeholder="Publier au nom de la page…" className="flex-1 rounded-full border border-border bg-background/60 px-3 py-2 text-sm outline-none" />
+          <button onClick={publish} disabled={!body.trim()} className="press w-9 h-9 rounded-full grid place-items-center text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#9B5DE5,#4353F0)' }}><Send size={16} /></button>
+        </div>
+      )}
+      {feed === null ? <div className="grid place-items-center py-8"><RefreshCw className="animate-spin text-muted-foreground" /></div>
+        : feed.length === 0 ? <div className="text-sm text-muted-foreground text-center py-6">Aucune publication.</div>
+        : <div className="space-y-3">{feed.map((x) => <PostCard key={x.id} p={x} onDeleted={() => load()} onOpenProfile={onOpenProfile} />)}</div>}
+    </div>
+  )
+}
+
+/* ---------------- Événements ---------------- */
+function EventsPanel({ me }) {
+  const [data, setData] = useState(null)
+  const [creating, setCreating] = useState(false)
+  const [form, setForm] = useState({ title: '', startsAt: '', location: '' })
+  const load = useCallback(async () => { const r = await api('/net/events'); if (!r.error) setData(r) }, [])
+  useEffect(() => { load() }, [load])
+  const create = async () => {
+    if (!form.title.trim() || !form.startsAt) return
+    const r = await api('/net/events', { method: 'POST', body: JSON.stringify({ ...form, startsAt: new Date(form.startsAt).toISOString() }) })
+    if (!r.error) { setForm({ title: '', startsAt: '', location: '' }); setCreating(false); load() }
+  }
+  const rsvp = async (id, status) => { await api(`/net/events/${id}/rsvp`, { method: 'POST', body: JSON.stringify({ status }) }); load() }
+  if (!data) return <div className="grid place-items-center py-12"><RefreshCw className="animate-spin text-muted-foreground" /></div>
+  const card = (e) => (
+    <div key={e.id} className="rounded-2xl border border-border bg-card/60 p-4">
+      <div className="font-medium text-sm">{e.title}</div>
+      <div className="text-[11px] text-muted-foreground mb-1">{new Date(e.startsAt).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}{e.location ? ` · ${e.location}` : ''}{e.online ? ' · en ligne' : ''}</div>
+      <div className="text-[11px] text-muted-foreground mb-2">{e.going} participant{e.going > 1 ? 's' : ''} · {e.interested} intéressé{e.interested > 1 ? 's' : ''}</div>
+      <div className="flex gap-2">
+        {[['going', 'Je participe'], ['interested', 'Intéressé']].map(([s, l]) => (
+          <button key={s} onClick={() => rsvp(e.id, e.myRsvp === s ? 'none' : s)} className={cx('press flex-1 py-1.5 rounded-full text-xs font-medium border', e.myRsvp === s ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border')}>{l}</button>
+        ))}
+      </div>
+    </div>
+  )
+  return (
+    <div className="space-y-4">
+      <button onClick={() => setCreating((v) => !v)} className="press w-full py-3 rounded-2xl text-white font-semibold text-sm" style={{ background: 'linear-gradient(135deg,#3FB68B,#4353F0)' }}>+ Créer un événement</button>
+      {creating && (
+        <div className="rounded-2xl border border-border bg-card/60 p-4 space-y-2">
+          <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Titre" className="w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
+          <input type="datetime-local" value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} className="w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
+          <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Lieu (optionnel)" className="w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
+          <button onClick={create} className="press w-full py-2.5 rounded-xl bg-primary text-white text-sm font-semibold">Créer</button>
+        </div>
+      )}
+      <div>
+        <div className="text-xs font-medium text-muted-foreground mb-2">Mes événements</div>
+        {!data.mine?.length ? <div className="text-sm text-muted-foreground text-center py-3">Aucun événement.</div> : <div className="space-y-3">{data.mine.map(card)}</div>}
+      </div>
+      <div>
+        <div className="text-xs font-medium text-muted-foreground mb-2">À venir</div>
+        {!data.upcoming?.length ? <div className="text-sm text-muted-foreground text-center py-3">Rien à l'horizon.</div> : <div className="space-y-3">{data.upcoming.map(card)}</div>}
+      </div>
     </div>
   )
 }

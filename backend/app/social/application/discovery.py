@@ -16,8 +16,9 @@ async def get_ranked_feed(uow, policy: PolicyService, viewer_id: str, *, limit: 
     blocked = await uow.edges.blocked_ids(viewer_id)
     muted = await uow.edges.muted_ids(viewer_id)
     hidden = await uow.hidden.hidden_ids(viewer_id)
+    pages = await uow.pages.followed_ids(viewer_id)
     excluded = blocked | muted
-    authors = [a for a in ([viewer_id] + following) if a == viewer_id or a not in excluded]
+    authors = [a for a in ([viewer_id] + following + pages) if a == viewer_id or a not in excluded]
     candidates = await uow.posts.list_recent_by_authors(authors, limit=limit * 4)
     now_ts = _now()
     rel_cache: dict = {}

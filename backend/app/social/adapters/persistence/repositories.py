@@ -7,8 +7,9 @@ from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import (Bookmark, Circle, CircleMember, Comment, Edge, Group, GroupMember, HiddenPost,
-                     Post, Profile, Reaction, Story, StoryView)
+from .models import (Bookmark, Circle, CircleMember, Comment, Edge, Event, EventRsvp, Group,
+                     GroupMember, HiddenPost, Page, PageFollower, PageRole, Post, Profile,
+                     Reaction, Story, StoryView)
 
 
 class SqlAlchemyPostRepository:
@@ -240,6 +241,117 @@ class SqlAlchemyStoryRepository:
     async def viewer_ids(self, story_id: str) -> list[str]:
         return list((await self.session.scalars(
             select(StoryView.user_id).where(StoryView.story_id == story_id))).all())
+
+
+class SqlAlchemyPageRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, page: Page) -> None:
+        self.session.add(page)
+
+    async def get(self, page_id: str) -> Page | None:
+        return await self.session.get(Page, page_id)
+
+    async def get_many(self, ids: list[str]) -> dict[str, Page]:
+        if not ids:
+            return {}
+        rows = (await self.session.scalars(select(Page).where(Page.id.in_(ids)))).all()
+        return {p.id: p for p in rows}
+
+    async def set_role(self, page_id: str, user_id: str, role: str) -> None:
+        r = await self.session.scalar(select(PageRole).where(
+            PageRole.page_id == page_id, PageRole.user_id == user_id))
+        if r:
+            r.role = role
+        else:
+            self.session.add(PageRole(page_id=page_id, user_id=user_id, role=role))
+
+    async def role_of(self, page_id: str, user_id: str) -> str | None:
+        return await self.session.scalar(select(PageRole.role).where(
+            PageRole.page_id == page_id, PageRole.user_id == user_id))
+
+    async def set_follow(self, page_id: str, user_id: str, on: bool) -> bool:
+        existing = await self.session.scalar(select(PageFollower).where(
+            PageFollower.page_id == page_id, PageFollower.user_id == user_id))
+        if on and not existing:
+            self.session.add(PageFollower(page_id=page_id, user_id=user_id))
+        elif not on and existing:
+            await self.session.delete(existing)
+        return on
+
+    async def is_following(self, page_id: str, user_id: str) -> bool:
+        return (await self.session.scalar(select(PageFollower.id).where(
+            PageFollower.page_id == page_id, PageFollower.user_id == user_id))) is not None
+
+    async def follower_count(self, page_id: str) -> int:
+        return await self.session.scalar(select(func.count()).select_from(PageFollower).where(
+            PageFollower.page_id == page_id)) or 0
+
+    async def followed_ids(self, user_id: str) -> list[str]:
+        return list((await self.session.scalars(
+            select(PageFollower.page_id).where(PageFollower.user_id == user_id))).all())
+
+    async def managed_by(self, user_id: str) -> list[Page]:
+        stmt = (select(Page).join(PageRole, PageRole.page_id == Page.id)
+                .where(PageRole.user_id == user_id).order_by(Page.created_at.desc()))
+        return list((await self.session.scalars(stmt)).all())
+
+    async def discover(self, limit: int = 15) -> list[Page]:
+        return list((await self.session.scalars(
+            select(Page).order_by(Page.created_at.desc()).limit(limit))).all())
+
+
+class SqlAlchemyEventRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, event: Event) -> None:
+        self.session.add(event)
+
+    async def get(self, event_id: str) -> Event | None:
+        return await self.session.get(Event, event_id)
+
+    async def upcoming(self, nowdt, limit: int = 30) -> list[Event]:
+        stmt = (select(Event).where(Event.starts_at >= nowdt)
+                .order_by(Event.starts_at.asc()).limit(limit))
+        return list((await self.session.scalars(stmt)).all())
+
+    async def by_group(self, group_id: str, limit: int = 30) -> list[Event]:
+        return list((await self.session.scalars(select(Event).where(
+            Event.group_id == group_id).order_by(Event.starts_at.asc()).limit(limit))).all())
+
+    async def set_rsvp(self, event_id: str, user_id: str, status: str | None) -> None:
+        r = await self.session.scalar(select(EventRsvp).where(
+            EventRsvp.event_id == event_id, EventRsvp.user_id == user_id))
+        if status is None:
+            if r:
+                await self.session.delete(r)
+        elif r:
+            r.status = status
+        else:
+            self.session.add(EventRsvp(event_id=event_id, user_id=user_id, status=status))
+
+    async def my_rsvp(self, event_id: str, user_id: str) -> str | None:
+        return await self.session.scalar(select(EventRsvp.status).where(
+            EventRsvp.event_id == event_id, EventRsvp.user_id == user_id))
+
+    async def rsvp_counts(self, event_id: str) -> dict:
+        stmt = (select(EventRsvp.status, func.count()).where(EventRsvp.event_id == event_id)
+                .group_by(EventRsvp.status))
+        return {s: n for s, n in (await self.session.execute(stmt)).all()}
+
+    async def attendees(self, event_id: str, status: str) -> list[str]:
+        return list((await self.session.scalars(select(EventRsvp.user_id).where(
+            EventRsvp.event_id == event_id, EventRsvp.status == status))).all())
+
+    async def my_events(self, user_id: str, nowdt) -> list[Event]:
+        # créés par moi OU auxquels j'ai répondu, à venir
+        sub = select(EventRsvp.event_id).where(EventRsvp.user_id == user_id)
+        stmt = (select(Event).where(Event.starts_at >= nowdt,
+                                    or_(Event.owner_id == user_id, Event.id.in_(sub)))
+                .order_by(Event.starts_at.asc()))
+        return list((await self.session.scalars(stmt)).all())
 
 
 class SqlAlchemyProfileRepository:
