@@ -210,7 +210,10 @@ function ListingCard({ l, onOpen, onFav }) {
           {l.images?.[0] ? <img src={imgSrc(l.images[0])} alt={l.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" /> : <div className="w-full h-full grid place-items-center text-3xl">📦</div>}
           <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent pointer-events-none" />
           <button onClick={(e) => { e.stopPropagation(); onFav() }} aria-label={l.favorited ? 'Retirer des favoris' : 'Ajouter aux favoris'} aria-pressed={!!l.favorited} className="press absolute top-2 right-2 w-8 h-8 rounded-full grid place-items-center bg-white/85 backdrop-blur shadow-md"><Heart size={16} className={l.favorited ? 'text-destructive' : 'text-ink'} fill={l.favorited ? '#EF476F' : 'none'} /></button>
-          {l.transactionType === 'rent' && <span className="absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full text-white glow-gold" style={{ background: 'linear-gradient(135deg,#F0CE7E,#E2AA2B,#B98514)' }}>LOCATION</span>}
+          <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
+            {l.boosted && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white flex items-center gap-1 shadow" style={{ background: 'linear-gradient(135deg,#7a5b12,#E2AA2B)' }}><Zap size={9} /> Boosté</span>}
+            {l.transactionType === 'rent' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white glow-gold" style={{ background: 'linear-gradient(135deg,#F0CE7E,#E2AA2B,#B98514)' }}>LOCATION</span>}
+          </div>
           {l.distanceKm != null && <span className="absolute bottom-2 left-2 text-[10px] font-medium px-2 py-0.5 rounded-full bg-ink/70 backdrop-blur text-white flex items-center gap-1"><MapPin size={9} /> {l.distanceKm} km</span>}
         </div>
         <div className="p-2.5">

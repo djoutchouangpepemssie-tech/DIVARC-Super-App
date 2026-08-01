@@ -33,6 +33,40 @@ def test_boost_annonce_debite_des_eclats_et_remonte(client, auth):
     assert items[0]["id"] == lid
 
 
+def test_boost_propulse_vraiment_en_tete_marketplace(client, auth):
+    """Preuve : une annonce boostée passe DEVANT une annonce plus récente (au-delà de la récence)."""
+    H, _ = auth("promo@divarc.fr")
+    base = {"description": "x", "priceCents": 3000, "category": "maison",
+            "subcategory": "Ameublement", "transactionType": "sale", "condition": "Bon état", "city": "Paris"}
+    a = client.post("/api/market/listings", headers=H, json={**base, "title": "Annonce A"}).json()["id"]
+    b = client.post("/api/market/listings", headers=H, json={**base, "title": "Annonce B (plus récente)"}).json()["id"]
+    ids = [x["id"] for x in client.get("/api/market/listings", headers=H).json()]
+    assert ids.index(b) < ids.index(a)  # par défaut, la plus récente (B) est devant A
+    # On booste A -> elle doit passer tout en tête, marquée boosted
+    assert client.post(f"/api/market/listings/{a}/boost", headers=H).json()["ok"]
+    items = client.get("/api/market/listings", headers=H).json()
+    assert items[0]["id"] == a and items[0]["boosted"] is True
+    assert ids_pos(items, a) < ids_pos(items, b)  # A désormais devant B
+
+
+def ids_pos(items, _id):
+    return next(i for i, x in enumerate(items) if x["id"] == _id)
+
+
+def test_boost_post_social_remonte_en_tete(client, auth):
+    H, u = auth("creator@divarc.fr")
+    pa = client.post("/api/social/posts", headers=H, json={"caption": "Post A", "mediaUrl": "x", "mediaType": "video"}).json()["id"]
+    pb = client.post("/api/social/posts", headers=H, json={"caption": "Post B", "mediaUrl": "x", "mediaType": "video"}).json()["id"]
+    # chrono : B (plus récent) devant A
+    feed = [p for p in client.get("/api/social/feed?mode=chrono", headers=H).json() if not p.get("sponsored")]
+    assert ids_pos(feed, pb) < ids_pos(feed, pa)
+    # boost A -> A remonte devant B et est marqué boosted
+    assert client.post(f"/api/social/posts/{pa}/boost", headers=H).json()["ok"]
+    feed2 = [p for p in client.get("/api/social/feed?mode=chrono", headers=H).json() if not p.get("sponsored")]
+    assert ids_pos(feed2, pa) < ids_pos(feed2, pb)
+    assert next(p for p in feed2 if p["id"] == pa)["boosted"] is True
+
+
 def test_boost_annonce_reserve_au_vendeur(client, auth):
     Ha, _ = auth("owner@divarc.fr")
     Hb, _ = auth("intrus@divarc.fr")

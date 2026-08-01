@@ -223,6 +223,7 @@ function PostCard({ p, me, muted, setMuted, onLike, onSave, onFollow, onComments
           <span className="font-semibold">{p.author?.handle}</span>
           {p.author?.verified && <BadgeCheck size={15} className="text-sky-300" />}
           {p.sponsored && <span className="text-[10px] uppercase tracking-wide bg-white/25 px-2 py-0.5 rounded-full">Sponsorisé</span>}
+          {p.boosted && !p.sponsored && <span className="text-[10px] uppercase tracking-wide bg-gold/90 text-ink px-2 py-0.5 rounded-full inline-flex items-center gap-0.5"><Zap size={10} /> Boosté</span>}
         </div>
         <p className="text-sm mb-2 leading-snug drop-shadow">{p.caption}</p>
         <div className="flex flex-wrap gap-1.5 mb-2">

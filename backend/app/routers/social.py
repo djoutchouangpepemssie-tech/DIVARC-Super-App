@@ -78,6 +78,7 @@ async def social_feed(request: Request, me: dict = Depends(require_user)):
             "author": ({"id": a["id"], "name": a["name"], "handle": a["handle"], "initials": a["initials"],
                         "avatarColor": a["avatarColor"], "verified": a["verified"]} if a else None),
             "liked": p["id"] in liked, "saved": p["id"] in saved, "following": p["authorId"] in follows,
+            "boosted": bool(p.get("boostedUntil") and p["boostedUntil"] > _t),
             "reason": "Ordre chronologique" if mode == "chrono" else p["reason"], "createdAt": p["createdAt"],
         })
     sponsored = [] if mode == "chrono" else await get_sponsored(db)

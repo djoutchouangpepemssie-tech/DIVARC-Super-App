@@ -134,6 +134,7 @@ async def list_listings(request: Request, me: dict = Depends(require_user)):
     for i in items:
         seller = await db.users.find_one({"id": i["sellerId"]}, {"_id": 0, "email": 0})
         out.append({**i, "favorited": i["id"] in favs,
+                    "boosted": bool(i.get("boostedUntil") and i["boostedUntil"] > _t),
                     "seller": ({"id": seller["id"], "name": seller["name"], "handle": seller["handle"],
                                 "initials": seller["initials"], "avatarColor": seller["avatarColor"],
                                 "verified": seller["verified"]} if seller else None)})
@@ -183,7 +184,8 @@ async def get_listing(lid: str, me: dict = Depends(require_user)):
     seller = await db.users.find_one({"id": l["sellerId"]}, {"_id": 0, "email": 0})
     favs = {f["listingId"] for f in await db.market_favorites.find({"userId": me["id"]}).to_list(length=None)}
     similar = await db.listings.find({"category": l["category"], "status": "active", "id": {"$ne": l["id"]}}, {"_id": 0}).limit(4).to_list(length=4)
-    return ok({**l, "favorited": l["id"] in favs, "seller": seller, "isMine": l["sellerId"] == me["id"], "similar": similar})
+    return ok({**l, "favorited": l["id"] in favs, "seller": seller, "isMine": l["sellerId"] == me["id"],
+               "boosted": bool(l.get("boostedUntil") and l["boostedUntil"] > now()), "similar": similar})
 
 
 @router.delete("/market/listings/{lid}")
