@@ -256,7 +256,7 @@ function TabBar({ active, onChange }) {
 }
 
 /* ============================= HUB ============================= */
-function Hub({ user, wallet, txs, mask, setMask, onAction, onTab }) {
+function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
   const hour = new Date().getHours()
   const greet = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bel après-midi' : 'Bonsoir'
   const actions = [
@@ -276,7 +276,7 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab }) {
               <div className="font-semibold leading-tight">{user?.name?.split(' ')[0]}</div>
             </div>
           </div>
-          <NotificationBell />
+          <NotificationBell onOpen={onNotif} />
         </div>
 
         {/* balance hero — carte premium */}
@@ -1349,6 +1349,25 @@ function App() {
   const [syncing, setSyncing] = useState(false)
   const [pending, setPending] = useState(0)
   const [pendingPay, setPendingPay] = useState(null)
+  const [pendingConv, setPendingConv] = useState(null)
+
+  // Clic sur une notification -> on route vers le bon écran (et la bonne conversation)
+  const handleNotif = (n) => {
+    const cid = n?.meta?.conversationId
+    switch (n?.kind) {
+      case 'message':
+        if (cid) setPendingConv(cid)
+        goTab('messages'); break
+      case 'payment':
+        goTab('wallet'); break
+      case 'sale': case 'offer':
+        goTab('market'); break
+      case 'social':
+        goTab('social'); break
+      default:
+        goTab('messages')
+    }
+  }
 
   // QR scanné par l'appareil photo -> URL /?pay=CODE : on ouvre l'écran de paiement pré-rempli
   useEffect(() => {
@@ -1468,9 +1487,9 @@ function App() {
       </AnimatePresence>
       <AnimatePresence initial={false}>
         <motion.div key={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
-          {tab === 'hub' && <Hub user={user} wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} onTab={goTab} />}
+          {tab === 'hub' && <Hub user={user} wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} onTab={goTab} onNotif={handleNotif} />}
           {tab === 'wallet' && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
-          {tab === 'messages' && <Messaging me={user} />}
+          {tab === 'messages' && <Messaging me={user} openConvId={pendingConv} onConsumed={() => setPendingConv(null)} />}
           {tab === 'qr' && <QRScreen user={user} onDone={() => load()} initialCode={pendingPay} onConsumed={() => setPendingPay(null)} />}
           {tab === 'discover' && <Discover onTab={goTab} />}
           {tab === 'profile' && <Profile user={user} setUser={setUser} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}

@@ -123,7 +123,7 @@ function Bubble({ m, me, onReact, isGroup }) {
 }
 
 /* ============================= MAIN ============================= */
-export default function Messaging({ me }) {
+export default function Messaging({ me, openConvId, onConsumed }) {
   const [tab, setTab] = useState('dm') // dm | communities
   const [convos, setConvos] = useState([])
   const [communities, setCommunities] = useState([])
@@ -192,6 +192,14 @@ export default function Messaging({ me }) {
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [detail?.messages?.length])
 
   const openConv = (id) => { prevLevel.current = null; setActive(id) }
+
+  // Ouverture d'une conversation demandée de l'extérieur (clic sur une notification)
+  useEffect(() => {
+    if (!openConvId) return
+    setTab('dm'); openConv(openConvId); loadConvos()
+    onConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openConvId])
 
   const send = async () => {
     const text = input.trim(); if (!text || sending) return

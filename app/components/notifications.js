@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bell, X } from 'lucide-react'
+import { Bell, X, ChevronRight } from 'lucide-react'
 import { api } from '@/lib/api'
 import { onRealtime } from '@/lib/realtime'
 
@@ -17,7 +17,7 @@ function timeAgo(d) {
   return Math.floor(s / 86400) + ' j'
 }
 
-export default function NotificationBell() {
+export default function NotificationBell({ onOpen }) {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState([])
   const [unread, setUnread] = useState(0)
@@ -83,15 +83,16 @@ export default function NotificationBell() {
               ) : (
                 <div className="space-y-2">
                   {items.map((n) => (
-                    <div key={n.id} className={cx('flex gap-3 p-3 rounded-2xl border border-border', !n.read && 'bg-primary/5 border-primary/20')}>
+                    <button key={n.id} onClick={() => { setOpen(false); onOpen?.(n) }}
+                      className={cx('press w-full text-left flex gap-3 p-3 rounded-2xl border border-border hover:bg-muted/40 transition-colors', !n.read && 'bg-primary/5 border-primary/20')}>
                       <div className="text-xl leading-none pt-0.5">{ICONS[n.kind] || '🔔'}</div>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium">{n.title}</div>
                         {n.body && <div className="text-xs text-muted-foreground truncate">{n.body}</div>}
                         <div className="text-[10px] text-muted-foreground mt-0.5">{timeAgo(n.createdAt)}</div>
                       </div>
-                      {!n.read && <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1.5" />}
-                    </div>
+                      <ChevronRight size={16} className="text-muted-foreground shrink-0 self-center" />
+                    </button>
                   ))}
                 </div>
               )}
