@@ -107,6 +107,24 @@ class Bookmark(Base):
     __table_args__ = (UniqueConstraint("user_id", "post_id", name="uq_bookmark_once"),)
 
 
+class Circle(Base):
+    """Liste/cercle d'amis d'un utilisateur (audience CIRCLES d'un post)."""
+    __tablename__ = "social_circles"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    owner_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+
+
+class CircleMember(Base):
+    __tablename__ = "social_circle_members"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    circle_id: Mapped[str] = mapped_column(String(26), index=True)
+    owner_id: Mapped[str] = mapped_column(String(64), index=True)  # dénormalisé pour requête rapide
+    member_id: Mapped[str] = mapped_column(String(64), index=True)
+    __table_args__ = (UniqueConstraint("circle_id", "member_id", name="uq_circle_member"),)
+
+
 class Edge(Base):
     """Graphe social : amis (symétrique via 2 arêtes) ET suivi (asymétrique)."""
     __tablename__ = "social_edges"

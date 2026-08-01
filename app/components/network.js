@@ -4,7 +4,7 @@
 // Appelle le nouveau contexte social /api/net/* (PostgreSQL). Réactions/commentaires = Couche 3.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight } from 'lucide-react'
+import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight, UserPlus, UserCheck, Check, Clock, UserX } from 'lucide-react'
 import { api } from '@/lib/api'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -20,6 +20,8 @@ function timeAgo(d) {
 const fileToDataUrl = (f) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f) })
 
 export default function NetworkModule({ me, onClose }) {
+  const [tab, setTab] = useState('feed') // feed | friends
+  const [profileId, setProfileId] = useState(null)
   const [items, setItems] = useState(null)
   const [cursor, setCursor] = useState(null)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -44,6 +46,14 @@ export default function NetworkModule({ me, onClose }) {
         <h1 className="font-display text-2xl">Réseau <span className="text-xs align-top text-muted-foreground">bêta</span></h1>
       </div>
 
+      {!unavailable && (
+        <div className="flex gap-1 p-1 mx-4 mt-3 rounded-2xl bg-muted/60">
+          {[['feed', 'Fil'], ['friends', 'Amis']].map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)} className={cx('press flex-1 py-2 rounded-xl text-sm font-medium', tab === id ? 'bg-card shadow text-foreground' : 'text-muted-foreground')}>{label}</button>
+          ))}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-safe">
         {unavailable ? (
           <div className="text-center py-20 text-muted-foreground">
@@ -51,6 +61,8 @@ export default function NetworkModule({ me, onClose }) {
             <div className="font-medium text-foreground">Réseau en cours d'activation</div>
             <div className="text-sm mt-1">La base PostgreSQL doit être branchée (Railway). Revenez bientôt.</div>
           </div>
+        ) : tab === 'friends' ? (
+          <FriendsPanel onOpenProfile={setProfileId} />
         ) : (
           <>
             <Composer me={me} onPublished={onPublished} />
@@ -60,7 +72,7 @@ export default function NetworkModule({ me, onClose }) {
               <div className="text-center py-14 text-sm text-muted-foreground">Ton fil est vide. Publie ou suis des gens pour le remplir.</div>
             ) : (
               <div className="space-y-3 pb-4">
-                {items.map((p) => <PostCard key={p.id} p={p} onDeleted={onDeleted} />)}
+                {items.map((p) => <PostCard key={p.id} p={p} onDeleted={onDeleted} onOpenProfile={setProfileId} />)}
                 {cursor && (
                   <button onClick={async () => { setLoadingMore(true); await load(cursor); setLoadingMore(false) }}
                     className="press w-full py-3 rounded-2xl border border-border bg-card/60 text-sm font-medium">
@@ -72,6 +84,111 @@ export default function NetworkModule({ me, onClose }) {
           </>
         )}
       </div>
+
+      <AnimatePresence>
+        {profileId && <ProfileSheet userId={profileId} meId={me?.id} onClose={() => setProfileId(null)} />}
+      </AnimatePresence>
+    </motion.div>
+  )
+}
+
+function FriendsPanel({ onOpenProfile }) {
+  const [reqs, setReqs] = useState(null)
+  const [friends, setFriends] = useState(null)
+  const load = useCallback(async () => {
+    const r = await api('/net/friends/requests'); if (!r.error) setReqs(r)
+    const f = await api('/net/friends'); if (!f.error) setFriends(f.items)
+  }, [])
+  useEffect(() => { load() }, [load])
+  const respond = async (id, action) => { await api(`/net/friends/${action}/${id}`, { method: 'POST' }); load() }
+  if (!reqs) return <div className="grid place-items-center py-16"><RefreshCw className="animate-spin text-muted-foreground" /></div>
+  return (
+    <div className="py-4 space-y-5">
+      {reqs.incoming?.length > 0 && (
+        <div>
+          <div className="text-xs font-medium text-muted-foreground mb-2">Demandes reçues ({reqs.incoming.length})</div>
+          <div className="space-y-2">
+            {reqs.incoming.map((u) => (
+              <div key={u.id} className="flex items-center gap-3 p-3 rounded-2xl border border-primary/20 bg-primary/5">
+                <button onClick={() => onOpenProfile(u.id)} className="w-10 h-10 rounded-full grid place-items-center text-white font-semibold shrink-0" style={{ background: u.avatarColor || '#4353F0' }}>{u.initials}</button>
+                <div className="flex-1 min-w-0 font-medium text-sm truncate">{u.name}</div>
+                <button onClick={() => respond(u.id, 'accept')} className="press px-3 py-1.5 rounded-full bg-primary text-white text-xs font-medium">Accepter</button>
+                <button onClick={() => respond(u.id, 'decline')} className="press w-8 h-8 rounded-full grid place-items-center bg-muted"><X size={15} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div>
+        <div className="text-xs font-medium text-muted-foreground mb-2">Mes amis ({friends?.length || 0})</div>
+        {!friends || friends.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-8">Aucun ami pour l'instant. Ajoute des gens depuis leur profil.</div>
+        ) : (
+          <div className="space-y-2">
+            {friends.map((u) => (
+              <button key={u.id} onClick={() => onOpenProfile(u.id)} className="press w-full flex items-center gap-3 p-3 rounded-2xl border border-border bg-card/60 text-left">
+                <div className="w-10 h-10 rounded-full grid place-items-center text-white font-semibold" style={{ background: u.avatarColor || '#4353F0' }}>{u.initials}</div>
+                <div className="flex-1 font-medium text-sm">{u.name}</div>
+                {u.relationship?.following && <UserCheck size={16} className="text-muted-foreground" />}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ProfileSheet({ userId, meId, onClose }) {
+  const [p, setP] = useState(null)
+  const load = useCallback(async () => { const r = await api(`/net/profile/${userId}`); if (!r.error) setP(r) }, [userId])
+  useEffect(() => { load() }, [load])
+  const act = async (method, path) => { await api(path, { method }); load() }
+  const rel = p?.relationship || {}
+  const isMe = userId === meId
+  return (
+    <motion.div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} />
+      <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }} className="relative w-full sm:max-w-md">
+        <div className="glass glass-strong p-5 pb-safe rounded-t-[var(--radius)] sm:rounded-[var(--radius)]">
+          {!p ? <div className="grid place-items-center py-10"><RefreshCw className="animate-spin text-muted-foreground" /></div> : (
+            <>
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-16 h-16 rounded-full grid place-items-center text-white text-xl font-semibold" style={{ background: p.avatarColor || '#4353F0' }}>{p.initials}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-display text-xl flex items-center gap-1">{p.name} {p.verified && <ShieldCheck size={16} className="text-primary" />}</div>
+                  {p.handle && <div className="text-sm text-muted-foreground">@{p.handle}</div>}
+                </div>
+                <button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60"><X size={18} /></button>
+              </div>
+              {p.bio && <p className="text-sm text-muted-foreground mb-4">{p.bio}</p>}
+              {!isMe && (
+                <div className="grid grid-cols-2 gap-2">
+                  {rel.friend ? (
+                    <button onClick={() => act('DELETE', `/net/friends/${userId}`)} className="press py-3 rounded-2xl border border-border bg-card/60 text-sm font-medium flex items-center justify-center gap-1.5"><UserCheck size={16} /> Amis</button>
+                  ) : rel.requestReceived ? (
+                    <button onClick={() => act('POST', `/net/friends/accept/${userId}`)} className="press py-3 rounded-2xl text-white text-sm font-semibold flex items-center justify-center gap-1.5" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><Check size={16} /> Accepter</button>
+                  ) : rel.requestSent ? (
+                    <button onClick={() => act('DELETE', `/net/friends/request/${userId}`)} className="press py-3 rounded-2xl border border-border bg-card/60 text-sm font-medium flex items-center justify-center gap-1.5"><Clock size={16} /> Demande envoyée</button>
+                  ) : (
+                    <button onClick={() => act('POST', `/net/friends/request/${userId}`)} className="press py-3 rounded-2xl text-white text-sm font-semibold flex items-center justify-center gap-1.5" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><UserPlus size={16} /> Ajouter</button>
+                  )}
+                  {rel.following ? (
+                    <button onClick={() => act('DELETE', `/net/follow/${userId}`)} className="press py-3 rounded-2xl border border-border bg-card/60 text-sm font-medium">Suivi ✓</button>
+                  ) : (
+                    <button onClick={() => act('POST', `/net/follow/${userId}`)} className="press py-3 rounded-2xl border border-border bg-card/60 text-sm font-medium">Suivre</button>
+                  )}
+                  {rel.blocked ? (
+                    <button onClick={() => act('DELETE', `/net/block/${userId}`)} className="press col-span-2 py-2.5 rounded-2xl text-sm text-muted-foreground">Débloquer</button>
+                  ) : (
+                    <button onClick={() => act('POST', `/net/block/${userId}`)} className="press col-span-2 py-2.5 rounded-2xl text-sm text-destructive flex items-center justify-center gap-1.5"><UserX size={15} /> Bloquer</button>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </motion.div>
     </motion.div>
   )
 }
@@ -142,7 +259,7 @@ function PostBody({ p }) {
   )
 }
 
-function PostCard({ p, onDeleted }) {
+function PostCard({ p, onDeleted, onOpenProfile }) {
   const [menu, setMenu] = useState(false)
   const [rxTotal, setRxTotal] = useState(p.reactions?.total || 0)
   const [byType, setByType] = useState(p.reactions?.byType || {})
@@ -181,9 +298,9 @@ function PostCard({ p, onDeleted }) {
   return (
     <div className="rounded-2xl border border-border bg-card/60 p-4">
       <div className="flex items-center gap-3">
-        <div className="w-11 h-11 rounded-full grid place-items-center text-white font-semibold" style={{ background: p.author?.avatarColor || '#4353F0' }}>{p.author?.initials}</div>
+        <button onClick={() => onOpenProfile?.(p.author?.id)} className="w-11 h-11 rounded-full grid place-items-center text-white font-semibold shrink-0" style={{ background: p.author?.avatarColor || '#4353F0' }}>{p.author?.initials}</button>
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm flex items-center gap-1">{p.author?.name || 'Utilisateur'} {p.author?.verified && <ShieldCheck size={13} className="text-primary" />}</div>
+          <button onClick={() => onOpenProfile?.(p.author?.id)} className="font-medium text-sm flex items-center gap-1 text-left">{p.author?.name || 'Utilisateur'} {p.author?.verified && <ShieldCheck size={13} className="text-primary" />}</button>
           <div className="text-[11px] text-muted-foreground flex items-center gap-1">{timeAgo(p.createdAt)} · <VisIcon size={10} />{p.editedAt ? ' · modifié' : ''}</div>
         </div>
         <div className="relative">

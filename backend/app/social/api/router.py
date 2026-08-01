@@ -16,6 +16,7 @@ from ...helpers import err, ok
 from ...realtime import manager
 from ...security import require_user
 from ..adapters.persistence.uow import SqlAlchemyUnitOfWork
+from ..application import graph as gr
 from ..application import interactions as ix
 from ..application import posts as uc
 from ..domain.policy import PolicyService
@@ -302,3 +303,241 @@ async def bookmark(post_id: str, me: dict = Depends(require_user), uow=Depends(g
 async def list_bookmarks(me: dict = Depends(require_user), uow=Depends(get_uow)):
     posts = await ix.list_bookmarks(uow, _policy, me["id"])
     return ok({"items": await _serialize_posts(uow, get_mongo(), posts, me["id"])})
+
+
+async def _mongo_user(mongo, uid):
+    return await mongo.users.find_one({"id": uid}, {"_id": 0, "email": 0})
+
+
+# ========== Graphe social (Couche 4) ==========
+async def _user_cards(mongo, uow, ids, me_id):
+    authors = await _authors_map(mongo, ids)
+    out = []
+    for uid in ids:
+        out.append({**_author(authors, uid), "relationship": await gr.relationship(uow, me_id, uid)})
+    return out
+
+
+@router.post("/net/friends/request/{user_id}")
+async def friend_request(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    try:
+        status = await gr.send_friend_request(uow, me["id"], user_id)
+    except ValueError as e:
+        return err(str(e))
+    except PermissionError:
+        return err("Indisponible", 403)
+    await uow.commit()
+    if status == "pending" and user_id != me["id"]:
+        try:
+            from ...notify import notify as _notify
+            await _notify(get_mongo(), user_id, "contact", "👋 Demande d'ami reçue", me.get("name", ""), {})
+        except Exception:  # noqa: BLE001
+            pass
+    return ok({"status": status})
+
+
+@router.post("/net/friends/accept/{user_id}")
+async def friend_accept(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    try:
+        await gr.accept_friend(uow, me["id"], user_id)
+    except LookupError:
+        return err("Aucune demande", 404)
+    await uow.commit()
+    return ok({"status": "friends"})
+
+
+@router.post("/net/friends/decline/{user_id}")
+async def friend_decline(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    await gr.decline_friend(uow, me["id"], user_id)
+    await uow.commit()
+    return ok({"ok": True})
+
+
+@router.delete("/net/friends/request/{user_id}")
+async def friend_cancel(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    await gr.cancel_request(uow, me["id"], user_id)
+    await uow.commit()
+    return ok({"ok": True})
+
+
+@router.delete("/net/friends/{user_id}")
+async def friend_remove(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    await gr.unfriend(uow, me["id"], user_id)
+    await uow.commit()
+    return ok({"ok": True})
+
+
+@router.get("/net/friends")
+async def friends_list(me: dict = Depends(require_user), uow=Depends(get_uow)):
+    ids = await gr.list_friends(uow, me["id"])
+    return ok({"items": await _user_cards(get_mongo(), uow, ids, me["id"])})
+
+
+@router.get("/net/friends/requests")
+async def friend_requests(me: dict = Depends(require_user), uow=Depends(get_uow)):
+    inc = await gr.incoming_requests(uow, me["id"])
+    outg = await gr.outgoing_requests(uow, me["id"])
+    return ok({"incoming": await _user_cards(get_mongo(), uow, inc, me["id"]),
+               "outgoing": await _user_cards(get_mongo(), uow, outg, me["id"])})
+
+
+@router.post("/net/follow/{user_id}")
+async def do_follow(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    try:
+        await gr.follow(uow, me["id"], user_id)
+    except ValueError as e:
+        return err(str(e))
+    except PermissionError:
+        return err("Indisponible", 403)
+    await uow.commit()
+    return ok({"following": True})
+
+
+@router.delete("/net/follow/{user_id}")
+async def do_unfollow(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    await gr.unfollow(uow, me["id"], user_id)
+    await uow.commit()
+    return ok({"following": False})
+
+
+@router.post("/net/block/{user_id}")
+async def do_block(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    await gr.block(uow, me["id"], user_id)
+    await uow.commit()
+    return ok({"blocked": True})
+
+
+@router.delete("/net/block/{user_id}")
+async def do_unblock(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    await gr.unblock(uow, me["id"], user_id)
+    await uow.commit()
+    return ok({"blocked": False})
+
+
+@router.post("/net/mute/{user_id}")
+async def do_mute(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    await gr.mute(uow, me["id"], user_id)
+    await uow.commit()
+    return ok({"muted": True})
+
+
+@router.delete("/net/mute/{user_id}")
+async def do_unmute(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    await gr.unmute(uow, me["id"], user_id)
+    await uow.commit()
+    return ok({"muted": False})
+
+
+@router.get("/net/relationship/{user_id}")
+async def get_relationship(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    return ok(await gr.relationship(uow, me["id"], user_id))
+
+
+# ========== Cercles ==========
+@router.post("/net/circles")
+async def create_circle(request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    body = await request.json() if await request.body() else {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return err("Nom requis")
+    c = await uow.circles.create(me["id"], name)
+    await uow.commit()
+    return ok({"id": c.id, "name": c.name, "memberCount": 0})
+
+
+@router.get("/net/circles")
+async def list_circles(me: dict = Depends(require_user), uow=Depends(get_uow)):
+    circles = await uow.circles.list_owned(me["id"])
+    out = []
+    for c in circles:
+        out.append({"id": c.id, "name": c.name, "memberCount": len(await uow.circles.member_ids(c.id))})
+    return ok({"items": out})
+
+
+@router.delete("/net/circles/{circle_id}")
+async def delete_circle(circle_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    c = await uow.circles.get(circle_id)
+    if not c or c.owner_id != me["id"]:
+        return err("Cercle introuvable", 404)
+    await uow.circles.delete(circle_id)
+    await uow.commit()
+    return ok({"ok": True})
+
+
+@router.put("/net/circles/{circle_id}/members/{user_id}")
+async def add_circle_member(circle_id: str, user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    c = await uow.circles.get(circle_id)
+    if not c or c.owner_id != me["id"]:
+        return err("Cercle introuvable", 404)
+    await uow.circles.add_member(circle_id, me["id"], user_id)
+    await uow.commit()
+    return ok({"ok": True})
+
+
+@router.delete("/net/circles/{circle_id}/members/{user_id}")
+async def remove_circle_member(circle_id: str, user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    c = await uow.circles.get(circle_id)
+    if not c or c.owner_id != me["id"]:
+        return err("Cercle introuvable", 404)
+    await uow.circles.remove_member(circle_id, user_id)
+    await uow.commit()
+    return ok({"ok": True})
+
+
+@router.get("/net/circles/{circle_id}/members")
+async def circle_members(circle_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    c = await uow.circles.get(circle_id)
+    if not c or c.owner_id != me["id"]:
+        return err("Cercle introuvable", 404)
+    ids = await uow.circles.member_ids(circle_id)
+    authors = await _authors_map(get_mongo(), ids)
+    return ok({"items": [_author(authors, i) for i in ids]})
+
+
+# ========== Profil ==========
+def _profile_out(prof, u, rel=None) -> dict:
+    u = u or {}
+    d = {"userId": u.get("id"),
+         "name": (prof.display_name if prof and prof.display_name else u.get("name")),
+         "initials": u.get("initials"), "avatarColor": u.get("avatarColor"),
+         "verified": bool(u.get("verified")),
+         "handle": (prof.handle if prof else None) or u.get("handle"),
+         "avatarUrl": prof.avatar_url if prof else None, "coverUrl": prof.cover_url if prof else None,
+         "bio": prof.bio if prof else None, "info": (prof.info if prof else {}) or {}}
+    if rel is not None:
+        d["relationship"] = rel
+    return d
+
+
+@router.get("/net/profile")
+async def my_profile(me: dict = Depends(require_user), uow=Depends(get_uow)):
+    prof = await uow.profiles.get(me["id"])
+    return ok(_profile_out(prof, await _mongo_user(get_mongo(), me["id"])))
+
+
+@router.put("/net/profile")
+async def update_profile(request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    body = await request.json() if await request.body() else {}
+    fields = {"display_name": body.get("displayName"), "bio": body.get("bio"),
+              "avatar_url": body.get("avatarUrl"), "cover_url": body.get("coverUrl"),
+              "info": body.get("info")}
+    if body.get("handle") is not None:
+        fields["handle"] = (str(body["handle"]).lstrip("@").lower()[:40]) or None
+    await uow.profiles.upsert(me["id"], **{k: v for k, v in fields.items() if v is not None})
+    try:
+        await uow.commit()
+    except Exception:  # noqa: BLE001  (identifiant unique)
+        await uow.rollback()
+        return err("Cet identifiant est déjà pris", 409)
+    prof = await uow.profiles.get(me["id"])
+    return ok(_profile_out(prof, await _mongo_user(get_mongo(), me["id"])))
+
+
+@router.get("/net/profile/{user_id}")
+async def public_profile(user_id: str, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    u = await _mongo_user(get_mongo(), user_id)
+    if not u:
+        return err("Profil introuvable", 404)
+    prof = await uow.profiles.get(user_id)
+    rel = await gr.relationship(uow, me["id"], user_id)
+    return ok(_profile_out(prof, u, rel))

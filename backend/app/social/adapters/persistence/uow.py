@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from .db import get_sessionmaker
-from .repositories import (SqlAlchemyBookmarkRepository, SqlAlchemyCommentRepository,
-                           SqlAlchemyEdgeRepository, SqlAlchemyPostRepository,
+from .repositories import (SqlAlchemyBookmarkRepository, SqlAlchemyCircleRepository,
+                           SqlAlchemyCommentRepository, SqlAlchemyEdgeRepository,
+                           SqlAlchemyPostRepository, SqlAlchemyProfileRepository,
                            SqlAlchemyReactionRepository)
 
 
@@ -18,6 +19,8 @@ class SqlAlchemyUnitOfWork:
         self.reactions = SqlAlchemyReactionRepository(self.session)
         self.comments = SqlAlchemyCommentRepository(self.session)
         self.bookmarks = SqlAlchemyBookmarkRepository(self.session)
+        self.circles = SqlAlchemyCircleRepository(self.session)
+        self.profiles = SqlAlchemyProfileRepository(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

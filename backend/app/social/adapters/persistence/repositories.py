@@ -7,7 +7,7 @@ from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import Bookmark, Comment, Edge, Post, Reaction
+from .models import Bookmark, Circle, CircleMember, Comment, Edge, Post, Profile, Reaction
 
 
 class SqlAlchemyPostRepository:
@@ -65,6 +65,91 @@ class SqlAlchemyEdgeRepository:
             Edge.kind == "block", or_(Edge.src == user_id, Edge.dst == user_id))
         rows = (await self.session.execute(stmt)).all()
         return {(dst if src == user_id else src) for src, dst in rows}
+
+    async def set(self, src: str, dst: str, kind: str, status: str = "active") -> None:
+        e = await self.session.scalar(select(Edge).where(
+            Edge.src == src, Edge.dst == dst, Edge.kind == kind))
+        if e:
+            e.status = status
+        else:
+            self.session.add(Edge(src=src, dst=dst, kind=kind, status=status))
+
+    async def remove(self, src: str, dst: str, kind: str) -> None:
+        await self.session.execute(delete(Edge).where(
+            Edge.src == src, Edge.dst == dst, Edge.kind == kind))
+
+    async def get_status(self, src: str, dst: str, kind: str) -> str | None:
+        return await self.session.scalar(select(Edge.status).where(
+            Edge.src == src, Edge.dst == dst, Edge.kind == kind))
+
+    async def list_out(self, user_id: str, kind: str) -> list[str]:
+        return list((await self.session.scalars(
+            select(Edge.dst).where(Edge.src == user_id, Edge.kind == kind))).all())
+
+    async def list_in(self, user_id: str, kind: str) -> list[str]:
+        return list((await self.session.scalars(
+            select(Edge.src).where(Edge.dst == user_id, Edge.kind == kind))).all())
+
+    async def muted_ids(self, user_id: str) -> set[str]:
+        return set(await self.list_out(user_id, "mute"))
+
+
+class SqlAlchemyCircleRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, owner_id: str, name: str) -> Circle:
+        c = Circle(owner_id=owner_id, name=name[:60])
+        self.session.add(c)
+        return c
+
+    async def get(self, circle_id: str) -> Circle | None:
+        return await self.session.get(Circle, circle_id)
+
+    async def list_owned(self, owner_id: str) -> list[Circle]:
+        return list((await self.session.scalars(
+            select(Circle).where(Circle.owner_id == owner_id).order_by(Circle.created_at))).all())
+
+    async def delete(self, circle_id: str) -> None:
+        await self.session.execute(delete(CircleMember).where(CircleMember.circle_id == circle_id))
+        await self.session.execute(delete(Circle).where(Circle.id == circle_id))
+
+    async def add_member(self, circle_id: str, owner_id: str, member_id: str) -> None:
+        exists = await self.session.scalar(select(CircleMember.id).where(
+            CircleMember.circle_id == circle_id, CircleMember.member_id == member_id))
+        if not exists:
+            self.session.add(CircleMember(circle_id=circle_id, owner_id=owner_id, member_id=member_id))
+
+    async def remove_member(self, circle_id: str, member_id: str) -> None:
+        await self.session.execute(delete(CircleMember).where(
+            CircleMember.circle_id == circle_id, CircleMember.member_id == member_id))
+
+    async def member_ids(self, circle_id: str) -> list[str]:
+        return list((await self.session.scalars(
+            select(CircleMember.member_id).where(CircleMember.circle_id == circle_id))).all())
+
+    async def circles_containing(self, owner_id: str, member_id: str) -> set[str]:
+        """Cercles de `owner` qui contiennent `member` (pour la visibilité CIRCLES)."""
+        return set((await self.session.scalars(select(CircleMember.circle_id).where(
+            CircleMember.owner_id == owner_id, CircleMember.member_id == member_id))).all())
+
+
+class SqlAlchemyProfileRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get(self, user_id: str) -> Profile | None:
+        return await self.session.get(Profile, user_id)
+
+    async def upsert(self, user_id: str, **fields) -> Profile:
+        p = await self.session.get(Profile, user_id)
+        if not p:
+            p = Profile(user_id=user_id)
+            self.session.add(p)
+        for k, v in fields.items():
+            if v is not None and hasattr(p, k):
+                setattr(p, k, v)
+        return p
 
 
 class SqlAlchemyReactionRepository:
