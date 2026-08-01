@@ -680,71 +680,158 @@ function GoldParticles() {
 }
 
 /* ============================= QR ============================= */
-function QRScreen({ user }) {
-  const [mode, setMode] = useState('mine')
-  const [seconds, setSeconds] = useState(600)
-  useEffect(() => {
-    if (mode !== 'mine') return
-    const t = setInterval(() => setSeconds((s) => (s > 0 ? s - 1 : 600)), 1000)
-    return () => clearInterval(t)
-  }, [mode])
-  const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
-  const ss = String(seconds % 60).padStart(2, '0')
+const money = (c) => eur(c) + ' €'
+
+function QRScreen({ user, onDone }) {
+  const [mode, setMode] = useState('receive')
   return (
     <Screen>
       <div className="cascade space-y-5">
-        <h1 className="font-display text-3xl pt-2">QR universel</h1>
+        <h1 className="font-display text-3xl pt-2">Paiement QR</h1>
         <div className="flex gap-2 p-1 rounded-2xl bg-muted/60">
-          {[['mine', 'Mon QR'], ['scan', 'Scanner']].map(([id, label]) => (
+          {[['receive', 'Recevoir'], ['pay', 'Payer']].map(([id, label]) => (
             <button key={id} onClick={() => setMode(id)}
               className={cx('press flex-1 py-2.5 rounded-xl font-medium text-sm', mode === id ? 'bg-card shadow text-foreground' : 'text-muted-foreground')}>
               {label}
             </button>
           ))}
         </div>
-
-        {mode === 'mine' ? (
-          <Glass sheen className="p-6 text-center">
-            <div className="relative w-56 h-56 mx-auto mb-4">
-              <svg viewBox="0 0 100 100" className="w-full h-full rounded-2xl bg-white p-3">
-                <g fill="#14162B">
-                  {Array.from({ length: 12 }).map((_, r) => Array.from({ length: 12 }).map((_, c) =>
-                    (Math.random() > 0.5 || (r < 3 && c < 3) || (r < 3 && c > 8) || (r > 8 && c < 3)) &&
-                    <rect key={`${r}-${c}`} x={c * 8 + 2} y={r * 8 + 2} width="7" height="7" rx="1.5" />
-                  ))}
-                </g>
-              </svg>
-              <div className="absolute inset-0 grid place-items-center">
-                <div className="w-12 h-12 rounded-2xl grid place-items-center text-white font-display italic text-2xl" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>D</div>
-              </div>
-            </div>
-            <div className="font-semibold">{user?.name} · {user?.handle}</div>
-            <div className="flex items-center justify-center gap-2 mt-3 text-sm text-muted-foreground">
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              QR à usage unique · expire dans {mm}:{ss}
-            </div>
-            <div className="flex gap-2 mt-4">
-              <GhostBtn onClick={() => setSeconds(600)}><RefreshCw size={15} /> Régénérer</GhostBtn>
-              <PrimaryBtn onClick={() => {}} full><Users size={16} /> QR de groupe</PrimaryBtn>
-            </div>
-          </Glass>
-        ) : (
-          <Glass className="p-6">
-            <div className="aspect-square rounded-2xl bg-ink/90 grid place-items-center relative overflow-hidden">
-              <motion.div className="absolute inset-x-6 h-0.5 bg-primary shadow-[0_0_18px_#4353F0]"
-                animate={{ top: ['15%', '85%', '15%'] }} transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }} />
-              <div className="w-40 h-40 border-2 border-white/40 rounded-2xl" />
-              <ScanLine className="absolute text-white/30" size={40} />
-            </div>
-            <Glass className="mt-4 p-3 flex items-center gap-3 !bg-green-500/10">
-              <Shield size={18} className="text-green-600 dark:text-green-400" />
-              <div className="text-xs"><b>Scam shield</b> — la vraie destination sera affichée avant toute action.</div>
-            </Glass>
-            <GhostBtn onClick={() => {}}><Plus size={15} /> Importer une image</GhostBtn>
-          </Glass>
-        )}
+        {mode === 'receive' ? <QRReceive user={user} /> : <QRPay onDone={onDone} />}
       </div>
     </Screen>
+  )
+}
+
+function QRReceive({ user }) {
+  const [amount, setAmount] = useState('')
+  const [note, setNote] = useState('')
+  const [qr, setQr] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const generate = async () => {
+    setBusy(true)
+    const cents = amount ? Math.round(parseFloat(String(amount).replace(',', '.')) * 100) : null
+    const r = await api('/pay/qr/create', { method: 'POST', body: JSON.stringify({ amountCents: cents, note }) })
+    if (!r.error) setQr(r)
+    setBusy(false)
+  }
+  const copy = () => { try { navigator.clipboard.writeText(qr.code); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch (e) {} }
+
+  if (qr) {
+    return (
+      <Glass sheen className="p-6 text-center">
+        <img src={qr.qr} alt="QR de paiement" className="w-56 h-56 mx-auto rounded-2xl bg-white p-2" />
+        <div className="font-semibold mt-4">{user?.name} · {user?.handle}</div>
+        {qr.amountCents ? <div className="font-display text-3xl mt-1">{money(qr.amountCents)}</div>
+          : <div className="text-sm text-muted-foreground mt-1">Montant libre</div>}
+        {qr.note && <div className="text-sm text-muted-foreground mt-1">« {qr.note} »</div>}
+        <button onClick={copy} className="press mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary font-mono text-lg tracking-widest">
+          {qr.code} {copied ? <Check size={16} /> : <QrCode size={16} />}
+        </button>
+        <div className="text-xs text-muted-foreground mt-2">Fais scanner ce QR, ou partage le code. Expire dans 24 h.</div>
+        <GhostBtn onClick={() => setQr(null)}><RefreshCw size={15} /> Nouvelle demande</GhostBtn>
+      </Glass>
+    )
+  }
+  return (
+    <Glass className="p-6 space-y-4">
+      <p className="text-sm text-muted-foreground">Crée un QR pour te faire payer. Laisse le montant vide pour un montant libre.</p>
+      <div>
+        <label className="text-xs text-muted-foreground">Montant (€) — optionnel</label>
+        <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="ex : 12,50"
+          className="w-full mt-1 rounded-xl border border-border bg-card/60 px-4 py-3 text-lg" />
+      </div>
+      <div>
+        <label className="text-xs text-muted-foreground">Note — optionnel</label>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="ex : Déjeuner"
+          className="w-full mt-1 rounded-xl border border-border bg-card/60 px-4 py-2.5 text-sm" />
+      </div>
+      <PrimaryBtn onClick={generate} full disabled={busy}>
+        {busy ? <RefreshCw className="animate-spin" size={16} /> : <><QrCode size={16} /> Générer le QR</>}
+      </PrimaryBtn>
+    </Glass>
+  )
+}
+
+function QRPay({ onDone }) {
+  const [code, setCode] = useState('')
+  const [detail, setDetail] = useState(null)
+  const [payAmount, setPayAmount] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState(null)
+
+  const check = async () => {
+    setError(''); setBusy(true)
+    const r = await api(`/pay/qr/${code.trim().toUpperCase()}`)
+    if (r.error) setError('Code introuvable')
+    else if (r.status !== 'pending') setError('Cette demande a déjà été réglée ou a expiré')
+    else if (r.isMine) setError('C’est ta propre demande')
+    else setDetail(r)
+    setBusy(false)
+  }
+  const pay = async () => {
+    setError(''); setBusy(true)
+    const cents = detail.amountCents || (payAmount ? Math.round(parseFloat(String(payAmount).replace(',', '.')) * 100) : 0)
+    const r = await api(`/pay/qr/${detail.code}/pay`, { method: 'POST', body: JSON.stringify({ amountCents: cents }) })
+    if (r.error) setError(r.error)
+    else { setDone(r); onDone && onDone() }
+    setBusy(false)
+  }
+
+  if (done) {
+    return (
+      <Glass sheen className="p-8 text-center">
+        <div className="w-16 h-16 mx-auto rounded-full grid place-items-center bg-green-500/15 text-green-600 dark:text-green-400 mb-3"><Check size={32} /></div>
+        <div className="font-display text-2xl">Paiement envoyé !</div>
+        <div className="text-muted-foreground mt-1">{money(done.amountCents)} à {done.payee}</div>
+        <div className="text-sm text-muted-foreground mt-3">Nouveau solde : {money(done.balanceCents)}</div>
+        <GhostBtn onClick={() => { setDone(null); setDetail(null); setCode('') }}>Nouveau paiement</GhostBtn>
+      </Glass>
+    )
+  }
+  if (detail) {
+    return (
+      <Glass className="p-6 space-y-4 text-center">
+        <div className="text-sm text-muted-foreground">Tu paies</div>
+        <div className="w-14 h-14 mx-auto rounded-full grid place-items-center text-white font-semibold text-lg" style={{ background: detail.payee.color || 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+          {(detail.payee.name || '?').slice(0, 1)}
+        </div>
+        <div className="font-semibold">{detail.payee.name} · {detail.payee.handle}</div>
+        {detail.amountCents ? (
+          <div className="font-display text-4xl">{money(detail.amountCents)}</div>
+        ) : (
+          <div>
+            <label className="text-xs text-muted-foreground">Montant à envoyer (€)</label>
+            <input value={payAmount} onChange={(e) => setPayAmount(e.target.value)} inputMode="decimal" autoFocus placeholder="0,00"
+              className="w-full mt-1 rounded-xl border border-border bg-card/60 px-4 py-3 text-lg text-center" />
+          </div>
+        )}
+        {error && <div className="text-sm text-rose-500">{error}</div>}
+        <div className="flex gap-2">
+          <GhostBtn onClick={() => { setDetail(null); setError('') }}>Annuler</GhostBtn>
+          <PrimaryBtn onClick={pay} full disabled={busy || (!detail.amountCents && !payAmount)}>
+            {busy ? <RefreshCw className="animate-spin" size={16} /> : <>Payer{detail.amountCents ? ' ' + money(detail.amountCents) : ''}</>}
+          </PrimaryBtn>
+        </div>
+      </Glass>
+    )
+  }
+  return (
+    <Glass className="p-6 space-y-4">
+      <p className="text-sm text-muted-foreground">Saisis le code du QR à payer (8 caractères).</p>
+      <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={8} placeholder="ABCD1234"
+        className="w-full rounded-xl border border-border bg-card/60 px-4 py-3 text-center text-2xl font-mono tracking-[0.3em]" />
+      {error && <div className="text-sm text-rose-500 text-center">{error}</div>}
+      <PrimaryBtn onClick={check} full disabled={busy || code.trim().length < 8}>
+        {busy ? <RefreshCw className="animate-spin" size={16} /> : <>Continuer <ChevronRight size={16} /></>}
+      </PrimaryBtn>
+      <Glass className="p-3 flex items-center gap-3 !bg-green-500/10">
+        <Shield size={18} className="text-green-600 dark:text-green-400" />
+        <div className="text-xs"><b>Scam shield</b> — le bénéficiaire et le montant s’affichent avant tout paiement.</div>
+      </Glass>
+    </Glass>
   )
 }
 
@@ -1180,7 +1267,7 @@ function App() {
           {tab === 'hub' && <Hub user={user} wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} onTab={goTab} />}
           {tab === 'wallet' && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
           {tab === 'messages' && <Messaging me={user} />}
-          {tab === 'qr' && <QRScreen user={user} />}
+          {tab === 'qr' && <QRScreen user={user} onDone={() => load()} />}
           {tab === 'discover' && <Discover onTab={goTab} />}
           {tab === 'profile' && <Profile user={user} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}
           {tab === 'social' && <Social me={user} onBack={() => setTab('hub')} />}

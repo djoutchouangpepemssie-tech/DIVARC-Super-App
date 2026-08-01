@@ -74,6 +74,10 @@ _INDEXES: list[tuple[str, object, dict]] = [
     # Notifications
     ("notifications", [("userId", 1), ("createdAt", -1)], {}),
     ("notifications", [("userId", 1), ("read", 1)], {}),
+
+    # Paiement QR
+    ("payment_requests", "code", {"unique": True}),
+    ("payment_requests", "payeeId", {}),
 ]
 
 
