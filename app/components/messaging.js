@@ -179,6 +179,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
   const [levelUp, setLevelUp] = useState(false)
   const prevLevel = useRef(null)
   const scrollRef = useRef()
+  const chatLayerRef = useRef(null)
   const [sending, setSending] = useState(false)
   const [pendingMedia, setPendingMedia] = useState(null) // { kind, dataUrl, preview, name }
   const [uploading, setUploading] = useState(false)
@@ -267,6 +268,28 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
     const on = !!active && window.matchMedia('(max-width: 767px)').matches
     document.body.classList.toggle('overlay-open', on)
     return () => document.body.classList.remove('overlay-open')
+  }, [active])
+
+  // Colle la conversation au viewport RÉELLEMENT visible (API VisualViewport) : quand le
+  // clavier sort, iOS voudrait faire remonter toute la vue -> on la maintient pile dans la
+  // zone visible (hauteur = clavier exclu, décalage = offsetTop) pour que rien ne bouge.
+  useEffect(() => {
+    const el = chatLayerRef.current
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null
+    if (!active || !el || !vv || !window.matchMedia('(max-width: 767px)').matches) return
+    const update = () => {
+      el.style.height = vv.height + 'px'
+      el.style.transform = `translateY(${vv.offsetTop}px)`
+    }
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+      el.style.height = ''
+      el.style.transform = ''
+    }
   }, [active])
 
   // Sélection d'une photo/vidéo/audio -> aperçu (converti en data-URL, uploadé à l'envoi)
@@ -406,7 +429,8 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
               </div>
             </Glass>
           ) : (
-            <Glass className="flex flex-col !fixed inset-0 z-[55] rounded-none md:!static md:inset-auto md:z-auto md:h-[calc(100dvh-120px)] md:rounded-[var(--radius)]">
+            <div ref={chatLayerRef} className="fixed left-0 right-0 top-0 z-[55] h-[100dvh] md:static md:h-auto md:z-auto">
+            <Glass className="flex flex-col h-full rounded-none md:h-[calc(100dvh-120px)] md:rounded-[var(--radius)]">
               {/* header */}
               <div className="flex items-center gap-3 p-4 pt-safe md:pt-4 border-b border-border/60">
                 <button onClick={() => setActive(null)} className="md:hidden press"><ArrowLeft size={20} /></button>
@@ -490,6 +514,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
                 </button>
               </div>
             </Glass>
+            </div>
           )}
         </div>
       </div>
