@@ -4,7 +4,7 @@
 // Appelle le nouveau contexte social /api/net/* (PostgreSQL). Réactions/commentaires = Couche 3.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight, UserPlus, UserCheck, Check, Clock, UserX, EyeOff, Info, Search } from 'lucide-react'
+import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight, UserPlus, UserCheck, Check, Clock, UserX, EyeOff, Info, Search, Bell } from 'lucide-react'
 import { api } from '@/lib/api'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -27,6 +27,7 @@ export default function NetworkModule({ me, onClose }) {
   const [cursor, setCursor] = useState(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [unavailable, setUnavailable] = useState(false)
+  const [showPrefs, setShowPrefs] = useState(false)
 
   const load = useCallback(async (cur) => {
     const r = await api(`/net/feed?mode=${mode}${cur ? `&cursor=${encodeURIComponent(cur)}` : ''}`)
@@ -45,6 +46,9 @@ export default function NetworkModule({ me, onClose }) {
       <div className="flex items-center gap-3 p-4 pt-safe border-b border-border/60">
         <button onClick={onClose} className="press" aria-label="Fermer"><X size={22} /></button>
         <h1 className="font-display text-2xl">Réseau <span className="text-xs align-top text-muted-foreground">bêta</span></h1>
+        {!unavailable && (
+          <button onClick={() => setShowPrefs(true)} className="press ml-auto w-9 h-9 rounded-full grid place-items-center bg-muted/60 text-muted-foreground" aria-label="Réglages des notifications"><Bell size={18} /></button>
+        )}
       </div>
 
       {!unavailable && (
@@ -97,7 +101,65 @@ export default function NetworkModule({ me, onClose }) {
 
       <AnimatePresence>
         {profileId && <ProfileSheet userId={profileId} meId={me?.id} onClose={() => setProfileId(null)} />}
+        {showPrefs && <NotifPrefsSheet onClose={() => setShowPrefs(false)} />}
       </AnimatePresence>
+    </motion.div>
+  )
+}
+
+const NOTIF_LABELS = {
+  reaction: 'Réactions à mes publications',
+  comment: 'Commentaires sur mes publications',
+  reply: 'Réponses à mes commentaires',
+  friend_accept: 'Demandes d\'ami acceptées',
+  group_approved: 'Admission dans un groupe',
+  mention: 'Mentions',
+}
+
+function NotifPrefsSheet({ onClose }) {
+  const [kinds, setKinds] = useState(null)
+  const [disabled, setDisabled] = useState([])
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    (async () => {
+      const r = await api('/net/notifications/prefs')
+      if (!r.error) { setKinds(r.kinds || Object.keys(NOTIF_LABELS)); setDisabled(r.disabled || []) }
+    })()
+  }, [])
+  const toggle = async (k) => {
+    const next = disabled.includes(k) ? disabled.filter((x) => x !== k) : [...disabled, k]
+    setDisabled(next); setSaving(true)
+    await api('/net/notifications/prefs', { method: 'PUT', body: JSON.stringify({ disabled: next }) })
+    setSaving(false)
+  }
+  return (
+    <motion.div className="fixed inset-0 z-[80] bg-black/40 flex items-end sm:items-center sm:justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.div className="w-full sm:max-w-md bg-card rounded-t-3xl sm:rounded-3xl border border-border p-5 pb-safe" initial={{ y: 40 }} animate={{ y: 0 }} exit={{ y: 40 }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3 mb-4">
+          <Bell size={20} className="text-primary" />
+          <h2 className="font-display text-xl flex-1">Notifications</h2>
+          {saving && <RefreshCw size={16} className="animate-spin text-muted-foreground" />}
+          <button onClick={onClose} className="press" aria-label="Fermer"><X size={20} /></button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">Choisis ce que tu veux recevoir. Les autres continueront d'apparaître dans le fil.</p>
+        {kinds === null ? (
+          <div className="grid place-items-center py-10"><RefreshCw className="animate-spin text-muted-foreground" /></div>
+        ) : (
+          <div className="space-y-1">
+            {kinds.map((k) => {
+              const on = !disabled.includes(k)
+              return (
+                <button key={k} onClick={() => toggle(k)} className="press w-full flex items-center gap-3 py-3 px-1 text-left">
+                  <span className="flex-1 text-sm">{NOTIF_LABELS[k] || k}</span>
+                  <span className={cx('w-11 h-6 rounded-full p-0.5 transition-colors', on ? 'bg-primary' : 'bg-muted')}>
+                    <span className={cx('block w-5 h-5 rounded-full bg-white transition-transform', on && 'translate-x-5')} />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </motion.div>
     </motion.div>
   )
 }
@@ -264,44 +326,51 @@ function ProfileSheet({ userId, meId, onClose }) {
 
 function Composer({ me, onPublished }) {
   const [body, setBody] = useState('')
-  const [image, setImage] = useState(null)   // { url, alt }
+  const [media, setMedia] = useState(null)   // { url, alt, kind }
   const [vis, setVis] = useState('public')
   const [busy, setBusy] = useState(false)
+  const [upBusy, setUpBusy] = useState(false)
   const fileRef = useRef(null)
 
   const pick = async (e) => {
     const f = e.target.files?.[0]; e.target.value = ''
     if (!f) return
-    if (f.size > 6.5 * 1024 * 1024) return alert('Image trop lourde (max ~6 Mo)')
+    const isVideo = (f.type || '').startsWith('video/')
+    const cap = isVideo ? 12 : 6.5
+    if (f.size > cap * 1024 * 1024) return alert(`Fichier trop lourd (max ~${cap} Mo)`)
+    setUpBusy(true)
     const dataUrl = await fileToDataUrl(f)
     const r = await api('/chat/upload', { method: 'POST', body: JSON.stringify({ data: dataUrl }) })
-    if (r.url) setImage({ url: r.url, alt: '' })
+    setUpBusy(false)
+    if (r.url) setMedia({ url: r.url, alt: '', kind: isVideo ? 'video' : 'image' })
   }
   const publish = async () => {
-    if (!body.trim() && !image) return
+    if (!body.trim() && !media) return
     setBusy(true)
-    const payload = { body, visibility: vis, media: image ? [{ url: image.url, alt: image.alt || 'image', kind: 'image' }] : [] }
+    const payload = { body, visibility: vis, media: media ? [{ url: media.url, alt: media.alt || (media.kind === 'video' ? 'vidéo' : 'image'), kind: media.kind }] : [] }
     const r = await api('/net/posts', { method: 'POST', body: JSON.stringify(payload) })
     setBusy(false)
     if (r.error) return alert(r.error)
-    onPublished(r); setBody(''); setImage(null); setVis('public')
+    onPublished(r); setBody(''); setMedia(null); setVis('public')
   }
 
   return (
     <div className="rounded-2xl border border-border bg-card/60 p-4 my-4">
       <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="Quoi de neuf ?"
         className="w-full bg-transparent outline-none resize-none text-sm" />
-      {image && (
+      {media && (
         <div className="relative mt-2">
-          <img src={image.url} alt="" className="rounded-xl max-h-56 w-auto border border-border" />
-          <button onClick={() => setImage(null)} className="absolute top-2 right-2 w-7 h-7 rounded-full bg-ink text-white grid place-items-center"><X size={14} /></button>
-          <input value={image.alt} onChange={(e) => setImage({ ...image, alt: e.target.value })} placeholder="Texte alternatif (accessibilité)"
+          {media.kind === 'video'
+            ? <video src={media.url} controls playsInline className="rounded-xl max-h-56 w-auto border border-border" />
+            : <img src={media.url} alt="" className="rounded-xl max-h-56 w-auto border border-border" />}
+          <button onClick={() => setMedia(null)} className="absolute top-2 right-2 w-7 h-7 rounded-full bg-ink text-white grid place-items-center"><X size={14} /></button>
+          <input value={media.alt} onChange={(e) => setMedia({ ...media, alt: e.target.value })} placeholder="Texte alternatif (accessibilité)"
             className="w-full mt-1.5 text-xs rounded-lg border border-border bg-background/60 px-2.5 py-1.5 outline-none" />
         </div>
       )}
       <div className="flex items-center gap-2 mt-3">
-        <button onClick={() => fileRef.current?.click()} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60 text-muted-foreground"><ImageIcon size={18} /></button>
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pick} />
+        <button onClick={() => fileRef.current?.click()} disabled={upBusy} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60 text-muted-foreground disabled:opacity-40">{upBusy ? <RefreshCw size={16} className="animate-spin" /> : <ImageIcon size={18} />}</button>
+        <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={pick} />
         <div className="flex gap-1">
           {VIS.map(([v, l, Icon]) => (
             <button key={v} onClick={() => setVis(v)} className={cx('press flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full border', vis === v ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>
@@ -309,7 +378,7 @@ function Composer({ me, onPublished }) {
             </button>
           ))}
         </div>
-        <button onClick={publish} disabled={busy || (!body.trim() && !image)} className="press ml-auto px-4 py-2 rounded-full font-semibold text-white text-sm disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+        <button onClick={publish} disabled={busy || (!body.trim() && !media)} className="press ml-auto px-4 py-2 rounded-full font-semibold text-white text-sm disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
           {busy ? <RefreshCw size={16} className="animate-spin" /> : 'Publier'}
         </button>
       </div>
@@ -323,7 +392,9 @@ function PostBody({ p }) {
   return (
     <>
       {p.body && <p className="text-sm mt-3 whitespace-pre-line break-words">{p.body}</p>}
-      {p.media?.[0] && <img src={p.media[0].url} alt={p.media[0].alt || ''} loading="lazy" className="rounded-xl mt-3 max-h-96 w-auto border border-border" />}
+      {p.media?.[0] && (p.media[0].kind === 'video'
+        ? <video src={p.media[0].url} controls playsInline preload="metadata" aria-label={p.media[0].alt || 'vidéo'} className="rounded-xl mt-3 max-h-96 w-full border border-border bg-black" />
+        : <img src={p.media[0].url} alt={p.media[0].alt || ''} loading="lazy" className="rounded-xl mt-3 max-h-96 w-auto border border-border" />)}
     </>
   )
 }

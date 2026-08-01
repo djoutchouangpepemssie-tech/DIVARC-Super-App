@@ -207,14 +207,26 @@ async def remove_post(post_id: str, me: dict = Depends(require_user), uow=Depend
 
 
 # ========== Interagir (Couche 3) ==========
-async def _notify_author(uow, post_id: str, actor: dict, kind: str):
+async def _social_notify(recipient: str, net_kind: str, title: str, body: str = "", meta: dict | None = None):
+    """Crée une notification sociale persistée (bell + push), en respectant les préférences."""
+    if not recipient:
+        return
+    mongo = get_mongo()
+    prefs = await mongo.social_notif_prefs.find_one({"userId": recipient}) or {}
+    if net_kind in (prefs.get("disabled") or []):
+        return
+    try:
+        from ...notify import notify as _mongo_notify
+        await _mongo_notify(mongo, recipient, "social", title, body, {**(meta or {}), "netKind": net_kind})
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _notify_author(uow, post_id: str, actor: dict, net_kind: str, verb: str):
     p = await uow.posts.get(post_id)
-    if p and p.author_id != actor["id"]:
-        try:
-            await manager.send_to_user(p.author_id, {"type": "net:activity", "kind": kind,
-                                                     "postId": post_id, "actor": actor.get("name")})
-        except Exception:  # noqa: BLE001
-            pass
+    if p and p.author_type == "user" and p.author_id != actor["id"]:
+        await _social_notify(p.author_id, net_kind, f"{actor.get('name')} {verb}",
+                             (p.body_text or "")[:60], {"postId": post_id})
 
 
 @router.put("/net/posts/{post_id}/reactions")
@@ -229,7 +241,7 @@ async def react_post(post_id: str, request: Request, me: dict = Depends(require_
     except LookupError:
         return err("Introuvable", 404)
     await uow.commit()
-    await _notify_author(uow, post_id, me, "reaction")
+    await _notify_author(uow, post_id, me, "reaction", "a réagi à ta publication")
     return ok({"total": total, "myReaction": body.get("type") or "like"})
 
 
@@ -255,7 +267,13 @@ async def add_comment(post_id: str, request: Request, me: dict = Depends(require
     except LookupError:
         return err("Introuvable", 404)
     await uow.commit()
-    await _notify_author(uow, post_id, me, "comment")
+    await _notify_author(uow, post_id, me, "comment", "a commenté ta publication")
+    # notifie aussi l'auteur du commentaire parent (réponse)
+    if c.parent_id:
+        parent = await uow.comments.get(c.parent_id)
+        if parent and parent.author_id not in (me["id"],):
+            await _social_notify(parent.author_id, "reply", f"{me.get('name')} a répondu à ton commentaire",
+                                 c.body_text[:60], {"postId": post_id})
     return ok((await _serialize_comments(uow, get_mongo(), [c], me["id"]))[0])
 
 
@@ -372,6 +390,7 @@ async def friend_accept(user_id: str, me: dict = Depends(require_user), uow=Depe
     except LookupError:
         return err("Aucune demande", 404)
     await uow.commit()
+    await _social_notify(user_id, "friend_accept", f"{me.get('name')} a accepté ta demande d'ami", "", {})
     return ok({"status": "friends"})
 
 
@@ -694,7 +713,10 @@ async def group_approve(group_id: str, user_id: str, me: dict = Depends(require_
         return err("Réservé aux modérateurs", 403)
     except LookupError:
         return err("Aucune demande", 404)
+    g = await uow.groups.get(group_id)
     await uow.commit()
+    await _social_notify(user_id, "group_approved", f"Bienvenue dans « {g.name if g else 'le groupe'} »",
+                         "Ta demande a été acceptée", {"groupId": group_id})
     return ok({"ok": True})
 
 
@@ -930,3 +952,22 @@ async def event_attendees(event_id: str, me: dict = Depends(require_user), uow=D
     authors = await _authors_map(get_mongo(), going + interested)
     return ok({"going": [_author(authors, i) for i in going],
                "interested": [_author(authors, i) for i in interested]})
+
+
+# ========== Préférences de notifications sociales (Couche 8, Mongo — pas de Postgres requis) ==========
+_NET_NOTIF_KINDS = ["reaction", "comment", "reply", "friend_accept", "group_approved", "mention"]
+
+
+@router.get("/net/notifications/prefs")
+async def get_notif_prefs(me: dict = Depends(require_user)):
+    p = await get_mongo().social_notif_prefs.find_one({"userId": me["id"]}, {"_id": 0}) or {}
+    return ok({"kinds": _NET_NOTIF_KINDS, "disabled": p.get("disabled", [])})
+
+
+@router.put("/net/notifications/prefs")
+async def set_notif_prefs(request: Request, me: dict = Depends(require_user)):
+    body = await request.json() if await request.body() else {}
+    disabled = [k for k in (body.get("disabled") or []) if k in _NET_NOTIF_KINDS]
+    await get_mongo().social_notif_prefs.update_one(
+        {"userId": me["id"]}, {"$set": {"userId": me["id"], "disabled": disabled}}, upsert=True)
+    return ok({"disabled": disabled})

@@ -1411,6 +1411,8 @@ function App() {
       case 'sale': case 'offer':
         goTab('market'); break
       case 'social':
+        // Nouveau réseau (Couche 8) : les notifs portent meta.netKind -> ouvrir le module Réseau.
+        if (n?.meta?.netKind) { setOverlay('network'); break }
         goTab('social'); break
       default:
         goTab('messages')
