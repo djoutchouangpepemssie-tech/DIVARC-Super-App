@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     DATING_DAILY_LIKES: int = 30    # likes gratuits par jour (au-delà : super-like ou attendre)
     DATING_MIN_AGE: int = 18
 
+    # --- DIVARC+ (abonnement récurrent) ---
+    PLUS_PRICE_CENTS: int = 999      # 9,99 €/mois (débité du wallet € — prêt PSP)
+    PLUS_TRIAL_DAYS: int = 7         # essai gratuit une fois
+    PLUS_PERIOD_DAYS: int = 30
+    PLUS_MONTHLY_ECLATS: int = 200   # Éclats offerts à chaque période
+    PLUS_CASHBACK_MULT: int = 2      # cashback multiplié pour les abonnés
+
     # --- Mode démo ---
     # False (défaut) = vraie app : nouveaux comptes à 0 €, aucune donnée fictive.
     # True = remplit l'app de contenus de démonstration (faux amis/annonces/vidéos, solde fictif).

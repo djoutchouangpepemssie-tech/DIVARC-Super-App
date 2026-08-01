@@ -75,8 +75,11 @@ async def grant_welcome(db, user_id: str) -> None:
 
 async def cashback(db, user_id: str, amount_cents: int, meta: dict | None = None,
                    idem: str | None = None) -> int:
-    """Cashback en Éclats sur un vrai achat. Retourne le nombre d'Éclats crédités."""
-    pts = (amount_cents * settings.ECLATS_CASHBACK_BPS) // 10000
+    """Cashback en Éclats sur un vrai achat (×PLUS_CASHBACK_MULT pour les abonnés DIVARC+)."""
+    from .helpers import is_plus
+    user = await db.users.find_one({"id": user_id})
+    mult = settings.PLUS_CASHBACK_MULT if is_plus(user) else 1
+    pts = (amount_cents * settings.ECLATS_CASHBACK_BPS * mult) // 10000
     if pts > 0:
         await credit(db, user_id, pts, "cashback", {**(meta or {}), "label": "Cashback achat"}, idem=idem)
     return pts

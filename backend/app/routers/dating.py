@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Request
 from .. import eclats as ec
 from ..config import settings
 from ..db import get_db
-from ..helpers import body_of, err, haversine_km, now, ok, today_str, uid
+from ..helpers import body_of, err, haversine_km, is_plus, now, ok, today_str, uid
 from ..notify import notify
 from ..realtime import manager
 from ..security import require_user
@@ -102,6 +102,8 @@ async def dating_upsert_profile(request: Request, me: dict = Depends(require_use
         "lon": _round_geo(body.get("lon")) if body.get("lon") is not None else (existing or {}).get("lon"),
         "ageVerified": False,      # déclaratif tant que l'EUDI n'est pas branché
         "photoVerified": (existing or {}).get("photoVerified", False),
+        # Incognito (DIVARC+) : n'apparaître qu'aux personnes que J'AI likées
+        "incognito": bool(body.get("incognito")) if body.get("incognito") is not None else (existing or {}).get("incognito", False),
         "updatedAt": now(),
     }
     if existing:
@@ -156,6 +158,10 @@ async def dating_discover(me: dict = Depends(require_user)):
             continue
         if my_gender not in (p.get("seeking") or []):  # ET je corresponds à ce qu'IL cherche
             continue
+        # Incognito (DIVARC+) : n'apparaît que si CE profil m'a déjà liké
+        if p.get("incognito") and not await db.dating_swipes.find_one(
+                {"swiperId": p["userId"], "targetId": me["id"], "action": {"$in": ["like", "superlike"]}}):
+            continue
         out.append(await _card(db, p, my.get("lat"), my.get("lon")))
     # Profils boostés en tête, puis les plus proches
     out.sort(key=lambda c: (c["distanceKm"] is None, c["distanceKm"] if c["distanceKm"] is not None else 1e9))
@@ -199,10 +205,10 @@ async def dating_swipe(target_id: str, request: Request, me: dict = Depends(requ
                                {"label": "Super-like ⭐", "targetId": target_id}, idem=f"superlike:{op}")
         if not spent.get("ok"):
             return err(spent.get("error") or "Solde d'Éclats insuffisant", 402)
-    elif action == "like":
+    elif action == "like" and not is_plus(me):  # DIVARC+ : likes illimités
         used = await db.dating_swipes.count_documents({"swiperId": me["id"], "action": "like", "day": today_str()})
         if used >= settings.DATING_DAILY_LIKES:
-            return err("Limite de likes gratuits atteinte aujourd'hui — utilise un super-like ou reviens demain", 429)
+            return err("Limite de likes gratuits atteinte aujourd'hui — passe DIVARC+ ou reviens demain", 429)
 
     await db.dating_swipes.update_one(
         {"swiperId": me["id"], "targetId": target_id},
@@ -269,11 +275,16 @@ async def dating_reveal(me: dict = Depends(require_user)):
     pending = [l for l in likers if "|".join(sorted([l["swiperId"], me["id"]])) not in matched]
     if not pending:
         return ok({"revealed": [], "count": 0})
-    op = uid()
-    spent = await ec.spend(db, me["id"], settings.ECLATS_REVEAL_LIKES, "reveal_likes",
-                           {"label": "Révélation « qui t'a liké »"}, idem=f"reveal:{op}")
-    if not spent.get("ok"):
-        return err(spent.get("error") or "Solde d'Éclats insuffisant", 402)
+    balance = None
+    if is_plus(me):  # DIVARC+ : révélations incluses, gratuit
+        balance = await ec.get_balance(db, me["id"])
+    else:
+        op = uid()
+        spent = await ec.spend(db, me["id"], settings.ECLATS_REVEAL_LIKES, "reveal_likes",
+                               {"label": "Révélation « qui t'a liké »"}, idem=f"reveal:{op}")
+        if not spent.get("ok"):
+            return err(spent.get("error") or "Solde d'Éclats insuffisant", 402)
+        balance = spent.get("balance")
     blocked = await _blocked_ids(db, me["id"])
     out = []
     for l in pending:
@@ -282,7 +293,7 @@ async def dating_reveal(me: dict = Depends(require_user)):
         prof = await db.dating_profiles.find_one({"userId": l["swiperId"]}, {"_id": 0})
         if prof:
             out.append({**await _card(db, prof, None, None), "superlike": l["action"] == "superlike"})
-    return ok({"revealed": out, "count": len(out), "eclatsBalance": spent.get("balance")})
+    return ok({"revealed": out, "count": len(out), "eclatsBalance": balance})
 
 
 # ---------------- Boost de profil ----------------

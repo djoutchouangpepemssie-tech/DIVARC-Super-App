@@ -136,6 +136,14 @@ async def post_ledger(db, entries: list[dict]) -> str:
     return batch
 
 
+def is_plus(user: dict | None) -> bool:
+    """True si l'utilisateur a un abonnement DIVARC+ actif."""
+    if not user:
+        return False
+    until = user.get("plusUntil")
+    return bool(until and until > now())
+
+
 async def credit_wallet(db, user_id: str, amt: int) -> None:
     r = await db.wallets.update_one({"userId": user_id}, {"$inc": {"balanceCents": amt}})
     if r.matched_count == 0:

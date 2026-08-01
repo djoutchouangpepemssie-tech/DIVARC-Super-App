@@ -341,6 +341,11 @@ function MatchesTab({ onOpenConversation, onClose }) {
 function SettingsTab({ profile, onChanged, onDeleted }) {
   const [busy, setBusy] = useState('')
   const [msg, setMsg] = useState('')
+  const [incognito, setIncognito] = useState(!!profile?.incognito)
+  const toggleIncognito = async () => {
+    const v = !incognito; setIncognito(v)
+    await api('/dating/profile', { method: 'POST', body: JSON.stringify({ incognito: v }) })
+  }
   const boost = async () => {
     setBusy('boost'); setMsg('')
     const r = await api('/dating/boost', { method: 'POST' })
@@ -367,6 +372,12 @@ function SettingsTab({ profile, onChanged, onDeleted }) {
       <button onClick={togglePause} disabled={busy === 'pause'} className="press w-full rounded-2xl px-4 py-4 font-medium border border-border bg-card/60 flex items-center justify-center gap-2">
         {profile?.paused ? <><Play size={18} /> Réactiver mon profil</> : <><Pause size={18} /> Mettre en pause</>}
       </button>
+      <div className="flex items-center justify-between rounded-2xl px-4 py-3.5 border border-border bg-card/60">
+        <div className="flex items-center gap-3"><Eye size={18} className="text-muted-foreground" /><div><div className="font-medium text-sm">Mode incognito</div><div className="text-xs text-muted-foreground">Visible seulement des profils que tu likes · DIVARC+</div></div></div>
+        <button onClick={toggleIncognito} role="switch" aria-checked={incognito} className={cx('w-12 h-7 rounded-full p-0.5 transition-colors', incognito ? 'bg-primary' : 'bg-muted')}>
+          <span className={cx('block w-6 h-6 rounded-full bg-white shadow transition-transform', incognito && 'translate-x-5')} />
+        </button>
+      </div>
       <div className="rounded-2xl border border-border bg-card/40 p-4 text-xs text-muted-foreground">
         <div className="font-medium text-foreground mb-1 flex items-center gap-1.5"><ShieldCheck size={14} className="text-rose-500" /> Sécurité & confidentialité</div>
         Âge déclaré 18+ · Position approximative (jamais exacte) · Blocage & signalement actifs · Données sensibles cloisonnées (RGPD).

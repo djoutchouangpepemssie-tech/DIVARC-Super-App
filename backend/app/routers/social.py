@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Request
 from .. import eclats as ec
 from ..config import settings
 from ..db import get_db
-from ..helpers import body_of, credit_wallet, err, get_sponsored, inject_ads, now, ok, post_ledger, uid
+from ..helpers import body_of, credit_wallet, err, get_sponsored, inject_ads, is_plus, now, ok, post_ledger, uid
 from ..notify import notify
 from ..seed import ensure_social_seed
 from ..security import require_user
@@ -81,7 +81,8 @@ async def social_feed(request: Request, me: dict = Depends(require_user)):
             "boosted": bool(p.get("boostedUntil") and p["boostedUntil"] > _t),
             "reason": "Ordre chronologique" if mode == "chrono" else p["reason"], "createdAt": p["createdAt"],
         })
-    sponsored = [] if mode == "chrono" else await get_sponsored(db)
+    # DIVARC+ : navigation sans publicité
+    sponsored = [] if (mode == "chrono" or is_plus(me)) else await get_sponsored(db)
     return ok(inject_ads(out, sponsored))
 
 

@@ -18,6 +18,7 @@ import { registerServiceWorker, getPushStatus, enablePush, disablePush } from '@
 import CallLayer from './components/call'
 import EclatsSheet, { EclatsCard } from './components/eclats'
 import DatingModule from './components/dating'
+import PlusSheet from './components/plus'
 import Messaging from './components/messaging'
 import NotificationBell from './components/notifications'
 import Social from './components/social'
@@ -996,7 +997,8 @@ const SocialTeaser = () => (
 )
 
 /* ============================= PROFILE ============================= */
-function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout }) {
+function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout, onOpenPlus }) {
+  const plusActive = !!(user?.plusUntil && new Date(user.plusUntil) > new Date())
   const [snd, setSnd] = useState(true)
   useEffect(() => { setSnd(soundEnabled()) }, [])
   const toggleSound = () => { const v = !snd; setSnd(v); setSoundEnabled(v); if (v) playPing() }
@@ -1028,6 +1030,18 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout }) {
     <Screen>
       <div className="cascade space-y-5">
         <h1 className="font-display text-3xl pt-2">Profil & Confiance</h1>
+
+        {/* DIVARC+ */}
+        <button onClick={onOpenPlus} className="press w-full text-left rounded-[var(--radius)] p-4 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7 55%,#9B5DE5)' }}>
+          <div className="relative flex items-center gap-3 text-white">
+            <div className="w-11 h-11 rounded-2xl grid place-items-center bg-white/15 backdrop-blur"><Sparkles size={22} /></div>
+            <div className="flex-1 min-w-0">
+              <div className="font-display text-xl leading-tight">DIVARC+</div>
+              <div className="text-xs text-white/80">{plusActive ? 'Abonnement actif ✓' : 'Illimité, sans pub, +Éclats · essai gratuit'}</div>
+            </div>
+            <ChevronRight size={20} className="text-white/80" />
+          </div>
+        </button>
 
         <div className="card-hero p-5 glow-primary">
           <div className="relative flex items-center gap-4">
@@ -1501,7 +1515,7 @@ function App() {
           {tab === 'messages' && <Messaging me={user} openConvId={pendingConv} onConsumed={() => setPendingConv(null)} openDiscovery={pendingDiscovery} onDiscoveryConsumed={() => setPendingDiscovery(false)} />}
           {tab === 'qr' && <QRScreen user={user} onDone={() => load()} initialCode={pendingPay} onConsumed={() => setPendingPay(null)} />}
           {tab === 'discover' && <Discover onTab={goTab} onOpenDating={() => setOverlay('dating')} />}
-          {tab === 'profile' && <Profile user={user} setUser={setUser} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}
+          {tab === 'profile' && <Profile user={user} setUser={setUser} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} onOpenPlus={() => setOverlay('plus')} />}
           {tab === 'social' && <Social me={user} onBack={() => setTab('hub')} />}
           {tab === 'market' && <Marketplace me={user} onWalletRefresh={load} onImmersive={setMktImmersive} />}
           {tab === 'ads' && <AdsManager me={user} onWalletRefresh={load} onImmersive={setMktImmersive} />}
@@ -1528,6 +1542,7 @@ function App() {
         {overlay === 'coffre' && <Sheet onClose={() => setOverlay(null)} title="Nouveau coffre"><ComingSoon /></Sheet>}
         {overlay === 'eclats' && <EclatsSheet onClose={() => setOverlay(null)} />}
         {overlay === 'dating' && <DatingModule me={user} onClose={() => setOverlay(null)} onOpenConversation={(id) => { setOverlay(null); setPendingConv(id); goTab('messages') }} />}
+        {overlay === 'plus' && <PlusSheet onClose={() => setOverlay(null)} />}
       </AnimatePresence>
 
       {/* Couche d'appels audio/vidéo (WebRTC) — disponible partout */}
