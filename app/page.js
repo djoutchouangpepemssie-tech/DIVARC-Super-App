@@ -1351,6 +1351,7 @@ function App() {
   const [pending, setPending] = useState(0)
   const [pendingPay, setPendingPay] = useState(null)
   const [pendingConv, setPendingConv] = useState(null)
+  const [pendingDiscovery, setPendingDiscovery] = useState(false)
 
   // Clic sur une notification -> on route vers le bon écran (et la bonne conversation)
   const handleNotif = (n) => {
@@ -1359,6 +1360,8 @@ function App() {
       case 'message':
         if (cid) setPendingConv(cid)
         goTab('messages'); break
+      case 'contact': // demande de contact / acceptation -> panneau Découverte & Demandes
+        setPendingDiscovery(true); goTab('messages'); break
       case 'payment':
         goTab('wallet'); break
       case 'sale': case 'offer':
@@ -1508,7 +1511,7 @@ function App() {
         <motion.div key={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
           {tab === 'hub' && <Hub user={user} wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} onTab={goTab} onNotif={handleNotif} />}
           {tab === 'wallet' && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
-          {tab === 'messages' && <Messaging me={user} openConvId={pendingConv} onConsumed={() => setPendingConv(null)} />}
+          {tab === 'messages' && <Messaging me={user} openConvId={pendingConv} onConsumed={() => setPendingConv(null)} openDiscovery={pendingDiscovery} onDiscoveryConsumed={() => setPendingDiscovery(false)} />}
           {tab === 'qr' && <QRScreen user={user} onDone={() => load()} initialCode={pendingPay} onConsumed={() => setPendingPay(null)} />}
           {tab === 'discover' && <Discover onTab={goTab} />}
           {tab === 'profile' && <Profile user={user} setUser={setUser} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} />}

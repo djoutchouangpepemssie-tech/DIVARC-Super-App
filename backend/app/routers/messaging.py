@@ -132,7 +132,7 @@ async def get_messages(cid: str, me: dict = Depends(require_user)):
     conv = await db.conversations.find_one({"id": cid})
     if not conv or me["id"] not in conv["memberIds"]:
         return err("Conversation introuvable", 404)
-    msgs = await db.messages.find({"conversationId": cid}, {"_id": 0}).sort("createdAt", 1).limit(200).to_list(length=200)
+    msgs = await db.messages.find({"conversationId": cid, "deletedFor": {"$ne": me["id"]}}, {"_id": 0}).sort("createdAt", 1).limit(200).to_list(length=200)
     await db.conversations.update_one({"id": cid}, {"$set": {f"reads.{me['id']}": now()}})
     friendship, other = None, None
     if conv["type"] == "dm":
@@ -212,3 +212,32 @@ async def react_message(mid: str, request: Request, me: dict = Depends(require_u
         await manager.send_to_users(others, {"type": "reaction", "messageId": mid,
                                              "conversationId": msg["conversationId"], "reactions": reactions})
     return ok({"reactions": reactions})
+
+
+@router.post("/messages/{mid}/delete")
+async def delete_message(mid: str, request: Request, me: dict = Depends(require_user)):
+    """Supprime un message : scope 'me' (masqué pour moi) ou 'all' (pour tout le monde, expéditeur seul)."""
+    db = get_db()
+    msg = await db.messages.find_one({"id": mid})
+    if not msg:
+        return err("Message introuvable", 404)
+    conv = await db.conversations.find_one({"id": msg["conversationId"]})
+    if not conv or me["id"] not in conv["memberIds"]:
+        return err("Accès refusé", 403)
+    body = await body_of(request)
+    scope = body.get("scope") or "me"
+    if scope == "all":
+        if msg["senderId"] != me["id"]:
+            return err("Seul l'expéditeur peut supprimer pour tout le monde", 403)
+        await db.messages.update_one({"id": mid}, {"$set": {
+            "deleted": True, "text": "", "mediaUrl": None, "mediaType": None,
+            "reactions": [], "deletedAt": now()}})
+        # met à jour l'aperçu de la liste si c'était le dernier message
+        if conv.get("lastMessageAt") == msg.get("createdAt"):
+            await db.conversations.update_one({"id": conv["id"]}, {"$set": {"lastText": "🚫 Message supprimé"}})
+        others = [m for m in conv["memberIds"] if m != me["id"]]
+        await manager.send_to_users(others, {"type": "message:deleted", "conversationId": conv["id"], "messageId": mid})
+        return ok({"ok": True, "scope": "all"})
+    # scope 'me' : on masque uniquement pour l'utilisateur courant
+    await db.messages.update_one({"id": mid}, {"$addToSet": {"deletedFor": me["id"]}})
+    return ok({"ok": True, "scope": "me"})

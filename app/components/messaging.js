@@ -9,7 +9,7 @@ import { startCall } from './call'
 import {
   Plus, Search, ArrowLeft, Send as SendIcon, X, Lock, BadgeCheck, Users, Hash,
   Smile, Flame, Check, Sparkles, Globe, MessageCircle, UserPlus, Crown, Paperclip, RefreshCw,
-  Phone, Video
+  Phone, Video, Trash2, Ban
 } from 'lucide-react'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -81,35 +81,48 @@ function FriendshipPanel({ f, levelUp }) {
 }
 
 /* ---------- Message bubble with physical reactions ---------- */
-function Bubble({ m, me, onReact, isGroup }) {
+function Bubble({ m, me, onReact, onDelete, isGroup }) {
   const mine = m.senderId === me?.id
   const [showReacts, setShowReacts] = useState(false)
+  const [confirm, setConfirm] = useState(false)
+  const close = () => { setShowReacts(false); setConfirm(false) }
+
+  // Message supprimé pour tout le monde -> pierre tombale
+  if (m.deleted) {
+    return (
+      <div className={cx('flex flex-col', mine ? 'items-end' : 'items-start')}>
+        <div className={cx('max-w-[78%] px-4 py-2.5 rounded-2xl text-sm italic text-muted-foreground border border-dashed border-border flex items-center gap-1.5',
+          mine ? 'rounded-br-md' : 'rounded-bl-md')}>
+          <Ban size={13} /> Message supprimé
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={cx('flex flex-col', mine ? 'items-end' : 'items-start')}>
       {isGroup && !mine && <span className="text-[10px] text-muted-foreground ml-3 mb-0.5">{m.senderName}</span>}
       <div className={cx('group relative flex items-end gap-1', mine && 'flex-row-reverse')}>
-        <div onDoubleClick={() => onReact(m.id, '❤️')} className={cx('max-w-[78%] flex flex-col gap-1', mine ? 'items-end' : 'items-start')}>
+        <div onDoubleClick={() => onReact(m.id, '❤️')} onClick={() => setShowReacts((s) => !s)}
+          className={cx('max-w-[78%] flex flex-col gap-1 cursor-pointer', mine ? 'items-end' : 'items-start')}>
           {m.mediaUrl && m.mediaType === 'image' && (
-            <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="block">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={m.mediaUrl} alt="Photo" loading="lazy" className="rounded-2xl max-h-72 w-auto object-cover border border-border" />
-            </a>
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={m.mediaUrl} alt="Photo" loading="lazy" className="rounded-2xl max-h-72 w-auto object-cover border border-border" />
           )}
           {m.mediaUrl && m.mediaType === 'video' && (
             <video src={m.mediaUrl} controls playsInline className="rounded-2xl max-h-72 w-auto border border-border bg-black" />
           )}
           {m.mediaUrl && m.mediaType === 'audio' && (
-            <audio src={m.mediaUrl} controls className="w-56 max-w-full" />
+            <audio src={m.mediaUrl} controls className="w-56 max-w-full" onClick={(e) => e.stopPropagation()} />
           )}
           {m.text && (
-            <div onClick={() => setShowReacts((s) => !s)}
-              className={cx('px-4 py-2.5 rounded-2xl text-sm cursor-pointer select-none break-words',
-                mine ? 'bg-primary text-white rounded-br-md' : 'bg-card border border-border rounded-bl-md')}>
+            <div className={cx('px-4 py-2.5 rounded-2xl text-sm select-none break-words',
+              mine ? 'bg-primary text-white rounded-br-md' : 'bg-card border border-border rounded-bl-md')}>
               {m.text}
             </div>
           )}
         </div>
-        <button onClick={() => setShowReacts((s) => !s)} aria-label="Réagir"
+        <button onClick={() => setShowReacts((s) => !s)} aria-label="Options"
           className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 grid place-items-center rounded-full text-muted-foreground">
           <Smile size={15} />
         </button>
@@ -125,14 +138,28 @@ function Bubble({ m, me, onReact, isGroup }) {
         </div>
       )}
 
+      {/* menu d'actions : réactions + suppression */}
       <AnimatePresence>
         {showReacts && (
           <motion.div initial={{ opacity: 0, y: 6, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
-            className={cx('flex gap-1 mt-1 p-1 rounded-full glass', mine ? 'self-end' : 'self-start')}>
-            {REACTIONS.map((e) => (
-              <button key={e} onClick={() => { onReact(m.id, e); setShowReacts(false) }}
-                className="w-8 h-8 grid place-items-center rounded-full hover:bg-muted press text-lg">{e}</button>
-            ))}
+            className={cx('mt-1 p-1 rounded-2xl glass', mine ? 'self-end' : 'self-start')}>
+            {!confirm ? (
+              <div className="flex items-center gap-1">
+                {REACTIONS.map((e) => (
+                  <button key={e} onClick={() => { onReact(m.id, e); close() }}
+                    className="w-8 h-8 grid place-items-center rounded-full hover:bg-muted press text-lg">{e}</button>
+                ))}
+                <span className="w-px h-5 bg-border mx-0.5" />
+                <button onClick={() => setConfirm(true)} aria-label="Supprimer"
+                  className="w-8 h-8 grid place-items-center rounded-full hover:bg-muted press text-muted-foreground"><Trash2 size={16} /></button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-0.5 min-w-[210px] p-0.5">
+                <button onClick={() => { onDelete(m.id, 'me'); close() }} className="text-left text-sm px-3 py-2 rounded-xl hover:bg-muted press">Supprimer pour moi</button>
+                {mine && <button onClick={() => { onDelete(m.id, 'all'); close() }} className="text-left text-sm px-3 py-2 rounded-xl hover:bg-muted press text-destructive font-medium">Supprimer pour tout le monde</button>}
+                <button onClick={close} className="text-left text-sm px-3 py-2 rounded-xl hover:bg-muted press text-muted-foreground">Annuler</button>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -141,7 +168,7 @@ function Bubble({ m, me, onReact, isGroup }) {
 }
 
 /* ============================= MAIN ============================= */
-export default function Messaging({ me, openConvId, onConsumed }) {
+export default function Messaging({ me, openConvId, onConsumed, openDiscovery, onDiscoveryConsumed }) {
   const [tab, setTab] = useState('dm') // dm | communities
   const [convos, setConvos] = useState([])
   const [communities, setCommunities] = useState([])
@@ -191,6 +218,10 @@ export default function Messaging({ me, openConvId, onConsumed }) {
     const offReact = onRealtime('reaction', (m) => {
       if (m.conversationId === activeRef.current) loadDetail(activeRef.current)
     })
+    const offDel = onRealtime('message:deleted', (m) => {
+      loadConvos()
+      if (m.conversationId === activeRef.current) loadDetail(activeRef.current)
+    })
     const offPres = onRealtime('presence', () => setPresenceTick((v) => v + 1))
     const offPresState = onRealtime('presence_state', () => setPresenceTick((v) => v + 1))
     const offTyping = onRealtime('typing', (m) => {
@@ -200,7 +231,7 @@ export default function Messaging({ me, openConvId, onConsumed }) {
         typingTimer.current = setTimeout(() => setTypingConvo(null), 3000)
       }
     })
-    return () => { offMsg(); offReact(); offPres(); offPresState(); offTyping() }
+    return () => { offMsg(); offReact(); offDel(); offPres(); offPresState(); offTyping() }
   }, [loadConvos, loadDetail])
   // Fallback lent si le WebSocket est indisponible
   useEffect(() => { const t = setInterval(loadConvos, 15000); return () => clearInterval(t) }, [loadConvos])
@@ -221,6 +252,14 @@ export default function Messaging({ me, openConvId, onConsumed }) {
     onConsumed?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openConvId])
+
+  // Ouverture du panneau Découverte/Demandes depuis l'extérieur (clic sur une notif de contact)
+  useEffect(() => {
+    if (!openDiscovery) return
+    setNewOpen(true)
+    onDiscoveryConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDiscovery])
 
   // Conversation ouverte sur mobile = couche plein écran -> on verrouille le scroll de fond
   useEffect(() => {
@@ -266,6 +305,17 @@ export default function Messaging({ me, openConvId, onConsumed }) {
     }
     setSending(false)
     loadDetail(active); loadConvos()
+  }
+
+  const deleteMessage = async (mid, scope) => {
+    // mise à jour optimiste
+    setDetail((d) => {
+      if (!d) return d
+      if (scope === 'me') return { ...d, messages: d.messages.filter((x) => x.id !== mid) }
+      return { ...d, messages: d.messages.map((x) => x.id === mid ? { ...x, deleted: true, text: '', mediaUrl: null, mediaType: null, reactions: [] } : x) }
+    })
+    await api(`/messages/${mid}/delete`, { method: 'POST', body: JSON.stringify({ scope }) })
+    loadConvos()
   }
 
   const react = async (mid, emoji) => {
@@ -394,7 +444,7 @@ export default function Messaging({ me, openConvId, onConsumed }) {
 
               {/* messages */}
               <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-2.5 no-scrollbar">
-                {detail?.messages?.map((m) => <Bubble key={m.id} m={m} me={me} onReact={react} isGroup={isGroup} />)}
+                {detail?.messages?.map((m) => <Bubble key={m.id} m={m} me={me} onReact={react} onDelete={deleteMessage} isGroup={isGroup} />)}
               </div>
 
               {/* en train d'écrire — au pied du chat, juste au-dessus du champ */}
