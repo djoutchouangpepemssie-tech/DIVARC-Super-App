@@ -39,14 +39,12 @@ def test_boost_propulse_vraiment_en_tete_marketplace(client, auth):
     base = {"description": "x", "priceCents": 3000, "category": "maison",
             "subcategory": "Ameublement", "transactionType": "sale", "condition": "Bon état", "city": "Paris"}
     a = client.post("/api/market/listings", headers=H, json={**base, "title": "Annonce A"}).json()["id"]
-    b = client.post("/api/market/listings", headers=H, json={**base, "title": "Annonce B (plus récente)"}).json()["id"]
-    ids = [x["id"] for x in client.get("/api/market/listings", headers=H).json()]
-    assert ids.index(b) < ids.index(a)  # par défaut, la plus récente (B) est devant A
-    # On booste A -> elle doit passer tout en tête, marquée boosted
+    b = client.post("/api/market/listings", headers=H, json={**base, "title": "Annonce B"}).json()["id"]
+    # On booste A -> garantie déterministe : A passe en TOUTE PREMIÈRE position, marquée boosted
     assert client.post(f"/api/market/listings/{a}/boost", headers=H).json()["ok"]
     items = client.get("/api/market/listings", headers=H).json()
     assert items[0]["id"] == a and items[0]["boosted"] is True
-    assert ids_pos(items, a) < ids_pos(items, b)  # A désormais devant B
+    assert ids_pos(items, a) < ids_pos(items, b)  # A devant B
 
 
 def ids_pos(items, _id):

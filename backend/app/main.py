@@ -27,6 +27,14 @@ async def lifespan(app: FastAPI):
         print(f"[startup] MongoDB OK, {n} index prêts")
     except Exception as e:  # noqa: BLE001
         print(f"[startup] MongoDB indisponible au démarrage (l'app démarre quand même): {e}")
+    # Contexte social (PostgreSQL) : crée le schéma si la base est configurée (idempotent)
+    if settings.SOCIAL_DATABASE_URL:
+        try:
+            from .social.adapters.persistence.db import create_all as social_create_all
+            await social_create_all()
+            print("[startup] Social PostgreSQL : schéma prêt")
+        except Exception as e:  # noqa: BLE001
+            print(f"[startup] Social DB indisponible (l'app démarre quand même) : {e}")
     yield
     await close_mongo()
 
@@ -59,3 +67,7 @@ async def health():
 
 for r in (auth, wallet, messaging, social, market, ads, store, admin, assistant, ws, notifications, pay, discovery, push, eclats, dating, plus, arcade):
     app.include_router(r.router, prefix="/api")
+
+# Nouveau contexte social (réseau type Facebook) — PostgreSQL/hexagonal
+from .social.api.router import router as social_net_router  # noqa: E402
+app.include_router(social_net_router, prefix="/api")
