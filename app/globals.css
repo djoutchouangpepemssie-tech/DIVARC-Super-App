@@ -105,20 +105,6 @@
   body.overlay-open {
     overflow: hidden;
   }
-  /* Hauteur réelle du viewport visible (pilotée en JS via l'API VisualViewport).
-     Sert à dimensionner le chat pour que le champ reste au-dessus du clavier sur iOS. */
-  :root {
-    --vvh: 100dvh;
-    --chat-offset: 150px;
-  }
-  /* Quand le clavier est ouvert, on récupère l'espace de la barre du bas */
-  body.kb-open {
-    --chat-offset: 84px;
-  }
-  /* Éléments masqués pendant que le clavier est ouvert (barre d'onglets, bouton flottant) */
-  body.kb-open .kb-hide {
-    display: none !important;
-  }
   ::selection {
     background: rgba(67, 83, 240, 0.22);
   }

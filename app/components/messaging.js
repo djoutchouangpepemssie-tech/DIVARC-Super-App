@@ -406,7 +406,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
               </div>
             </Glass>
           ) : (
-            <Glass className="flex flex-col fixed left-0 right-0 top-0 z-[55] h-[var(--vvh,100dvh)] rounded-none md:static md:z-auto md:h-[calc(100dvh-120px)] md:rounded-[var(--radius)]">
+            <Glass className="flex flex-col fixed inset-0 z-[55] rounded-none md:static md:inset-auto md:z-auto md:h-[calc(100dvh-120px)] md:rounded-[var(--radius)]">
               {/* header */}
               <div className="flex items-center gap-3 p-4 pt-safe md:pt-4 border-b border-border/60">
                 <button onClick={() => setActive(null)} className="md:hidden press"><ArrowLeft size={20} /></button>

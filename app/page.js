@@ -229,7 +229,7 @@ const TABS = [
 ]
 function TabBar({ active, onChange }) {
   return (
-    <div className="kb-hide fixed bottom-0 inset-x-0 z-40 pb-[max(env(safe-area-inset-bottom),12px)] pt-2 px-3 pointer-events-none">
+    <div className="fixed bottom-0 inset-x-0 z-40 pb-[max(env(safe-area-inset-bottom),12px)] pt-2 px-3 pointer-events-none">
       <Glass strong className="mx-auto max-w-md flex items-end justify-around px-2 py-2 pointer-events-auto">
         {TABS.map((t) => {
           const Icon = t.icon
@@ -1413,24 +1413,6 @@ function App() {
   // Enregistre le Service Worker (nécessaire aux notifications push système)
   useEffect(() => { registerServiceWorker() }, [])
 
-  // Clavier : on suit le viewport RÉELLEMENT visible (API VisualViewport) pour que
-  // l'app ne « saute » plus quand le clavier sort (surtout sur iOS, qui ignore interactive-widget).
-  useEffect(() => {
-    const vv = typeof window !== 'undefined' ? window.visualViewport : null
-    if (!vv) return
-    const apply = () => {
-      const root = document.documentElement
-      root.style.setProperty('--vvh', vv.height + 'px')
-      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
-      root.style.setProperty('--kb', kb + 'px')
-      document.body.classList.toggle('kb-open', kb > 90)
-    }
-    apply()
-    vv.addEventListener('resize', apply)
-    vv.addEventListener('scroll', apply)
-    return () => { vv.removeEventListener('resize', apply); vv.removeEventListener('scroll', apply) }
-  }, [])
-
   // Son + vibration à chaque notification reçue en temps réel (messages, paiements…)
   useEffect(() => {
     if (!user) return
@@ -1526,7 +1508,7 @@ function App() {
 
       {tab !== 'social' && tab !== 'ai' && !(tab === 'market' && mktImmersive) && (
         <button onClick={() => setTab('ai')} aria-label="Ouvrir DIVA, l'assistant IA"
-          className="kb-hide press fixed right-4 bottom-24 z-40 w-14 h-14 rounded-full grid place-items-center text-white shadow-xl ring-4 ring-background"
+          className="press fixed right-4 bottom-24 z-40 w-14 h-14 rounded-full grid place-items-center text-white shadow-xl ring-4 ring-background"
           style={{ background: 'linear-gradient(135deg,#4353F0,#9B5DE5)' }}>
           <Sparkles size={24} />
           <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-gold border-2 border-background" />
