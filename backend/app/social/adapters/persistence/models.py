@@ -97,6 +97,16 @@ class Comment(Base):
     __table_args__ = (Index("ix_social_comments_post_created", "post_id", "created_at"),)
 
 
+class Bookmark(Base):
+    __tablename__ = "social_bookmarks"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    post_id: Mapped[str] = mapped_column(String(26), index=True)
+    collection_id: Mapped[str | None] = mapped_column(String(26))  # collections privées (couche +)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+    __table_args__ = (UniqueConstraint("user_id", "post_id", name="uq_bookmark_once"),)
+
+
 class Edge(Base):
     """Graphe social : amis (symétrique via 2 arêtes) ET suivi (asymétrique)."""
     __tablename__ = "social_edges"
