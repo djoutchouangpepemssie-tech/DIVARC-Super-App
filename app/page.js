@@ -19,6 +19,7 @@ import CallLayer from './components/call'
 import EclatsSheet, { EclatsCard } from './components/eclats'
 import DatingModule from './components/dating'
 import PlusSheet from './components/plus'
+import ArcadeModule from './components/arcade'
 import Messaging from './components/messaging'
 import NotificationBell from './components/notifications'
 import Social from './components/social'
@@ -891,7 +892,7 @@ const MINIAPPS = [
   { id: 'health', name: 'Santé', cat: 'Santé', icon: HeartPulse, grad: 'linear-gradient(135deg,#EF476F,#FF8FA8)', why: 'RDV & téléconsultation' },
   { id: 'assistant', name: 'Assistant', cat: 'IA', icon: Sparkles, grad: 'linear-gradient(135deg,#2C39C7,#4353F0)', why: 'Copilote qui agit' },
 ]
-function Discover({ onTab, onOpenDating }) {
+function Discover({ onTab, onOpenDating, onOpenArcade }) {
   const [why, setWhy] = useState(null)
   const cats = ['Tout', 'Repas', 'Transport', 'Shopping', 'Événements', 'Santé']
   const [cat, setCat] = useState('Tout')
@@ -910,6 +911,18 @@ function Discover({ onTab, onOpenDating }) {
             <div className="flex-1 min-w-0">
               <div className="font-display text-2xl leading-tight">Rencontres</div>
               <div className="text-sm text-white/85">Vérifiées, sûres et respectueuses · 18+</div>
+            </div>
+            <ChevronRight size={22} className="text-white/80" />
+          </div>
+        </button>
+
+        {/* Arcade */}
+        <button onClick={onOpenArcade} className="press w-full text-left rounded-[var(--radius)] p-5 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#7a5b12,#E2AA2B)' }}>
+          <div className="relative flex items-center gap-4 text-white">
+            <div className="w-14 h-14 rounded-2xl grid place-items-center bg-white/15 backdrop-blur"><Zap size={26} fill="#fff" /></div>
+            <div className="flex-1 min-w-0">
+              <div className="font-display text-2xl leading-tight">Arcade</div>
+              <div className="text-sm text-white/85">Jeux de compétence · gagne des Éclats</div>
             </div>
             <ChevronRight size={22} className="text-white/80" />
           </div>
@@ -1514,7 +1527,7 @@ function App() {
           {tab === 'wallet' && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
           {tab === 'messages' && <Messaging me={user} openConvId={pendingConv} onConsumed={() => setPendingConv(null)} openDiscovery={pendingDiscovery} onDiscoveryConsumed={() => setPendingDiscovery(false)} />}
           {tab === 'qr' && <QRScreen user={user} onDone={() => load()} initialCode={pendingPay} onConsumed={() => setPendingPay(null)} />}
-          {tab === 'discover' && <Discover onTab={goTab} onOpenDating={() => setOverlay('dating')} />}
+          {tab === 'discover' && <Discover onTab={goTab} onOpenDating={() => setOverlay('dating')} onOpenArcade={() => setOverlay('arcade')} />}
           {tab === 'profile' && <Profile user={user} setUser={setUser} theme={theme} setTheme={setTheme} mask={mask} setMask={setMask} onLogout={logout} onOpenPlus={() => setOverlay('plus')} />}
           {tab === 'social' && <Social me={user} onBack={() => setTab('hub')} />}
           {tab === 'market' && <Marketplace me={user} onWalletRefresh={load} onImmersive={setMktImmersive} />}
@@ -1543,6 +1556,7 @@ function App() {
         {overlay === 'eclats' && <EclatsSheet onClose={() => setOverlay(null)} />}
         {overlay === 'dating' && <DatingModule me={user} onClose={() => setOverlay(null)} onOpenConversation={(id) => { setOverlay(null); setPendingConv(id); goTab('messages') }} />}
         {overlay === 'plus' && <PlusSheet onClose={() => setOverlay(null)} />}
+        {overlay === 'arcade' && <ArcadeModule onClose={() => setOverlay(null)} />}
       </AnimatePresence>
 
       {/* Couche d'appels audio/vidéo (WebRTC) — disponible partout */}

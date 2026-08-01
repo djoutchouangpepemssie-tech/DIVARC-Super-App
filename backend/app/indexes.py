@@ -109,6 +109,12 @@ _INDEXES: list[tuple[str, object, dict]] = [
     ("dating_matches", "key", {"unique": True}),
     ("dating_matches", "users", {}),
     ("dating_reports", [("status", 1), ("createdAt", -1)], {}),
+
+    # Arcade
+    ("arcade_sessions", "id", {"unique": True}),
+    ("arcade_sessions", [("userId", 1), ("game", 1), ("day", 1)], {}),
+    ("arcade_scores", [("userId", 1), ("game", 1), ("score", -1)], {}),
+    ("arcade_scores", [("game", 1), ("week", 1)], {}),
 ]
 
 

@@ -11,7 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .config import settings
 from .db import close_mongo, connect_to_mongo
 from .indexes import ensure_indexes
-from .routers import (admin, ads, assistant, auth, dating, discovery, eclats, market, messaging,
+from .routers import (admin, ads, arcade, assistant, auth, dating, discovery, eclats, market, messaging,
                       notifications, pay, plus, push, social, store, wallet, ws)
 
 
@@ -57,5 +57,5 @@ async def health():
     return {"service": "DIVARC API", "status": "live", "time": now().isoformat()}
 
 
-for r in (auth, wallet, messaging, social, market, ads, store, admin, assistant, ws, notifications, pay, discovery, push, eclats, dating, plus):
+for r in (auth, wallet, messaging, social, market, ads, store, admin, assistant, ws, notifications, pay, discovery, push, eclats, dating, plus, arcade):
     app.include_router(r.router, prefix="/api")

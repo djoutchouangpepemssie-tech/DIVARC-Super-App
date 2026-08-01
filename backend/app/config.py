@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     PLUS_MONTHLY_ECLATS: int = 200   # Éclats offerts à chaque période
     PLUS_CASHBACK_MULT: int = 2      # cashback multiplié pour les abonnés
 
+    # --- Arcade (jeux de COMPÉTENCE — aucun hasard à gains monétaires) ---
+    ARCADE_ENTRY: int = 5            # coût d'une partie en Éclats (après la partie gratuite du jour)
+    ARCADE_FREE_DAILY: int = 1       # parties gratuites par jour et par jeu
+
     # --- Mode démo ---
     # False (défaut) = vraie app : nouveaux comptes à 0 €, aucune donnée fictive.
     # True = remplit l'app de contenus de démonstration (faux amis/annonces/vidéos, solde fictif).
