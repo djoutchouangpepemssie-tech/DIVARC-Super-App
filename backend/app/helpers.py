@@ -162,17 +162,14 @@ async def send_otp_email(email: str, code: str) -> dict:
     if not settings.RESEND_API_KEY:
         return {"preview": True}
     try:
-        html = (
-            '<div style="font-family:sans-serif"><h2>DIVARC</h2>'
-            "<p>Ton code de connexion :</p>"
-            f'<div style="font-size:32px;font-weight:800;letter-spacing:6px">{code}</div>'
-            "<p>Valable 10 minutes.</p></div>"
-        )
+        from .emails import otp_email_html, otp_email_text
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.post(
                 "https://api.resend.com/emails",
                 headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
-                json={"from": settings.RESEND_FROM, "to": [email], "subject": f"Ton code DIVARC : {code}", "html": html},
+                json={"from": settings.RESEND_FROM, "to": [email],
+                      "subject": f"Ton code DIVARC : {code}",
+                      "html": otp_email_html(code), "text": otp_email_text(code)},
             )
             j = r.json()
             if isinstance(j, dict) and j.get("error"):
