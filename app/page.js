@@ -72,6 +72,7 @@ function Login({ onAuthed }) {
   const [phone, setPhone] = useState('')
   const [isNew, setIsNew] = useState(false)
   const [preview, setPreview] = useState('')
+  const [sentTo, setSentTo] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   // Code de parrainage lu depuis l'URL (?invite=CODE), conservé pour l'inscription
@@ -86,12 +87,15 @@ function Login({ onAuthed }) {
 
   const sendCode = async () => {
     setError('')
-    if (!email.includes('@')) { setError('E-mail invalide'); return }
+    const id = email.trim()
+    // e-mail OU nom d'utilisateur (@identifiant) — le backend valide finement
+    const ok = id.includes('@') || /^@?[a-z0-9_]{3,20}$/i.test(id)
+    if (!ok) { setError('Entre ton e-mail ou ton nom d’utilisateur') ; return }
     setBusy(true)
-    const r = await api('/auth/otp/send', { method: 'POST', body: JSON.stringify({ email }) })
+    const r = await api('/auth/otp/send', { method: 'POST', body: JSON.stringify({ email: id }) })
     setBusy(false)
     if (r.error) { setError(r.error); return }
-    setIsNew(r.isNew); setPreview(r.previewCode || ''); setStep('otp')
+    setIsNew(r.isNew); setPreview(r.previewCode || ''); setSentTo(r.sentTo || id); setStep('otp')
   }
   const verify = async () => {
     setError('')
@@ -130,12 +134,12 @@ function Login({ onAuthed }) {
           {step === 'email' ? (
             <motion.div key="email" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
               <h1 className="font-display text-3xl leading-tight mb-2">Bienvenue 👋</h1>
-              <p className="text-muted-foreground mb-6 leading-relaxed text-sm">Connexion sécurisée par code e-mail. Pas de mot de passe à retenir.</p>
-              <label className="text-xs text-muted-foreground">Ton e-mail</label>
+              <p className="text-muted-foreground mb-6 leading-relaxed text-sm">Déjà un compte ? Connecte-toi avec ton e-mail ou ton nom d’utilisateur. Sinon, ton e-mail crée ton compte. Pas de mot de passe.</p>
+              <label className="text-xs text-muted-foreground">E-mail ou nom d’utilisateur</label>
               <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-4 py-3 mt-1.5 mb-2 focus-within:border-primary transition-colors">
                 <Mail size={18} className="text-muted-foreground" />
-                <input type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendCode()}
-                  placeholder="toi@exemple.fr" className="flex-1 bg-transparent outline-none text-sm" />
+                <input type="text" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendCode()}
+                  placeholder="toi@exemple.fr  ou  @ton_nom" className="flex-1 bg-transparent outline-none text-sm" />
               </div>
               {error && <p className="text-xs text-destructive mb-2">{error}</p>}
               <PrimaryBtn onClick={sendCode} full disabled={busy}>
@@ -145,9 +149,9 @@ function Login({ onAuthed }) {
             </motion.div>
           ) : (
             <motion.div key="otp" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
-              <button onClick={() => { setStep('email'); setCode(''); setError('') }} className="text-sm text-muted-foreground flex items-center gap-1 mb-4"><ArrowLeft size={15} /> Modifier l'e-mail</button>
+              <button onClick={() => { setStep('email'); setCode(''); setError('') }} className="text-sm text-muted-foreground flex items-center gap-1 mb-4"><ArrowLeft size={15} /> Modifier</button>
               <h1 className="font-display text-3xl leading-tight mb-1.5">Entre ton code</h1>
-              <p className="text-muted-foreground mb-5 text-sm">Envoyé à <b className="text-foreground">{email}</b></p>
+              <p className="text-muted-foreground mb-5 text-sm">{isNew ? 'Nouveau compte · ' : 'Bon retour 👋 · '}Code envoyé à <b className="text-foreground">{sentTo || email}</b></p>
               {preview && (
                 <div className="mb-4 rounded-2xl bg-gold/12 border border-gold/30 px-4 py-2.5 text-sm flex items-center gap-2">
                   <Info size={15} className="text-gold" /> Mode aperçu — ton code : <b className="font-grotesk tracking-widest text-gold">{preview}</b>

@@ -328,14 +328,14 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
 
   return (
     <div className="min-h-[100dvh] bg-app-gradient">
-      <div className="mx-auto max-w-6xl px-3 sm:px-4 pt-5 pb-28 grid md:grid-cols-[340px_1fr] gap-4">
+      <div className="mx-auto max-w-6xl px-3 sm:px-4 pt-5 pb-28 grid grid-cols-1 md:grid-cols-[340px_1fr] gap-4 min-w-0">
         {/* ============ LEFT: list ============ */}
-        <div className={cx(active && 'hidden md:block')}>
-          <div className="flex items-center justify-between mb-4">
+        <div className={cx('min-w-0', active && 'hidden md:block')}>
+          <div className="flex items-center justify-between gap-3 mb-4">
             <h1 className="font-display text-3xl">Messages</h1>
-            <button onClick={() => setNewOpen(true)} aria-label="Nouvelle discussion"
-              className="press w-10 h-10 rounded-full grid place-items-center text-white shadow-lg" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
-              <Plus size={20} />
+            <button onClick={() => setNewOpen(true)} aria-label="Ajouter / nouvelle discussion"
+              className="press w-11 h-11 rounded-full grid place-items-center text-white shadow-lg shrink-0" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+              <Plus size={22} />
             </button>
           </div>
 

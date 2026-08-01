@@ -21,13 +21,46 @@ _HANDLE_RE = re.compile(r"^@?[a-z0-9_]{3,20}$")
 router = APIRouter()
 
 
+def _looks_like_email(s: str) -> bool:
+    return "@" in s and "." in s.rsplit("@", 1)[-1]
+
+
+def _mask_email(e: str) -> str:
+    try:
+        name, dom = e.split("@", 1)
+        masked = (name[0] + "•••") if name else "•••"
+        return f"{masked}@{dom}"
+    except Exception:  # noqa: BLE001
+        return "ton e-mail"
+
+
+async def _resolve_login_email(db, ident: str):
+    """Transforme un identifiant (e-mail OU @nom_utilisateur) en e-mail réel.
+
+    Retourne (email, erreur). Le nom d'utilisateur ne peut PAS créer de compte
+    (il faut un e-mail), donc un @handle inconnu renvoie une erreur.
+    """
+    ident = (ident or "").strip()
+    if not ident:
+        return None, err("Entre ton e-mail ou ton nom d'utilisateur")
+    if _looks_like_email(ident):
+        return ident.lower(), None
+    # sinon : nom d'utilisateur (@handle)
+    if not _HANDLE_RE.match(ident):
+        return None, err("E-mail ou nom d'utilisateur invalide")
+    u = await db.users.find_one({"handle": "@" + ident.lstrip("@").lower()})
+    if not u:
+        return None, err("Nom d'utilisateur introuvable. Pour créer un compte, utilise ton e-mail.")
+    return u["email"], None
+
+
 @router.post("/auth/otp/send")
 async def otp_send(request: Request):
     db = get_db()
     body = await body_of(request)
-    email = str(body.get("email") or "").strip().lower()
-    if "@" not in email:
-        return err("E-mail invalide")
+    email, resolve_err = await _resolve_login_email(db, str(body.get("email") or ""))
+    if resolve_err:
+        return resolve_err
     code = str(random.randint(100000, 999999))
     await db.otp_codes.update_one(
         {"email": email},
@@ -38,6 +71,7 @@ async def otp_send(request: Request):
     exists = bool(await db.users.find_one({"email": email}))
     return ok({
         "ok": True, "isNew": not exists,
+        "sentTo": _mask_email(email),
         "previewCode": code if mail.get("preview") else None,
         "delivery": "email" if mail.get("sent") else "preview",
     })
@@ -47,7 +81,9 @@ async def otp_send(request: Request):
 async def otp_verify(request: Request):
     db = get_db()
     body = await body_of(request)
-    email = str(body.get("email") or "").strip().lower()
+    email, resolve_err = await _resolve_login_email(db, str(body.get("email") or ""))
+    if resolve_err:
+        return resolve_err
     code = str(body.get("code") or "").strip()
     row = await db.otp_codes.find_one({"email": email})
     if not row or row["expiresAt"] < now():
