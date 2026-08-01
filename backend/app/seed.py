@@ -94,6 +94,9 @@ async def provision_user(db, email: str, name: str | None = None, phone: str | N
         "id": uid(), "userId": _id, "balanceCents": start_balance, "currency": "EUR",
         "sepaInstant": True, "carbonMonthKg": 0, "createdAt": now(),
     })
+    # Cadeau de bienvenue en Éclats (monnaie interne — real economy, hors mode démo)
+    from .eclats import grant_welcome
+    await grant_welcome(db, _id)
     if settings.DEMO_MODE:
         await db.coffres.insert_many([
             {"id": uid(), "userId": _id, "name": "Vacances", "emoji": "🏖️", "balanceCents": 500, "goalCents": 150000, "rule": "round_up", "color": "#4353F0"},

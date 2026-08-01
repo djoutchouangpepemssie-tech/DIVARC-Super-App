@@ -18,6 +18,11 @@ _INDEXES: list[tuple[str, object, dict]] = [
     ("otp_codes", "email", {"unique": True}),
     ("otp_codes", "expiresAt", {"expireAfterSeconds": 0}),  # TTL : purge auto des OTP expirés
 
+    # Éclats (monnaie interne, ledger séparé)
+    ("eclats_wallets", "userId", {"unique": True}),
+    ("eclats_ledger", [("userId", 1), ("createdAt", -1)], {}),
+    ("eclats_ledger", [("userId", 1), ("idempotencyKey", 1)], {"unique": True, "sparse": True}),
+
     # Wallet & finances
     ("wallets", "userId", {"unique": True}),
     ("coffres", "userId", {}),

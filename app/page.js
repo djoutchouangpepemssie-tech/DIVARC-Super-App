@@ -16,6 +16,7 @@ import { connectRealtime, disconnectRealtime, onRealtime } from '@/lib/realtime'
 import { installAudioUnlock, playPing, soundEnabled, setSoundEnabled } from '@/lib/sound'
 import { registerServiceWorker, getPushStatus, enablePush, disablePush } from '@/lib/push'
 import CallLayer from './components/call'
+import EclatsSheet, { EclatsCard } from './components/eclats'
 import Messaging from './components/messaging'
 import NotificationBell from './components/notifications'
 import Social from './components/social'
@@ -320,12 +321,15 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
           ))}
         </div>
 
+        {/* Éclats — monnaie interne */}
+        <EclatsCard onOpen={() => onAction('eclats')} />
+
         {/* carbon */}
         <Glass className="p-4 flex items-center gap-4">
           <div className="w-11 h-11 rounded-2xl grid place-items-center bg-green-500/12 text-green-600 dark:text-green-400"><Leaf size={20} /></div>
           <div className="flex-1">
             <div className="text-sm font-semibold">Empreinte carbone</div>
-            <div className="text-xs text-muted-foreground">{wallet?.carbonMonthKg} kg CO₂ ce mois — 12% de moins qu'en mai</div>
+            <div className="text-xs text-muted-foreground">{wallet?.carbonMonthKg || 0} kg CO₂ ce mois</div>
           </div>
           <ChevronRight size={18} className="text-muted-foreground" />
         </Glass>
@@ -1465,6 +1469,7 @@ function App() {
     if (id === 'qr' || id === 'receive') return setTab('qr')
     if (id === 'split') return setOverlay('send')
     if (id === 'coffre') return setOverlay('coffre')
+    if (id === 'eclats') return setOverlay('eclats')
   }
   const goTab = (t) => { setMktImmersive(false); setTab(t) }
 
@@ -1508,6 +1513,7 @@ function App() {
         {overlay === 'send' && <SendSheet contacts={contacts} wallet={wallet} onClose={() => setOverlay(null)} onSent={() => load()} />}
         {overlay === 'enveloppe' && <EnveloppeSheet wallet={wallet} onClose={() => setOverlay(null)} onDone={() => load()} />}
         {overlay === 'coffre' && <Sheet onClose={() => setOverlay(null)} title="Nouveau coffre"><ComingSoon /></Sheet>}
+        {overlay === 'eclats' && <EclatsSheet onClose={() => setOverlay(null)} />}
       </AnimatePresence>
 
       {/* Couche d'appels audio/vidéo (WebRTC) — disponible partout */}

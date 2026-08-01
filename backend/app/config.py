@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     TURN_USERNAME: str = ""
     TURN_PASSWORD: str = ""
 
+    # --- Éclats (monnaie interne, sens unique, non convertible en €) ---
+    ECLATS_WELCOME: int = 100      # cadeau de bienvenue à l'inscription
+    ECLATS_DAILY: int = 10         # check-in quotidien (base)
+    ECLATS_DAILY_STREAK_MAX: int = 6   # bonus max ajouté pour une longue série
+    ECLATS_REFERRAL: int = 50      # parrainage : Éclats pour le parrain ET le filleul
+    ECLATS_CASHBACK_BPS: int = 200  # cashback en Éclats sur les vrais achats (200 = 2,00%)
+
     # --- Mode démo ---
     # False (défaut) = vraie app : nouveaux comptes à 0 €, aucune donnée fictive.
     # True = remplit l'app de contenus de démonstration (faux amis/annonces/vidéos, solde fictif).

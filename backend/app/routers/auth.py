@@ -116,6 +116,13 @@ async def otp_verify(request: Request):
                     {"$addToSet": {"usedEmails": email}, "$inc": {"count": 1}})
                 await notify(db, inv["inviterId"], "invite", "🎁 Parrainage réussi",
                              f"{user['name']} a rejoint DIVARC — +5,00 € pour toi !", {})
+                # Éclats de parrainage (parrain ET filleul)
+                from ..config import settings as _s
+                from ..eclats import credit as _ec_credit
+                await _ec_credit(db, inv["inviterId"], _s.ECLATS_REFERRAL, "referral",
+                                 {"label": f"Parrainage : {user['name']}"}, idem=f"ref:{invite_code}:{email}:in")
+                await _ec_credit(db, user["id"], _s.ECLATS_REFERRAL, "referral",
+                                 {"label": "Bonus de parrainage"}, idem=f"ref:{invite_code}:{email}:out")
     token = secrets.token_hex(24)
     await db.sessions.insert_one({"token": token, "userId": user["id"], "createdAt": now()})
     user.pop("_id", None)
