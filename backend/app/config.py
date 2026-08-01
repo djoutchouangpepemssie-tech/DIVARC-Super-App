@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     VAPID_PRIVATE_KEY: str = ""
     VAPID_SUBJECT: str = "mailto:djoutchouangpepemssie@gmail.com"
 
+    # --- Appels WebRTC : serveur TURN (optionnel, pour fiabiliser les appels en 4G/5G) ---
+    # STUN public suffit sur WiFi/même réseau ; ajouter un TURN rend les appels fiables partout.
+    TURN_URL: str = ""       # ex: turn:openrelay.metered.ca:80
+    TURN_USERNAME: str = ""
+    TURN_PASSWORD: str = ""
+
     # --- CORS ---
     # Liste d'origines séparées par des virgules, ou "*" pour tout autoriser.
     CORS_ORIGINS: str = "*"

@@ -15,6 +15,7 @@ import { api, getToken, setToken, clearToken, flushQueue, pendingCount } from '@
 import { connectRealtime, disconnectRealtime, onRealtime } from '@/lib/realtime'
 import { installAudioUnlock, playPing, soundEnabled, setSoundEnabled } from '@/lib/sound'
 import { registerServiceWorker, getPushStatus, enablePush, disablePush } from '@/lib/push'
+import CallLayer from './components/call'
 import Messaging from './components/messaging'
 import NotificationBell from './components/notifications'
 import Social from './components/social'
@@ -1536,6 +1537,9 @@ function App() {
         {overlay === 'enveloppe' && <EnveloppeSheet wallet={wallet} onClose={() => setOverlay(null)} onDone={() => load()} />}
         {overlay === 'coffre' && <Sheet onClose={() => setOverlay(null)} title="Nouveau coffre"><ComingSoon /></Sheet>}
       </AnimatePresence>
+
+      {/* Couche d'appels audio/vidéo (WebRTC) — disponible partout */}
+      <CallLayer me={user} />
     </div>
   )
 }

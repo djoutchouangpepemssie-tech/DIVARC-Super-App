@@ -5,9 +5,11 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
 import { onRealtime, sendRealtime, isOnline } from '@/lib/realtime'
 import Discovery from './discovery'
+import { startCall } from './call'
 import {
   Plus, Search, ArrowLeft, Send as SendIcon, X, Lock, BadgeCheck, Users, Hash,
-  Smile, Flame, Check, Sparkles, Globe, MessageCircle, UserPlus, Crown, Paperclip, RefreshCw
+  Smile, Flame, Check, Sparkles, Globe, MessageCircle, UserPlus, Crown, Paperclip, RefreshCw,
+  Phone, Video
 } from 'lucide-react'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -365,7 +367,19 @@ export default function Messaging({ me, openConvId, onConsumed }) {
                       : `${conv?.memberCount} membres`}
                   </div>
                 </div>
-                <Lock size={16} className="text-muted-foreground" title="Chiffré de bout en bout" />
+                {conv?.type === 'dm' && conv.other && (
+                  <>
+                    <button onClick={() => startCall(conv.other.id, conv.other.name, conv.other.avatarColor, false)}
+                      aria-label="Appel audio" className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60 text-foreground">
+                      <Phone size={17} />
+                    </button>
+                    <button onClick={() => startCall(conv.other.id, conv.other.name, conv.other.avatarColor, true)}
+                      aria-label="Appel vidéo" className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60 text-foreground">
+                      <Video size={17} />
+                    </button>
+                  </>
+                )}
+                <Lock size={16} className="text-muted-foreground shrink-0" title="Chiffré de bout en bout" />
               </div>
 
               {conv?.type === 'dm' && <FriendshipPanel f={conv.friendship} levelUp={levelUp} />}
