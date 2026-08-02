@@ -4,7 +4,9 @@
 // Appelle le nouveau contexte social /api/net/* (PostgreSQL). Réactions/commentaires = Couche 3.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight, UserPlus, UserCheck, Check, Clock, UserX, EyeOff, Info, Search, Bell } from 'lucide-react'
+import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight, UserPlus, UserCheck, Check, Clock, UserX, EyeOff, Info, Search, Bell, Flag, Download, ShieldAlert } from 'lucide-react'
+
+const REPORT_REASONS = [['spam', 'Spam / publicité'], ['harcelement', 'Harcèlement'], ['haine', 'Discours haineux'], ['violence', 'Violence'], ['nudite', 'Nudité / contenu sexuel'], ['arnaque', 'Arnaque'], ['autre', 'Autre']]
 import { api } from '@/lib/api'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -28,6 +30,10 @@ export default function NetworkModule({ me, onClose }) {
   const [loadingMore, setLoadingMore] = useState(false)
   const [unavailable, setUnavailable] = useState(false)
   const [showPrefs, setShowPrefs] = useState(false)
+  const [isMod, setIsMod] = useState(false)
+  const [showMod, setShowMod] = useState(false)
+
+  useEffect(() => { (async () => { const c = await api('/net/moderation/config'); if (!c.error) setIsMod(!!c.isModerator) })() }, [])
 
   const load = useCallback(async (cur) => {
     const r = await api(`/net/feed?mode=${mode}${cur ? `&cursor=${encodeURIComponent(cur)}` : ''}`)
@@ -47,7 +53,12 @@ export default function NetworkModule({ me, onClose }) {
         <button onClick={onClose} className="press" aria-label="Fermer"><X size={22} /></button>
         <h1 className="font-display text-2xl">Réseau <span className="text-xs align-top text-muted-foreground">bêta</span></h1>
         {!unavailable && (
-          <button onClick={() => setShowPrefs(true)} className="press ml-auto w-9 h-9 rounded-full grid place-items-center bg-muted/60 text-muted-foreground" aria-label="Réglages des notifications"><Bell size={18} /></button>
+          <div className="ml-auto flex items-center gap-2">
+            {isMod && (
+              <button onClick={() => setShowMod(true)} className="press w-9 h-9 rounded-full grid place-items-center bg-primary/10 text-primary" aria-label="Modération"><ShieldAlert size={18} /></button>
+            )}
+            <button onClick={() => setShowPrefs(true)} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60 text-muted-foreground" aria-label="Réglages"><Bell size={18} /></button>
+          </div>
         )}
       </div>
 
@@ -102,6 +113,7 @@ export default function NetworkModule({ me, onClose }) {
       <AnimatePresence>
         {profileId && <ProfileSheet userId={profileId} meId={me?.id} onClose={() => setProfileId(null)} />}
         {showPrefs && <NotifPrefsSheet onClose={() => setShowPrefs(false)} />}
+        {showMod && <ModerationPanel onClose={() => setShowMod(false)} />}
       </AnimatePresence>
     </motion.div>
   )
@@ -132,6 +144,22 @@ function NotifPrefsSheet({ onClose }) {
     await api('/net/notifications/prefs', { method: 'PUT', body: JSON.stringify({ disabled: next }) })
     setSaving(false)
   }
+  const exportData = async () => {
+    const d = await api('/net/me/export')
+    if (d.error) return alert(d.error)
+    const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'mes-donnees-divarc-reseau.json'; a.click()
+    URL.revokeObjectURL(url)
+  }
+  const eraseData = async () => {
+    const t = prompt('Cette action est IRRÉVERSIBLE : elle efface tes publications, commentaires, réactions et relations du Réseau (ton compte DIVARC n\'est pas supprimé).\n\nÉcris SUPPRIMER pour confirmer :')
+    if (t !== 'SUPPRIMER') return
+    const r = await api('/net/me/erase', { method: 'POST', body: JSON.stringify({ confirm: 'SUPPRIMER' }) })
+    if (r.error) return alert(r.error)
+    alert(`Effacé : ${r.posts} publication(s), ${r.comments} commentaire(s). Recharge le Réseau.`)
+    onClose()
+  }
   return (
     <motion.div className="fixed inset-0 z-[80] bg-black/40 flex items-end sm:items-center sm:justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
       <motion.div className="w-full sm:max-w-md bg-card rounded-t-3xl sm:rounded-3xl border border-border p-5 pb-safe" initial={{ y: 40 }} animate={{ y: 0 }} exit={{ y: 40 }} onClick={(e) => e.stopPropagation()}>
@@ -159,7 +187,70 @@ function NotifPrefsSheet({ onClose }) {
             })}
           </div>
         )}
+        {/* RGPD — Mes données (Couche 9) */}
+        <div className="mt-5 pt-4 border-t border-border">
+          <div className="text-sm font-medium mb-1">Mes données (RGPD)</div>
+          <p className="text-xs text-muted-foreground mb-3">Conforme RGPD · hébergé dans l'UE. Tu contrôles tes données.</p>
+          <button onClick={exportData} className="press w-full flex items-center gap-2 py-2.5 px-3 rounded-xl border border-border text-sm mb-2"><Download size={15} /> Exporter mes données (JSON)</button>
+          <button onClick={eraseData} className="press w-full flex items-center gap-2 py-2.5 px-3 rounded-xl border border-destructive/40 text-destructive text-sm"><Trash2 size={15} /> Effacer mes données du Réseau</button>
+        </div>
       </motion.div>
+    </motion.div>
+  )
+}
+
+function ModerationPanel({ onClose }) {
+  const [items, setItems] = useState(null)
+  const load = useCallback(async () => {
+    const r = await api('/net/moderation/queue')
+    if (!r.error) setItems(r.items)
+  }, [])
+  useEffect(() => { load() }, [load])
+  const resolve = async (id, action) => {
+    await api(`/net/moderation/reports/${id}/resolve`, { method: 'POST', body: JSON.stringify({ action }) })
+    setItems((prev) => (prev || []).filter((x) => x.id !== id))
+  }
+  const RLABEL = Object.fromEntries(REPORT_REASONS)
+  return (
+    <motion.div className="fixed inset-0 z-[80] flex flex-col bg-app-gradient" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <div className="flex items-center gap-3 p-4 pt-safe border-b border-border/60">
+        <button onClick={onClose} className="press" aria-label="Fermer"><X size={22} /></button>
+        <ShieldAlert size={20} className="text-primary" />
+        <h1 className="font-display text-xl flex-1">Modération</h1>
+        <button onClick={load} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60 text-muted-foreground" aria-label="Rafraîchir"><RefreshCw size={16} /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4">
+        {items === null ? (
+          <div className="grid place-items-center py-16"><RefreshCw className="animate-spin text-muted-foreground" /></div>
+        ) : items.length === 0 ? (
+          <div className="text-center py-16 text-sm text-muted-foreground">
+            <ShieldCheck size={36} className="mx-auto mb-3 opacity-50" />
+            Aucun signalement en attente. Tout est propre. ✨
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {items.map((r) => (
+              <div key={r.id} className="rounded-2xl border border-border bg-card/60 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">{RLABEL[r.reason] || r.reason}</span>
+                  <span className="text-[11px] text-muted-foreground">{r.subjectType}</span>
+                  <span className="text-[11px] text-muted-foreground ml-auto">{timeAgo(r.createdAt)}</span>
+                </div>
+                {r.excerpt && <p className="text-sm bg-muted/40 rounded-lg px-3 py-2 mb-2 break-words">« {r.excerpt} »</p>}
+                <div className="text-[11px] text-muted-foreground mb-3">
+                  {r.author?.name && <>Auteur : <b>{r.author.name}</b> · </>}Signalé par {r.reporter?.name || 'un utilisateur'}
+                  {r.details && <div className="mt-1 italic">Détail : {r.details}</div>}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => resolve(r.id, 'remove')} className="press flex-1 py-2 rounded-full bg-destructive/10 text-destructive text-sm font-medium">Retirer le contenu</button>
+                  <button onClick={() => resolve(r.id, 'warn')} className="press flex-1 py-2 rounded-full border border-border text-sm font-medium">Avertir</button>
+                  <button onClick={() => resolve(r.id, 'dismiss')} className="press flex-1 py-2 rounded-full border border-border text-sm font-medium text-muted-foreground">Rejeter</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </motion.div>
   )
 }
@@ -399,8 +490,60 @@ function PostBody({ p }) {
   )
 }
 
+function ReportSheet({ subjectType, subjectId, onClose }) {
+  const [reason, setReason] = useState(null)
+  const [details, setDetails] = useState('')
+  const [done, setDone] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const submit = async () => {
+    if (!reason) return
+    setBusy(true)
+    const r = await api('/net/report', { method: 'POST', body: JSON.stringify({ subjectType, subjectId, reason, details }) })
+    setBusy(false)
+    if (r.error) return alert(r.error)
+    setDone(true)
+  }
+  return (
+    <motion.div className="fixed inset-0 z-[80] bg-black/40 flex items-end sm:items-center sm:justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.div className="w-full sm:max-w-md bg-card rounded-t-3xl sm:rounded-3xl border border-border p-5 pb-safe" initial={{ y: 40 }} animate={{ y: 0 }} exit={{ y: 40 }} onClick={(e) => e.stopPropagation()}>
+        {done ? (
+          <div className="text-center py-6">
+            <div className="w-12 h-12 rounded-full bg-primary/10 grid place-items-center mx-auto mb-3"><Check size={22} className="text-primary" /></div>
+            <div className="font-medium">Merci, c'est signalé.</div>
+            <div className="text-sm text-muted-foreground mt-1">Notre équipe va l'examiner. Tu peux aussi masquer ce contenu.</div>
+            <button onClick={onClose} className="press mt-4 px-5 py-2.5 rounded-full bg-primary text-white text-sm font-semibold">Fermer</button>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-3 mb-1">
+              <Flag size={20} className="text-primary" />
+              <h2 className="font-display text-xl flex-1">Signaler</h2>
+              <button onClick={onClose} className="press" aria-label="Fermer"><X size={20} /></button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">Pourquoi signales-tu ce contenu ? Un humain de l'équipe examinera.</p>
+            <div className="space-y-1">
+              {REPORT_REASONS.map(([v, l]) => (
+                <button key={v} onClick={() => setReason(v)} className={cx('press w-full flex items-center gap-3 py-2.5 px-3 rounded-xl text-sm text-left border', reason === v ? 'border-primary bg-primary/5' : 'border-transparent')}>
+                  <span className={cx('w-4 h-4 rounded-full border-2 shrink-0', reason === v ? 'border-primary bg-primary' : 'border-muted-foreground/40')} />
+                  {l}
+                </button>
+              ))}
+            </div>
+            <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={2} placeholder="Détails (optionnel)"
+              className="w-full mt-3 text-sm rounded-xl border border-border bg-background/60 px-3 py-2 outline-none resize-none" />
+            <button onClick={submit} disabled={!reason || busy} className="press w-full mt-3 py-3 rounded-full font-semibold text-white text-sm disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+              {busy ? <RefreshCw size={16} className="animate-spin mx-auto" /> : 'Envoyer le signalement'}
+            </button>
+          </>
+        )}
+      </motion.div>
+    </motion.div>
+  )
+}
+
 function PostCard({ p, onDeleted, onOpenProfile }) {
   const [menu, setMenu] = useState(false)
+  const [report, setReport] = useState(false)
   const [rxTotal, setRxTotal] = useState(p.reactions?.total || 0)
   const [byType, setByType] = useState(p.reactions?.byType || {})
   const [mine, setMine] = useState(p.myReaction || null)
@@ -450,11 +593,15 @@ function PostCard({ p, onDeleted, onOpenProfile }) {
             <div className="absolute right-0 top-9 z-10 rounded-xl border border-border bg-card shadow-lg overflow-hidden min-w-[160px]">
               <button onClick={share} className="press w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm"><Share2 size={15} /> Partager</button>
               {!p.mine && <button onClick={hide} className="press w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm"><EyeOff size={15} /> Voir moins</button>}
+              {!p.mine && <button onClick={() => { setMenu(false); setReport(true) }} className="press w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm"><Flag size={15} /> Signaler</button>}
               {p.mine && <button onClick={del} className="press w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm text-destructive"><Trash2 size={15} /> Supprimer</button>}
             </div>
           )}
         </div>
       </div>
+      <AnimatePresence>
+        {report && <ReportSheet subjectType="post" subjectId={p.id} onClose={() => setReport(false)} />}
+      </AnimatePresence>
 
       {p.reason && (
         <div className="mt-2 inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full" title="Transparence : pourquoi ce post t'est montré">

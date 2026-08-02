@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from .models import (Bookmark, Circle, CircleMember, Comment, Edge, Event, EventRsvp, Group,
-                     GroupMember, HiddenPost, Page, PageFollower, PageRole, Post, Profile,
-                     Reaction, Story, StoryView)
+                     GroupMember, HiddenPost, ModerationAction, Page, PageFollower, PageRole,
+                     Post, Profile, Reaction, Report, Story, StoryView)
 
 
 class SqlAlchemyPostRepository:
@@ -51,6 +51,13 @@ class SqlAlchemyPostRepository:
                        func.lower(Post.body_text).like(like))
                 .order_by(Post.created_at.desc()).limit(limit))
         return list((await self.session.scalars(stmt)).all())
+
+    async def all_by_author(self, author_id: str, include_deleted: bool = True) -> list[Post]:
+        """Tous les posts d'un auteur (export/effacement RGPD)."""
+        stmt = select(Post).options(selectinload(Post.media)).where(Post.author_id == author_id)
+        if not include_deleted:
+            stmt = stmt.where(Post.deleted_at.is_(None))
+        return list((await self.session.scalars(stmt.order_by(Post.created_at))).all())
 
 
 class SqlAlchemyHiddenRepository:
@@ -123,6 +130,13 @@ class SqlAlchemyEdgeRepository:
 
     async def muted_ids(self, user_id: str) -> set[str]:
         return set(await self.list_out(user_id, "mute"))
+
+    async def all_involving(self, user_id: str) -> list["Edge"]:
+        return list((await self.session.scalars(
+            select(Edge).where(or_(Edge.src == user_id, Edge.dst == user_id)))).all())
+
+    async def delete_all_for(self, user_id: str) -> None:
+        await self.session.execute(delete(Edge).where(or_(Edge.src == user_id, Edge.dst == user_id)))
 
 
 class SqlAlchemyCircleRepository:
@@ -413,6 +427,13 @@ class SqlAlchemyReactionRepository:
             Reaction.user_id == user_id)
         return {sid: t for sid, t in (await self.session.execute(stmt)).all()}
 
+    async def all_by_user(self, user_id: str) -> list["Reaction"]:
+        return list((await self.session.scalars(
+            select(Reaction).where(Reaction.user_id == user_id))).all())
+
+    async def delete_all_by_user(self, user_id: str) -> None:
+        await self.session.execute(delete(Reaction).where(Reaction.user_id == user_id))
+
 
 class SqlAlchemyCommentRepository:
     def __init__(self, session: AsyncSession):
@@ -433,6 +454,12 @@ class SqlAlchemyCommentRepository:
         return await self.session.scalar(
             select(func.count()).select_from(Comment).where(
                 Comment.post_id == post_id, Comment.deleted_at.is_(None))) or 0
+
+    async def all_by_author(self, author_id: str, include_deleted: bool = True) -> list["Comment"]:
+        stmt = select(Comment).where(Comment.author_id == author_id)
+        if not include_deleted:
+            stmt = stmt.where(Comment.deleted_at.is_(None))
+        return list((await self.session.scalars(stmt.order_by(Comment.created_at))).all())
 
 
 class SqlAlchemyBookmarkRepository:
@@ -458,3 +485,60 @@ class SqlAlchemyBookmarkRepository:
             return set()
         stmt = select(Bookmark.post_id).where(Bookmark.user_id == user_id, Bookmark.post_id.in_(post_ids))
         return set((await self.session.scalars(stmt)).all())
+
+    async def delete_all_for(self, user_id: str) -> None:
+        await self.session.execute(delete(Bookmark).where(Bookmark.user_id == user_id))
+
+
+class SqlAlchemyReportRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def add(self, report: Report) -> None:
+        self.session.add(report)
+
+    async def get(self, report_id: str) -> Report | None:
+        return await self.session.get(Report, report_id)
+
+    async def pending_by(self, reporter_id: str, subject_type: str, subject_id: str) -> Report | None:
+        return await self.session.scalar(select(Report).where(
+            Report.reporter_id == reporter_id, Report.subject_type == subject_type,
+            Report.subject_id == subject_id, Report.status == "pending"))
+
+    async def list_by_status(self, status: str, limit: int = 100) -> list[Report]:
+        return list((await self.session.scalars(
+            select(Report).where(Report.status == status)
+            .order_by(Report.created_at.desc()).limit(limit))).all())
+
+    async def counts_by_status(self) -> dict:
+        rows = (await self.session.execute(
+            select(Report.status, func.count()).group_by(Report.status))).all()
+        return {s: n for s, n in rows}
+
+    async def open_count_for(self, subject_type: str, subject_id: str) -> int:
+        return await self.session.scalar(select(func.count()).where(
+            Report.subject_type == subject_type, Report.subject_id == subject_id,
+            Report.status == "pending")) or 0
+
+
+class SqlAlchemyModerationRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def add(self, action: ModerationAction) -> None:
+        self.session.add(action)
+
+    async def recent(self, limit: int = 50) -> list[ModerationAction]:
+        return list((await self.session.scalars(
+            select(ModerationAction).order_by(ModerationAction.created_at.desc()).limit(limit))).all())
+
+    async def counts_by_action(self) -> dict:
+        rows = (await self.session.execute(
+            select(ModerationAction.action, func.count()).group_by(ModerationAction.action))).all()
+        return {a: n for a, n in rows}
+
+    async def counts_by_reason(self) -> dict:
+        rows = (await self.session.execute(
+            select(ModerationAction.reason, func.count())
+            .where(ModerationAction.reason.is_not(None)).group_by(ModerationAction.reason))).all()
+        return {r: n for r, n in rows}

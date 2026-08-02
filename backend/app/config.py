@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     SOCIAL_DB_PASSWORD: str = ""
     SOCIAL_DB_NAME: str = ""
     REDIS_URL: str = ""  # pour le temps réel/fan-out à l'échelle (couches ultérieures)
+    # Modération plateforme (Couche 9) : emails autorisés à accéder à la file de modération.
+    # Liste séparée par des virgules. Vide = aucun modérateur (file inaccessible).
+    ADMIN_EMAILS: str = ""
+
+    @property
+    def admin_emails_set(self) -> set[str]:
+        return {e.strip().lower() for e in (self.ADMIN_EMAILS or "").split(",") if e.strip()}
 
     @property
     def social_raw_url(self) -> str:

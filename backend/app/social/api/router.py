@@ -21,13 +21,25 @@ from ..application import events as ev
 from ..application import graph as gr
 from ..application import groups as grp
 from ..application import interactions as ix
+from ..application import moderation as mod
 from ..application import pages as pg_uc
 from ..application import posts as uc
+from ..application import privacy as rgpd
 from ..application import stories as st
 from ..domain.policy import PolicyService
 
 router = APIRouter()
 _policy = PolicyService()
+
+
+def _is_moderator(me: dict) -> bool:
+    return (me.get("email") or "").strip().lower() in settings.admin_emails_set
+
+
+async def require_moderator(me: dict = Depends(require_user)) -> dict:
+    if not _is_moderator(me):
+        raise HTTPException(status_code=403, detail="Accès modération réservé")
+    return me
 
 
 async def get_uow():
@@ -988,3 +1000,76 @@ async def set_notif_prefs(request: Request, me: dict = Depends(require_user)):
     await get_mongo().social_notif_prefs.update_one(
         {"userId": me["id"]}, {"$set": {"userId": me["id"], "disabled": disabled}}, upsert=True)
     return ok({"disabled": disabled})
+
+
+# ========================= Couche 9 — Confiance (modération + RGPD) =========================
+@router.get("/net/moderation/config")
+async def moderation_config(me: dict = Depends(require_user)):
+    """Le front sait s'il doit afficher le panneau modération + les motifs de signalement."""
+    return ok({"isModerator": _is_moderator(me), "reasons": mod.REASONS,
+               "subjectTypes": mod.SUBJECT_TYPES, "actions": mod.ACTIONS})
+
+
+@router.post("/net/report")
+async def report_subject(request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    body = await request.json() if await request.body() else {}
+    try:
+        r = await mod.create_report(uow, me["id"], body.get("subjectType"), body.get("subjectId"),
+                                    body.get("reason"), body.get("details"))
+    except ValueError as e:
+        return err(str(e), 400)
+    return ok({"id": r.id, "status": r.status})
+
+
+@router.get("/net/moderation/queue")
+async def moderation_queue(status: str = "pending", me: dict = Depends(require_moderator),
+                           uow=Depends(get_uow)):
+    reports = await mod.queue(uow, status)
+    author_ids = [r.context.get("authorId") for r in reports if r.context]
+    authors = await _authors_map(get_mongo(), [i for i in [*author_ids, *[r.reporter_id for r in reports]] if i])
+    return ok({"items": [{
+        "id": r.id, "subjectType": r.subject_type, "subjectId": r.subject_id,
+        "reason": r.reason, "details": r.details, "status": r.status,
+        "excerpt": (r.context or {}).get("excerpt"),
+        "author": _author(authors, (r.context or {}).get("authorId")) if (r.context or {}).get("authorId") else None,
+        "reporter": _author(authors, r.reporter_id),
+        "createdAt": r.created_at.isoformat(),
+    } for r in reports]})
+
+
+@router.post("/net/moderation/reports/{report_id}/resolve")
+async def moderation_resolve(report_id: str, request: Request,
+                             me: dict = Depends(require_moderator), uow=Depends(get_uow)):
+    body = await request.json() if await request.body() else {}
+    try:
+        r = await mod.resolve_report(uow, me["id"], report_id, body.get("action"), body.get("note"))
+    except LookupError:
+        return err("Signalement introuvable", 404)
+    except ValueError as e:
+        return err(str(e), 400)
+    return ok({"id": r.id, "status": r.status, "resolution": r.resolution})
+
+
+@router.get("/net/moderation/stats")
+async def moderation_stats(me: dict = Depends(require_moderator), uow=Depends(get_uow)):
+    return ok(await mod.stats(uow))
+
+
+@router.get("/net/transparency")
+async def transparency(me: dict = Depends(require_user), uow=Depends(get_uow)):
+    """Page publique de transparence : chiffres agrégés & anonymisés (aucune donnée perso)."""
+    return ok(await mod.transparency(uow))
+
+
+# ---------- RGPD : portabilité + droit à l'oubli ----------
+@router.get("/net/me/export")
+async def rgpd_export(me: dict = Depends(require_user), uow=Depends(get_uow)):
+    return ok(await rgpd.export_my_data(uow, me["id"]))
+
+
+@router.post("/net/me/erase")
+async def rgpd_erase(request: Request, me: dict = Depends(require_user), uow=Depends(get_uow)):
+    body = await request.json() if await request.body() else {}
+    if body.get("confirm") != "SUPPRIMER":
+        return err('Confirmation requise : envoie {"confirm":"SUPPRIMER"}.', 400)
+    return ok(await rgpd.erase_my_data(uow, me["id"]))

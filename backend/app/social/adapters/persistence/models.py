@@ -244,3 +244,41 @@ class Edge(Base):
     status: Mapped[str] = mapped_column(String(12), default="active")  # active | pending
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
     __table_args__ = (UniqueConstraint("src", "dst", "kind", name="uq_edge_once"),)
+
+
+# ===================== Couche 9 — Confiance (modération + RGPD) =====================
+class Report(Base):
+    """Signalement d'un contenu ou d'un compte par un utilisateur → file manuelle."""
+    __tablename__ = "social_reports"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    reporter_id: Mapped[str] = mapped_column(String(64), index=True)
+    subject_type: Mapped[str] = mapped_column(String(12), index=True)  # post|comment|user|group|page
+    subject_id: Mapped[str] = mapped_column(String(64), index=True)
+    reason: Mapped[str] = mapped_column(String(20))  # spam|harcelement|haine|violence|nudite|arnaque|autre
+    details: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(12), default="pending", index=True)  # pending|actioned|dismissed
+    context: Mapped[dict] = mapped_column(default=dict)  # instantané : author_id, extrait…
+    resolution: Mapped[str | None] = mapped_column(String(20))  # dismiss|remove|warn
+    note: Mapped[str | None] = mapped_column(Text)
+    resolved_by: Mapped[str | None] = mapped_column(String(64))
+    resolved_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now, index=True)
+    __table_args__ = (
+        UniqueConstraint("reporter_id", "subject_type", "subject_id", "status",
+                         name="uq_report_once_pending"),
+        Index("ix_social_reports_status_created", "status", "created_at"),
+    )
+
+
+class ModerationAction(Base):
+    """Journal de transparence : chaque action de modération est tracée (pour audit + page publique)."""
+    __tablename__ = "social_moderation_actions"
+    id: Mapped[str] = mapped_column(String(26), primary_key=True, default=ulid)
+    moderator_id: Mapped[str] = mapped_column(String(64), index=True)
+    action: Mapped[str] = mapped_column(String(20))  # dismiss|remove|warn|erase
+    subject_type: Mapped[str] = mapped_column(String(12))
+    subject_id: Mapped[str] = mapped_column(String(64))
+    reason: Mapped[str | None] = mapped_column(String(20))
+    note: Mapped[str | None] = mapped_column(Text)
+    report_id: Mapped[str | None] = mapped_column(String(26))
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now, index=True)

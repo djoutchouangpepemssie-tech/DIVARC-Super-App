@@ -5,9 +5,10 @@ from .db import get_sessionmaker
 from .repositories import (SqlAlchemyBookmarkRepository, SqlAlchemyCircleRepository,
                            SqlAlchemyCommentRepository, SqlAlchemyEdgeRepository,
                            SqlAlchemyEventRepository, SqlAlchemyGroupRepository,
-                           SqlAlchemyHiddenRepository, SqlAlchemyPageRepository,
-                           SqlAlchemyPostRepository, SqlAlchemyProfileRepository,
-                           SqlAlchemyReactionRepository, SqlAlchemyStoryRepository)
+                           SqlAlchemyHiddenRepository, SqlAlchemyModerationRepository,
+                           SqlAlchemyPageRepository, SqlAlchemyPostRepository,
+                           SqlAlchemyProfileRepository, SqlAlchemyReactionRepository,
+                           SqlAlchemyReportRepository, SqlAlchemyStoryRepository)
 
 
 class SqlAlchemyUnitOfWork:
@@ -28,6 +29,8 @@ class SqlAlchemyUnitOfWork:
         self.stories = SqlAlchemyStoryRepository(self.session)
         self.pages = SqlAlchemyPageRepository(self.session)
         self.events = SqlAlchemyEventRepository(self.session)
+        self.reports = SqlAlchemyReportRepository(self.session)
+        self.moderation = SqlAlchemyModerationRepository(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
