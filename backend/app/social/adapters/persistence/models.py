@@ -270,6 +270,15 @@ class Report(Base):
     )
 
 
+class FeedSeen(Base):
+    """État « déjà vu » du fil classé (Couche perf/ranking) : ne pas re-montrer un post
+    déjà servi → pagination propre du fil classé + marqueur « Tu es à jour »."""
+    __tablename__ = "social_feed_seen"
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    post_id: Mapped[str] = mapped_column(String(26), primary_key=True)
+    seen_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
+
+
 class ModerationAction(Base):
     """Journal de transparence : chaque action de modération est tracée (pour audit + page publique)."""
     __tablename__ = "social_moderation_actions"

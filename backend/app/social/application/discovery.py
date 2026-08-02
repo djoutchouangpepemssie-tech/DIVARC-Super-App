@@ -6,26 +6,37 @@ from datetime import timezone
 from ...helpers import now as _now
 from ..domain.policy import PolicyService
 from .posts import audience_of
-from .ranking import score_post
+from .ranking import diversify, score_post
 from .access import view_relation
 
 
-async def get_ranked_feed(uow, policy: PolicyService, viewer_id: str, *, limit: int = 20):
-    """Retourne [(post, raison)] classés par pertinence (heuristique explicable)."""
+async def get_ranked_feed(uow, policy: PolicyService, viewer_id: str, *, limit: int = 20,
+                          exclude_seen: bool = True):
+    """Pipeline de fil classé inspiré de Facebook, mais transparent :
+      1) RETRIEVAL : posts récents des auteurs suivis/amis + pages (hors bloqués/sourdine/vus).
+      2) LIGHT/HEAVY RANK : score multi-signaux (lien + affinité comportementale + engagement
+         + fraîcheur + format), chacun explicable.
+      3) RE-RANK DIVERSITÉ : on évite d'enchaîner plusieurs posts du même auteur.
+    Retourne [(post, raison)] classés.
+    """
     following = await uow.edges.following_ids(viewer_id)
     blocked = await uow.edges.blocked_ids(viewer_id)
     muted = await uow.edges.muted_ids(viewer_id)
     hidden = await uow.hidden.hidden_ids(viewer_id)
     pages = await uow.pages.followed_ids(viewer_id)
+    seen = await uow.feed_seen.seen_ids(viewer_id) if exclude_seen else set()
     excluded = blocked | muted
     authors = [a for a in ([viewer_id] + following + pages) if a == viewer_id or a not in excluded]
-    candidates = await uow.posts.list_recent_by_authors(authors, limit=limit * 4)
+    # RETRIEVAL : on récupère large (pour laisser respirer le re-rank diversité), hors déjà-vus.
+    candidates = await uow.posts.list_recent_by_authors_excluding(
+        authors, exclude_ids=hidden | seen, limit=max(limit * 6, 60))
+    # Affinité comportementale : combien TU interagis avec chaque auteur (normalisée 0..1).
+    author_ids = [a for a in {p.author_id for p in candidates} if a != viewer_id]
+    aff_raw = await uow.posts.affinity_counts(viewer_id, author_ids) if author_ids else {}
     now_ts = _now()
     rel_cache: dict = {}
     scored = []
     for p in candidates:
-        if p.id in hidden:
-            continue
         if p.author_id == viewer_id:
             is_own, is_friend, is_following = True, False, False
         else:
@@ -38,11 +49,15 @@ async def get_ranked_feed(uow, policy: PolicyService, viewer_id: str, *, limit: 
             is_own, is_friend, is_following = False, rel.is_friend, rel.is_following
         ca = p.created_at if p.created_at.tzinfo else p.created_at.replace(tzinfo=timezone.utc)
         age_h = max(0.0, (now_ts - ca).total_seconds() / 3600.0)
+        n = aff_raw.get(p.author_id, 0)
+        affinity = n / (n + 3.0)  # normalisation douce
         s, reason = score_post(is_friend=is_friend, is_following=is_following, is_own=is_own,
-                               age_hours=age_h, reactions=p.like_count, comments=p.comment_count)
+                               age_hours=age_h, reactions=p.like_count, comments=p.comment_count,
+                               affinity=affinity, has_media=bool(p.media))
         scored.append((s, reason, p))
-    scored.sort(key=lambda t: t[0], reverse=True)
-    return [(p, reason) for _s, reason, p in scored[:limit]]
+    # RE-RANK diversité puis coupe au nombre demandé.
+    ranked = diversify(scored)[:limit]
+    return [(p, reason) for _s, reason, p in ranked]
 
 
 async def suggestions(uow, viewer_id: str, *, limit: int = 10) -> list[tuple[str, int]]:

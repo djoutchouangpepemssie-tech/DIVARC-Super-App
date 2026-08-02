@@ -208,14 +208,19 @@ async def feed(request: Request, me: dict = Depends(require_user), uow=Depends(g
         mode = "recent"
     hide = wb["hideCounts"] or wb["calmMode"]
     if mode == "ranked":
-        # Fil CLASSÉ transparent : chaque post expose sa raison (« Pourquoi je vois ça »)
+        # Fil CLASSÉ transparent : pipeline multi-étages + diversité. Chaque post expose sa
+        # raison. Pagination par « déjà-vu » : chaque page marque les posts servis comme vus,
+        # la suivante renvoie les meilleurs NON vus → défilement infini + « Tu es à jour ».
         pairs = await disc.get_ranked_feed(uow, _policy, me["id"], limit=limit)
         posts = [p for p, _r in pairs]
         data = await _serialize_posts(uow, get_mongo(), posts, me["id"], hide_counts=hide)
         for d, (_p, reason) in zip(data, pairs):
             d["reason"] = reason
-        return ok({"items": data, "nextCursor": None, "mode": "ranked",
-                   "caughtUp": True, "calm": wb["calmMode"]})
+        await uow.feed_seen.mark_seen(me["id"], [p.id for p in posts])
+        await uow.commit()
+        more = len(posts) == limit
+        return ok({"items": data, "nextCursor": "more" if more else None, "mode": "ranked",
+                   "caughtUp": not more, "calm": wb["calmMode"]})
     # Fil chronologique (bascule permanente) : pagination par curseur
     bt, bi = _decode_cursor(request.query_params.get("cursor")) if request.query_params.get("cursor") else (None, None)
     items = await uc.get_feed(uow, _policy, me["id"], limit=limit, before_time=bt, before_id=bi)

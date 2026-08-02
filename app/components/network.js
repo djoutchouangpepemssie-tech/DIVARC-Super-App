@@ -107,7 +107,14 @@ export default function NetworkModule({ me, onClose }) {
             {items === null ? (
               <div className="grid place-items-center py-16"><RefreshCw className="animate-spin text-muted-foreground" /></div>
             ) : items.length === 0 ? (
-              <div className="text-center py-14 text-sm text-muted-foreground">Ton fil est vide. Publie ou suis des gens pour le remplir.</div>
+              caughtUp ? (
+                <div className="text-center py-14 text-sm text-muted-foreground">
+                  <div className="w-11 h-11 rounded-full bg-primary/10 grid place-items-center mx-auto mb-2"><Check size={20} className="text-primary" /></div>
+                  Tu es à jour ✨<div className="text-xs mt-1">Tu as vu toutes les nouveautés. Reviens plus tard, ou passe en « Récent ».</div>
+                </div>
+              ) : (
+                <div className="text-center py-14 text-sm text-muted-foreground">Ton fil est vide. Publie ou suis des gens pour le remplir.</div>
+              )
             ) : (
               <div className="space-y-3 pb-4">
                 {items.map((p) => <PostCard key={p.id} p={p} onDeleted={onDeleted} onOpenProfile={setProfileId} />)}

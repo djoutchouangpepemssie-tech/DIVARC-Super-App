@@ -7,9 +7,9 @@ from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import (Bookmark, Circle, CircleMember, Comment, Edge, Event, EventRsvp, Group,
-                     GroupMember, HiddenPost, ModerationAction, Page, PageFollower, PageRole,
-                     Post, Profile, Reaction, Report, Story, StoryView)
+from .models import (Bookmark, Circle, CircleMember, Comment, Edge, Event, EventRsvp, FeedSeen,
+                     Group, GroupMember, HiddenPost, ModerationAction, Page, PageFollower,
+                     PageRole, Post, Profile, Reaction, Report, Story, StoryView)
 
 
 class SqlAlchemyPostRepository:
@@ -58,6 +58,60 @@ class SqlAlchemyPostRepository:
         if not include_deleted:
             stmt = stmt.where(Post.deleted_at.is_(None))
         return list((await self.session.scalars(stmt.order_by(Post.created_at))).all())
+
+    async def list_recent_by_authors_excluding(self, author_ids: list[str], exclude_ids: set[str],
+                                               limit: int = 120) -> list[Post]:
+        """Candidats pour le fil classé : posts récents des auteurs, hors posts déjà vus."""
+        if not author_ids:
+            return []
+        stmt = (select(Post).options(selectinload(Post.media))
+                .where(Post.author_id.in_(author_ids), Post.deleted_at.is_(None)))
+        if exclude_ids:
+            stmt = stmt.where(Post.id.not_in(exclude_ids))
+        stmt = stmt.order_by(Post.created_at.desc(), Post.id.desc()).limit(limit)
+        return list((await self.session.scalars(stmt)).all())
+
+    async def affinity_counts(self, viewer_id: str, author_ids: list[str]) -> dict:
+        """Affinité comportementale viewer→auteur = nb d'interactions (réactions + commentaires)
+        du viewer sur les posts de chaque auteur. Une passe SQL par type d'interaction."""
+        if not author_ids:
+            return {}
+        counts: dict = {}
+        rx = (await self.session.execute(
+            select(Post.author_id, func.count()).select_from(Post)
+            .join(Reaction, Reaction.subject_id == Post.id)
+            .where(Reaction.subject_type == "post", Reaction.user_id == viewer_id,
+                   Post.author_id.in_(author_ids))
+            .group_by(Post.author_id))).all()
+        for aid, n in rx:
+            counts[aid] = counts.get(aid, 0) + n
+        cm = (await self.session.execute(
+            select(Post.author_id, func.count()).select_from(Post)
+            .join(Comment, Comment.post_id == Post.id)
+            .where(Comment.author_id == viewer_id, Post.author_id.in_(author_ids))
+            .group_by(Post.author_id))).all()
+        for aid, n in cm:
+            counts[aid] = counts.get(aid, 0) + n
+        return counts
+
+
+class SqlAlchemyFeedSeenRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def seen_ids(self, user_id: str) -> set[str]:
+        return set((await self.session.scalars(
+            select(FeedSeen.post_id).where(FeedSeen.user_id == user_id))).all())
+
+    async def mark_seen(self, user_id: str, post_ids: list[str]) -> None:
+        if not post_ids:
+            return
+        existing = set((await self.session.scalars(
+            select(FeedSeen.post_id).where(
+                FeedSeen.user_id == user_id, FeedSeen.post_id.in_(post_ids)))).all())
+        for pid in post_ids:
+            if pid not in existing:
+                self.session.add(FeedSeen(user_id=user_id, post_id=pid))
 
 
 class SqlAlchemyHiddenRepository:
