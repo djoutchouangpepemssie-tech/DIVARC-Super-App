@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     ECLATS_BOOST_HOURS: int = 24    # durée d'un boost
     # Rencontres (puits d'Éclats)
     ECLATS_SOCIAL_POST: int = 5     # récompense « contribution » : 1re publication du jour (Couche 10)
+    # Fan-out on write : au-delà de ce nombre de destinataires, on NE pré-calcule pas le fil
+    # (compte « broadcast »/célébrité) → repli pull à la lecture. Hybride façon Facebook/Twitter.
+    SOCIAL_FANOUT_MAX: int = 5000
     ECLATS_SUPERLIKE: int = 15      # coût d'un super-like
     ECLATS_DATING_BOOST: int = 60   # coût d'un boost de profil Rencontres
     ECLATS_REVEAL_LIKES: int = 30   # coût pour révéler qui t'a liké

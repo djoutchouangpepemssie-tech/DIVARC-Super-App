@@ -27,9 +27,20 @@ async def get_ranked_feed(uow, policy: PolicyService, viewer_id: str, *, limit: 
     seen = await uow.feed_seen.seen_ids(viewer_id) if exclude_seen else set()
     excluded = blocked | muted
     authors = [a for a in ([viewer_id] + following + pages) if a == viewer_id or a not in excluded]
-    # RETRIEVAL : on récupère large (pour laisser respirer le re-rank diversité), hors déjà-vus.
-    candidates = await uow.posts.list_recent_by_authors_excluding(
-        authors, exclude_ids=hidden | seen, limit=max(limit * 6, 60))
+    exclude_ids = hidden | seen
+    want = max(limit * 6, 60)
+    # RETRIEVAL — fil PRÉ-CALCULÉ (fan-out) en priorité : lecture O(k) indexée, pas de scan
+    # de tous les auteurs. Repli PULL si le pré-calcul est insuffisant (transition, comptes
+    # broadcast, nouvel abonnement). Dédoublonnage par id. La visibilité est re-vérifiée + bas.
+    fanned = await uow.feed_entries.recent_post_ids(viewer_id, exclude_ids, want)
+    candidates = await uow.posts.get_many(fanned)
+    if len(candidates) < want:
+        got = {p.id for p in candidates}
+        pull = await uow.posts.list_recent_by_authors_excluding(
+            authors, exclude_ids=exclude_ids | got, limit=want - len(candidates))
+        candidates += pull
+    # Un post fan-outé avant un blocage/sourdine doit disparaître du fil (exclusion feed).
+    candidates = [p for p in candidates if p.author_id == viewer_id or p.author_id not in excluded]
     # Affinité comportementale : combien TU interagis avec chaque auteur (normalisée 0..1).
     author_ids = [a for a in {p.author_id for p in candidates} if a != viewer_id]
     aff_raw = await uow.posts.affinity_counts(viewer_id, author_ids) if author_ids else {}

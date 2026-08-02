@@ -4,7 +4,8 @@ from __future__ import annotations
 from .db import get_sessionmaker
 from .repositories import (SqlAlchemyBookmarkRepository, SqlAlchemyCircleRepository,
                            SqlAlchemyCommentRepository, SqlAlchemyEdgeRepository,
-                           SqlAlchemyEventRepository, SqlAlchemyFeedSeenRepository,
+                           SqlAlchemyEventRepository, SqlAlchemyFeedEntryRepository,
+                           SqlAlchemyFeedSeenRepository,
                            SqlAlchemyGroupRepository, SqlAlchemyHiddenRepository,
                            SqlAlchemyModerationRepository, SqlAlchemyPageRepository,
                            SqlAlchemyPostRepository, SqlAlchemyProfileRepository,
@@ -33,6 +34,7 @@ class SqlAlchemyUnitOfWork:
         self.reports = SqlAlchemyReportRepository(self.session)
         self.moderation = SqlAlchemyModerationRepository(self.session)
         self.feed_seen = SqlAlchemyFeedSeenRepository(self.session)
+        self.feed_entries = SqlAlchemyFeedEntryRepository(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

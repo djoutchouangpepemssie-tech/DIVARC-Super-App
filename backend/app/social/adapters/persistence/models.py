@@ -279,6 +279,19 @@ class FeedSeen(Base):
     seen_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
 
 
+class FeedEntry(Base):
+    """Fil PRÉ-CALCULÉ (fan-out on write, façon Facebook). À la publication, on pousse une
+    ligne par destinataire → la lecture du fil devient O(k) indexé au lieu de scanner tous
+    les auteurs. La visibilité EXACTE est re-vérifiée à la lecture (PolicyService) : le
+    fan-out n'est qu'un accélérateur de retrieval, jamais l'autorité d'autorisation."""
+    __tablename__ = "social_feed_entries"
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    post_id: Mapped[str] = mapped_column(String(26), primary_key=True)
+    author_id: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, index=True)
+    __table_args__ = (Index("ix_social_feed_entries_user_created", "user_id", "created_at"),)
+
+
 class ModerationAction(Base):
     """Journal de transparence : chaque action de modération est tracée (pour audit + page publique)."""
     __tablename__ = "social_moderation_actions"

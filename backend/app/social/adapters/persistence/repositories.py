@@ -7,9 +7,9 @@ from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import (Bookmark, Circle, CircleMember, Comment, Edge, Event, EventRsvp, FeedSeen,
-                     Group, GroupMember, HiddenPost, ModerationAction, Page, PageFollower,
-                     PageRole, Post, Profile, Reaction, Report, Story, StoryView)
+from .models import (Bookmark, Circle, CircleMember, Comment, Edge, Event, EventRsvp, FeedEntry,
+                     FeedSeen, Group, GroupMember, HiddenPost, ModerationAction, Page,
+                     PageFollower, PageRole, Post, Profile, Reaction, Report, Story, StoryView)
 
 
 class SqlAlchemyPostRepository:
@@ -58,6 +58,14 @@ class SqlAlchemyPostRepository:
         if not include_deleted:
             stmt = stmt.where(Post.deleted_at.is_(None))
         return list((await self.session.scalars(stmt.order_by(Post.created_at))).all())
+
+    async def get_many(self, post_ids: list[str]) -> list[Post]:
+        """Charge des posts par ids (média eager). Ordre non garanti — le ranking réordonne."""
+        if not post_ids:
+            return []
+        stmt = (select(Post).options(selectinload(Post.media))
+                .where(Post.id.in_(post_ids), Post.deleted_at.is_(None)))
+        return list((await self.session.scalars(stmt)).all())
 
     async def list_recent_by_authors_excluding(self, author_ids: list[str], exclude_ids: set[str],
                                                limit: int = 120) -> list[Post]:
@@ -114,6 +122,38 @@ class SqlAlchemyFeedSeenRepository:
                 self.session.add(FeedSeen(user_id=user_id, post_id=pid))
 
 
+class SqlAlchemyFeedEntryRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def fan_out(self, user_ids, post_id: str, author_id: str, created_at) -> int:
+        """Insère une entrée de fil par destinataire (idempotent sur (user_id, post_id))."""
+        uids = list(dict.fromkeys(user_ids))  # dédoublonne en gardant l'ordre
+        if not uids:
+            return 0
+        existing = set((await self.session.scalars(
+            select(FeedEntry.user_id).where(
+                FeedEntry.post_id == post_id, FeedEntry.user_id.in_(uids)))).all())
+        n = 0
+        for uid in uids:
+            if uid not in existing:
+                self.session.add(FeedEntry(user_id=uid, post_id=post_id,
+                                           author_id=author_id, created_at=created_at))
+                n += 1
+        return n
+
+    async def recent_post_ids(self, user_id: str, exclude_ids: set[str], limit: int) -> list[str]:
+        stmt = select(FeedEntry.post_id).where(FeedEntry.user_id == user_id)
+        if exclude_ids:
+            stmt = stmt.where(FeedEntry.post_id.not_in(exclude_ids))
+        stmt = stmt.order_by(FeedEntry.created_at.desc(), FeedEntry.post_id.desc()).limit(limit)
+        return list((await self.session.scalars(stmt)).all())
+
+    async def count_for(self, user_id: str) -> int:
+        return await self.session.scalar(
+            select(func.count()).select_from(FeedEntry).where(FeedEntry.user_id == user_id)) or 0
+
+
 class SqlAlchemyHiddenRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -149,6 +189,12 @@ class SqlAlchemyEdgeRepository:
     async def following_ids(self, user_id: str) -> list[str]:
         """Auteurs dont l'utilisateur voit les posts : amis + suivis (arêtes actives)."""
         stmt = select(Edge.dst).where(Edge.src == user_id,
+                                      Edge.kind.in_(("friend", "follow")), Edge.status == "active")
+        return list((await self.session.scalars(stmt)).all())
+
+    async def followers_of(self, author_id: str) -> list[str]:
+        """Qui reçoit les posts de l'auteur (fan-out) : ses amis + ceux qui le suivent."""
+        stmt = select(Edge.src).where(Edge.dst == author_id,
                                       Edge.kind.in_(("friend", "follow")), Edge.status == "active")
         return list((await self.session.scalars(stmt)).all())
 
@@ -359,6 +405,11 @@ class SqlAlchemyPageRepository:
     async def followed_ids(self, user_id: str) -> list[str]:
         return list((await self.session.scalars(
             select(PageFollower.page_id).where(PageFollower.user_id == user_id))).all())
+
+    async def follower_user_ids(self, page_id: str) -> list[str]:
+        """Utilisateurs abonnés à la page (destinataires du fan-out d'un post de page)."""
+        return list((await self.session.scalars(
+            select(PageFollower.user_id).where(PageFollower.page_id == page_id))).all())
 
     async def managed_by(self, user_id: str) -> list[Page]:
         stmt = (select(Page).join(PageRole, PageRole.page_id == Page.id)

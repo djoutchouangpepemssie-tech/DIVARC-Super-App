@@ -19,6 +19,7 @@ from ...security import require_user
 from ..adapters.persistence.uow import SqlAlchemyUnitOfWork
 from ..application import discovery as disc
 from ..application import events as ev
+from ..application import fanout as fo
 from ..application import graph as gr
 from ..application import groups as grp
 from ..application import interactions as ix
@@ -178,6 +179,9 @@ async def create_post(request: Request, me: dict = Depends(require_user), uow=De
         return err(str(e) or "Publication invalide")
     await uow.commit()
     post = await uow.posts.get(post.id)
+    # Fan-out on write (Track A) : pousse le post dans le fil pré-calculé des destinataires.
+    await fo.fan_out_post(uow, post)
+    await uow.commit()
     out = (await _serialize_posts(uow, get_mongo(), [post], me["id"]))[0]
     # Éclats sociaux (Couche 10) : récompense « contribution » = 1re publication du jour,
     # idempotente (1/jour) et plafonnée. Pas de récompense au volume/engagement (anti-addiction).
@@ -818,6 +822,8 @@ async def group_post(group_id: str, request: Request, me: dict = Depends(require
         return err(str(e))
     await uow.commit()
     post = await uow.posts.get(post.id)
+    await fo.fan_out_post(uow, post)  # fan-out vers les membres du groupe
+    await uow.commit()
     return ok((await _serialize_posts(uow, get_mongo(), [post], me["id"]))[0])
 
 
@@ -941,6 +947,8 @@ async def page_post(page_id: str, request: Request, me: dict = Depends(require_u
         return err(str(e))
     await uow.commit()
     post = await uow.posts.get(post.id)
+    await fo.fan_out_post(uow, post)  # fan-out vers les abonnés de la page
+    await uow.commit()
     return ok((await _serialize_posts(uow, get_mongo(), [post], me["id"]))[0])
 
 
