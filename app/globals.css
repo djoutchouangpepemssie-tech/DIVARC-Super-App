@@ -134,7 +134,10 @@
     color: #E2AA2B;
   }
   .bg-app-gradient {
-    background:
+    /* Base OPAQUE obligatoire : sinon un overlay `fixed inset-0` laisse transparaître
+       la page du dessous (bug de superposition). Les dégradés viennent PAR-DESSUS. */
+    background-color: hsl(var(--background));
+    background-image:
       radial-gradient(1100px 700px at 12% -8%, rgba(67,83,240,0.16), transparent 55%),
       radial-gradient(900px 640px at 100% 0%, rgba(226,170,43,0.15), transparent 52%),
       radial-gradient(1000px 800px at 50% 120%, rgba(155,93,229,0.12), transparent 60%);
