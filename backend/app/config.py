@@ -69,17 +69,40 @@ class Settings(BaseSettings):
     ARCADE_FREE_DAILY: int = 1       # parties gratuites par jour et par jeu
 
     # --- Réseau social (bounded context 'social' sur PostgreSQL, cohabite avec Mongo) ---
-    # SOCIAL_DATABASE_URL explicite ; sinon on retombe sur DATABASE_URL (variable que
-    # Railway crée automatiquement quand on ajoute une base PostgreSQL au service).
-    # Vide en local -> SQLite async pour les tests.
+    # 3 façons de configurer, par ordre de priorité :
+    #   1) SOCIAL_DATABASE_URL = URL complète (postgresql://user:pass@host:port/db)
+    #   2) DATABASE_URL = repli automatique (fourni par Railway/Heroku)
+    #   3) composants séparés SOCIAL_DB_* -> l'URL est assemblée côté serveur, avec le
+    #      mot de passe URL-encodé (robuste : évite tous les pièges de références Railway
+    #      imbriquées et de caractères spéciaux). On peut y mettre des références simples
+    #      Railway comme ${{Postgres.PGPASSWORD}} qui, elles, se résolvent proprement.
+    # Vide partout -> SQLite async pour les tests.
     SOCIAL_DATABASE_URL: str = ""
     DATABASE_URL: str = ""  # repli automatique (fourni par Railway/Heroku)
+    SOCIAL_DB_HOST: str = ""
+    SOCIAL_DB_PORT: str = "5432"
+    SOCIAL_DB_USER: str = ""
+    SOCIAL_DB_PASSWORD: str = ""
+    SOCIAL_DB_NAME: str = ""
     REDIS_URL: str = ""  # pour le temps réel/fan-out à l'échelle (couches ultérieures)
 
     @property
     def social_raw_url(self) -> str:
-        """L'URL Postgres effective (explicite ou repli DATABASE_URL), sans normalisation."""
-        return (self.SOCIAL_DATABASE_URL or "").strip() or (self.DATABASE_URL or "").strip()
+        """L'URL Postgres effective (URL explicite, repli DATABASE_URL, ou composants)."""
+        explicit = (self.SOCIAL_DATABASE_URL or "").strip() or (self.DATABASE_URL or "").strip()
+        if explicit:
+            return explicit
+        # Assemblage à partir des composants (mot de passe encodé pour l'URL)
+        host = (self.SOCIAL_DB_HOST or "").strip()
+        user = (self.SOCIAL_DB_USER or "").strip()
+        if host and user:
+            from urllib.parse import quote
+            pw = quote((self.SOCIAL_DB_PASSWORD or "").strip(), safe="")
+            usr = quote(user, safe="")
+            port = (self.SOCIAL_DB_PORT or "5432").strip()
+            name = (self.SOCIAL_DB_NAME or "").strip() or usr
+            return f"postgresql://{usr}:{pw}@{host}:{port}/{name}"
+        return ""
 
     @property
     def social_enabled(self) -> bool:
