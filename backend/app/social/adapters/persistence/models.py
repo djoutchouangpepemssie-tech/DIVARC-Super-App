@@ -243,7 +243,12 @@ class Edge(Base):
     kind: Mapped[str] = mapped_column(String(10))  # friend | follow | block | mute | request
     status: Mapped[str] = mapped_column(String(12), default="active")  # active | pending
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_now)
-    __table_args__ = (UniqueConstraint("src", "dst", "kind", name="uq_edge_once"),)
+    __table_args__ = (
+        UniqueConstraint("src", "dst", "kind", name="uq_edge_once"),
+        # Chemins chauds : following_ids (src,kind) et followers_of / fan-out (dst,kind).
+        Index("ix_social_edges_src_kind", "src", "kind"),
+        Index("ix_social_edges_dst_kind", "dst", "kind"),
+    )
 
 
 # ===================== Couche 9 — Confiance (modération + RGPD) =====================

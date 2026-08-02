@@ -56,8 +56,24 @@ def get_sessionmaker() -> async_sessionmaker:
     return _sessionmaker
 
 
+# Index composites à garantir même sur une base DÉJÀ créée (create_all n'ajoute pas d'index
+# aux tables existantes). Idempotent : CREATE INDEX IF NOT EXISTS (Postgres & SQLite).
+_ENSURE_INDEXES = [
+    ("ix_social_edges_src_kind", "social_edges", "src, kind"),
+    ("ix_social_edges_dst_kind", "social_edges", "dst, kind"),
+    ("ix_social_feed_entries_user_created", "social_feed_entries", "user_id, created_at"),
+    ("ix_social_posts_author_created", "social_posts", "author_id, created_at"),
+]
+
+
 async def create_all() -> None:
-    """Crée le schéma (tests/dev). En prod, on utilise Alembic."""
+    """Crée le schéma (tests/dev) + garantit les index chauds (idempotent, prod incluse)."""
+    from sqlalchemy import text
     from . import models  # noqa: F401  (enregistre les tables sur Base)
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        for name, table, cols in _ENSURE_INDEXES:
+            try:
+                await conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({cols})"))
+            except Exception:  # noqa: BLE001  (un index déjà présent sous un autre nom ne doit pas bloquer)
+                pass

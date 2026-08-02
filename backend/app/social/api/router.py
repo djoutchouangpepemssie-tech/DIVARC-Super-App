@@ -119,11 +119,8 @@ def _post_base(p, authors, pages, viewer_id) -> dict:
 async def _serialize_posts(uow, mongo, posts, viewer_id, hide_counts: bool = False) -> list[dict]:
     if not posts:
         return []
-    shared_map = {}
-    for sid in {p.shared_post_id for p in posts if p.shared_post_id}:
-        sp = await uow.posts.get(sid)
-        if sp and sp.deleted_at is None:
-            shared_map[sid] = sp
+    shared_ids = list({p.shared_post_id for p in posts if p.shared_post_id})
+    shared_map = {sp.id: sp for sp in await uow.posts.get_many(shared_ids)}  # 1 requête (batch)
     allp = list(posts) + list(shared_map.values())
     author_ids = {p.author_id for p in allp if p.author_type == "user"}
     pages = await uow.pages.get_many([p.author_id for p in allp if p.author_type == "page"])
