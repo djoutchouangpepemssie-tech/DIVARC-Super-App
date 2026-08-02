@@ -31,10 +31,27 @@ _policy = PolicyService()
 
 
 async def get_uow():
-    if not settings.SOCIAL_DATABASE_URL:
+    if not settings.social_enabled:
         raise HTTPException(status_code=503, detail="Réseau social pas encore activé (PostgreSQL requis)")
     async with SqlAlchemyUnitOfWork() as uow:
         yield uow
+
+
+@router.get("/net/health")
+async def net_health():
+    """Diagnostic public : la base social est-elle configurée et joignable ?"""
+    if not settings.social_enabled:
+        return {"configured": False, "reachable": False,
+                "detail": "Aucune base PostgreSQL configurée (SOCIAL_DATABASE_URL ou DATABASE_URL)."}
+    from sqlalchemy import text
+    from ..adapters.persistence.db import get_sessionmaker
+    try:
+        sm = get_sessionmaker()
+        async with sm() as s:
+            await s.execute(text("SELECT 1"))
+        return {"configured": True, "reachable": True, "driver": settings.social_db_url.split("://", 1)[0]}
+    except Exception as e:  # noqa: BLE001
+        return {"configured": True, "reachable": False, "detail": str(e)[:300]}
 
 
 # ---------- curseur ----------

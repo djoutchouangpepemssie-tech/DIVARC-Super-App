@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:  # noqa: BLE001
         print(f"[startup] MongoDB indisponible au démarrage (l'app démarre quand même): {e}")
     # Contexte social (PostgreSQL) : crée le schéma si la base est configurée (idempotent)
-    if settings.SOCIAL_DATABASE_URL:
+    if settings.social_enabled:
         try:
             from .social.adapters.persistence.db import create_all as social_create_all
             await social_create_all()

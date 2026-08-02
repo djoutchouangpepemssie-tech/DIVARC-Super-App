@@ -69,13 +69,26 @@ class Settings(BaseSettings):
     ARCADE_FREE_DAILY: int = 1       # parties gratuites par jour et par jeu
 
     # --- Réseau social (bounded context 'social' sur PostgreSQL, cohabite avec Mongo) ---
-    # Railway fournit DATABASE_URL (postgres). Vide en local -> SQLite async pour les tests.
+    # SOCIAL_DATABASE_URL explicite ; sinon on retombe sur DATABASE_URL (variable que
+    # Railway crée automatiquement quand on ajoute une base PostgreSQL au service).
+    # Vide en local -> SQLite async pour les tests.
     SOCIAL_DATABASE_URL: str = ""
+    DATABASE_URL: str = ""  # repli automatique (fourni par Railway/Heroku)
     REDIS_URL: str = ""  # pour le temps réel/fan-out à l'échelle (couches ultérieures)
 
     @property
+    def social_raw_url(self) -> str:
+        """L'URL Postgres effective (explicite ou repli DATABASE_URL), sans normalisation."""
+        return (self.SOCIAL_DATABASE_URL or "").strip() or (self.DATABASE_URL or "").strip()
+
+    @property
+    def social_enabled(self) -> bool:
+        """Vrai si une base Postgres est configurée (donc le réseau doit être actif)."""
+        return bool(self.social_raw_url)
+
+    @property
     def social_db_url(self) -> str:
-        raw = (self.SOCIAL_DATABASE_URL or "").strip()
+        raw = self.social_raw_url
         if not raw:
             return "sqlite+aiosqlite:///:memory:"
         # Normalise vers le driver async
