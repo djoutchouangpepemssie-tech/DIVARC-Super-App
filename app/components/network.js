@@ -4,7 +4,7 @@
 // Appelle le nouveau contexte social /api/net/* (PostgreSQL). Réactions/commentaires = Couche 3.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight, UserPlus, UserCheck, Check, Clock, UserX, EyeOff, Info, Search, Bell, Flag, Download, ShieldAlert } from 'lucide-react'
+import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight, UserPlus, UserCheck, Check, Clock, UserX, EyeOff, Info, Search, Bell, Flag, Download, ShieldAlert, Leaf } from 'lucide-react'
 
 const REPORT_REASONS = [['spam', 'Spam / publicité'], ['harcelement', 'Harcèlement'], ['haine', 'Discours haineux'], ['violence', 'Violence'], ['nudite', 'Nudité / contenu sexuel'], ['arnaque', 'Arnaque'], ['autre', 'Autre']]
 import { api } from '@/lib/api'
@@ -32,6 +32,9 @@ export default function NetworkModule({ me, onClose }) {
   const [showPrefs, setShowPrefs] = useState(false)
   const [isMod, setIsMod] = useState(false)
   const [showMod, setShowMod] = useState(false)
+  const [calm, setCalm] = useState(false)
+  const [caughtUp, setCaughtUp] = useState(false)
+  const [toast, setToast] = useState(null)
 
   useEffect(() => { (async () => { const c = await api('/net/moderation/config'); if (!c.error) setIsMod(!!c.isModerator) })() }, [])
 
@@ -41,10 +44,14 @@ export default function NetworkModule({ me, onClose }) {
     setUnavailable(false)
     setItems((prev) => (cur && prev ? [...prev, ...r.items] : r.items))
     setCursor(r.nextCursor || null)
+    setCalm(!!r.calm); setCaughtUp(!!r.caughtUp)
   }, [mode])
   useEffect(() => { setItems(null); load() }, [load])
 
-  const onPublished = (post) => setItems((prev) => [post, ...(prev || [])])
+  const onPublished = (post) => {
+    setItems((prev) => [post, ...(prev || [])])
+    if (post?.eclatsEarned) { setToast(`+${post.eclatsEarned} ⚡ Éclats — première publication du jour !`); setTimeout(() => setToast(null), 3500) }
+  }
   const onDeleted = (id) => setItems((prev) => (prev || []).filter((p) => p.id !== id))
 
   return (
@@ -85,12 +92,18 @@ export default function NetworkModule({ me, onClose }) {
           <>
             <StoriesBar me={me} />
             <Composer me={me} onPublished={onPublished} />
-            <div className="flex items-center gap-2 mb-3 text-xs">
-              <span className="text-muted-foreground">Fil :</span>
-              {[['ranked', 'Classé'], ['recent', 'Récent']].map(([id, label]) => (
-                <button key={id} onClick={() => setMode(id)} className={cx('press px-3 py-1 rounded-full border', mode === id ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>{label}</button>
-              ))}
-            </div>
+            {calm ? (
+              <div className="flex items-center gap-2 mb-3 text-xs text-primary bg-primary/5 border border-primary/20 rounded-full px-3 py-1.5">
+                <Leaf size={13} /> Fil apaisé activé — chronologique, sans chiffres. <button onClick={() => setShowPrefs(true)} className="underline ml-auto">Régler</button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mb-3 text-xs">
+                <span className="text-muted-foreground">Fil :</span>
+                {[['ranked', 'Classé'], ['recent', 'Récent']].map(([id, label]) => (
+                  <button key={id} onClick={() => setMode(id)} className={cx('press px-3 py-1 rounded-full border', mode === id ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>{label}</button>
+                ))}
+              </div>
+            )}
             {items === null ? (
               <div className="grid place-items-center py-16"><RefreshCw className="animate-spin text-muted-foreground" /></div>
             ) : items.length === 0 ? (
@@ -98,11 +111,16 @@ export default function NetworkModule({ me, onClose }) {
             ) : (
               <div className="space-y-3 pb-4">
                 {items.map((p) => <PostCard key={p.id} p={p} onDeleted={onDeleted} onOpenProfile={setProfileId} />)}
-                {cursor && (
+                {cursor ? (
                   <button onClick={async () => { setLoadingMore(true); await load(cursor); setLoadingMore(false) }}
                     className="press w-full py-3 rounded-2xl border border-border bg-card/60 text-sm font-medium">
                     {loadingMore ? <RefreshCw size={16} className="animate-spin mx-auto" /> : 'Voir plus'}
                   </button>
+                ) : caughtUp && (
+                  <div className="text-center py-8 text-sm text-muted-foreground">
+                    <div className="w-11 h-11 rounded-full bg-primary/10 grid place-items-center mx-auto mb-2"><Check size={20} className="text-primary" /></div>
+                    Tu es à jour ✨<div className="text-xs mt-1">Prends une pause si tu veux — le Réseau t'attendra.</div>
+                  </div>
                 )}
               </div>
             )}
@@ -111,6 +129,10 @@ export default function NetworkModule({ me, onClose }) {
       </div>
 
       <AnimatePresence>
+        {toast && (
+          <motion.div key="toast" className="fixed left-1/2 -translate-x-1/2 bottom-24 z-[90] px-4 py-2.5 rounded-full bg-ink text-white text-sm font-medium shadow-lg"
+            initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }}>{toast}</motion.div>
+        )}
         {profileId && <ProfileSheet userId={profileId} meId={me?.id} onClose={() => setProfileId(null)} />}
         {showPrefs && <NotifPrefsSheet onClose={() => setShowPrefs(false)} />}
         {showMod && <ModerationPanel onClose={() => setShowMod(false)} />}
@@ -132,12 +154,21 @@ function NotifPrefsSheet({ onClose }) {
   const [kinds, setKinds] = useState(null)
   const [disabled, setDisabled] = useState([])
   const [saving, setSaving] = useState(false)
+  const [wb, setWb] = useState({ calmMode: false, hideCounts: false })
   useEffect(() => {
     (async () => {
       const r = await api('/net/notifications/prefs')
       if (!r.error) { setKinds(r.kinds || Object.keys(NOTIF_LABELS)); setDisabled(r.disabled || []) }
+      const w = await api('/net/wellbeing/prefs')
+      if (!w.error) setWb({ calmMode: !!w.calmMode, hideCounts: !!w.hideCounts })
     })()
   }, [])
+  const toggleWb = async (key) => {
+    const next = { ...wb, [key]: !wb[key] }
+    setWb(next); setSaving(true)
+    await api('/net/wellbeing/prefs', { method: 'PUT', body: JSON.stringify(next) })
+    setSaving(false)
+  }
   const toggle = async (k) => {
     const next = disabled.includes(k) ? disabled.filter((x) => x !== k) : [...disabled, k]
     setDisabled(next); setSaving(true)
@@ -187,6 +218,23 @@ function NotifPrefsSheet({ onClose }) {
             })}
           </div>
         )}
+        {/* Bien-être / fil apaisé (Couche 10) */}
+        <div className="mt-5 pt-4 border-t border-border">
+          <div className="flex items-center gap-2 text-sm font-medium mb-1"><Leaf size={15} className="text-primary" /> Bien-être</div>
+          <p className="text-xs text-muted-foreground mb-2">Un réseau qui te respecte, pas qui te capte.</p>
+          {[['calmMode', 'Fil apaisé', 'Chronologique, sans « boost viral », chiffres masqués'],
+            ['hideCounts', 'Masquer les compteurs', 'Moins de comparaison sociale (j\'aime & commentaires)']].map(([k, label, desc]) => (
+            <button key={k} onClick={() => toggleWb(k)} className="press w-full flex items-center gap-3 py-2.5 text-left">
+              <div className="flex-1">
+                <div className="text-sm">{label}</div>
+                <div className="text-[11px] text-muted-foreground">{desc}</div>
+              </div>
+              <span className={cx('w-11 h-6 rounded-full p-0.5 transition-colors shrink-0', wb[k] ? 'bg-primary' : 'bg-muted')}>
+                <span className={cx('block w-5 h-5 rounded-full bg-white transition-transform', wb[k] && 'translate-x-5')} />
+              </span>
+            </button>
+          ))}
+        </div>
         {/* RGPD — Mes données (Couche 9) */}
         <div className="mt-5 pt-4 border-t border-border">
           <div className="text-sm font-medium mb-1">Mes données (RGPD)</div>
@@ -619,8 +667,10 @@ function PostCard({ p, onDeleted, onOpenProfile }) {
         </div>
       )}
 
-      {/* compteurs */}
-      {(rxTotal > 0 || cCount > 0) && (
+      {/* compteurs — masqués en mode apaisé (countsHidden) : on garde juste les emojis */}
+      {p.countsHidden ? (
+        emojis.length > 0 && <div className="text-[11px] text-muted-foreground mt-3">{emojis.map((e) => RX[e]).join('')}</div>
+      ) : (rxTotal > 0 || cCount > 0) && (
         <div className="flex items-center justify-between text-[11px] text-muted-foreground mt-3">
           <span>{emojis.map((e) => RX[e]).join('')} {rxTotal > 0 ? rxTotal : ''}</span>
           <span>{cCount > 0 ? `${cCount} commentaire${cCount > 1 ? 's' : ''}` : ''}</span>

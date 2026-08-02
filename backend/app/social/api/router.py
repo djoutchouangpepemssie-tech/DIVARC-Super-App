@@ -10,9 +10,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from ... import eclats
 from ...config import settings
 from ...db import get_db as get_mongo
-from ...helpers import err, ok
+from ...helpers import err, ok, today_str
 from ...realtime import manager
 from ...security import require_user
 from ..adapters.persistence.uow import SqlAlchemyUnitOfWork
@@ -114,7 +115,7 @@ def _post_base(p, authors, pages, viewer_id) -> dict:
     }
 
 
-async def _serialize_posts(uow, mongo, posts, viewer_id) -> list[dict]:
+async def _serialize_posts(uow, mongo, posts, viewer_id, hide_counts: bool = False) -> list[dict]:
     if not posts:
         return []
     shared_map = {}
@@ -136,6 +137,12 @@ async def _serialize_posts(uow, mongo, posts, viewer_id) -> list[dict]:
         d["reactions"] = summaries.get(p.id, {"total": 0, "byType": {}})
         d["myReaction"] = mine.get(p.id)
         d["bookmarked"] = p.id in marked
+        if hide_counts:
+            # Mode apaisé : on masque les chiffres (moins de comparaison sociale),
+            # sans casser l'interaction (on garde ma propre réaction + byType pour les emojis).
+            d["reactions"] = {"total": None, "byType": d["reactions"].get("byType", {})}
+            d["commentCount"] = None
+            d["countsHidden"] = True
         if nested and p.shared_post_id and p.shared_post_id in shared_map:
             d["sharedPost"] = one(shared_map[p.shared_post_id], nested=False)
         return d
@@ -171,7 +178,21 @@ async def create_post(request: Request, me: dict = Depends(require_user), uow=De
         return err(str(e) or "Publication invalide")
     await uow.commit()
     post = await uow.posts.get(post.id)
-    return ok((await _serialize_posts(uow, get_mongo(), [post], me["id"]))[0])
+    out = (await _serialize_posts(uow, get_mongo(), [post], me["id"]))[0]
+    # Éclats sociaux (Couche 10) : récompense « contribution » = 1re publication du jour,
+    # idempotente (1/jour) et plafonnée. Pas de récompense au volume/engagement (anti-addiction).
+    if settings.ECLATS_SOCIAL_POST > 0:
+        res = await eclats.credit(get_mongo(), me["id"], settings.ECLATS_SOCIAL_POST, "social_post",
+                                  {"label": "Première publication du jour ✨", "postId": post.id},
+                                  idem=f"social_post:{me['id']}:{today_str()}")
+        if res.get("ok") and not res.get("duplicate"):
+            out["eclatsEarned"] = settings.ECLATS_SOCIAL_POST
+    return ok(out)
+
+
+async def _wellbeing(user_id: str) -> dict:
+    p = await get_mongo().social_wellbeing_prefs.find_one({"userId": user_id}, {"_id": 0}) or {}
+    return {"calmMode": bool(p.get("calmMode")), "hideCounts": bool(p.get("hideCounts"))}
 
 
 @router.get("/net/feed")
@@ -180,22 +201,30 @@ async def feed(request: Request, me: dict = Depends(require_user), uow=Depends(g
         limit = max(1, min(int(request.query_params.get("limit") or 20), 50))
     except ValueError:
         limit = 20
+    wb = await _wellbeing(me["id"])
     mode = request.query_params.get("mode") or "ranked"
+    # Mode apaisé : on force le fil chronologique (pas de « boost viral ») et on masque les chiffres.
+    if wb["calmMode"]:
+        mode = "recent"
+    hide = wb["hideCounts"] or wb["calmMode"]
     if mode == "ranked":
         # Fil CLASSÉ transparent : chaque post expose sa raison (« Pourquoi je vois ça »)
         pairs = await disc.get_ranked_feed(uow, _policy, me["id"], limit=limit)
         posts = [p for p, _r in pairs]
-        data = await _serialize_posts(uow, get_mongo(), posts, me["id"])
+        data = await _serialize_posts(uow, get_mongo(), posts, me["id"], hide_counts=hide)
         for d, (_p, reason) in zip(data, pairs):
             d["reason"] = reason
-        return ok({"items": data, "nextCursor": None, "mode": "ranked"})
+        return ok({"items": data, "nextCursor": None, "mode": "ranked",
+                   "caughtUp": True, "calm": wb["calmMode"]})
     # Fil chronologique (bascule permanente) : pagination par curseur
     bt, bi = _decode_cursor(request.query_params.get("cursor")) if request.query_params.get("cursor") else (None, None)
     items = await uc.get_feed(uow, _policy, me["id"], limit=limit, before_time=bt, before_id=bi)
-    data = await _serialize_posts(uow, get_mongo(), items, me["id"])
+    data = await _serialize_posts(uow, get_mongo(), items, me["id"], hide_counts=hide)
     for d in data:
-        d["reason"] = "Ordre chronologique"
-    return ok({"items": data, "nextCursor": _encode_cursor(items[-1]) if len(items) == limit else None, "mode": "recent"})
+        d["reason"] = "Fil apaisé" if wb["calmMode"] else "Ordre chronologique"
+    next_cursor = _encode_cursor(items[-1]) if len(items) == limit else None
+    return ok({"items": data, "nextCursor": next_cursor, "mode": "recent",
+               "caughtUp": next_cursor is None, "calm": wb["calmMode"]})
 
 
 @router.get("/net/posts/{post_id}")
@@ -1073,3 +1102,20 @@ async def rgpd_erase(request: Request, me: dict = Depends(require_user), uow=Dep
     if body.get("confirm") != "SUPPRIMER":
         return err('Confirmation requise : envoie {"confirm":"SUPPRIMER"}.', 400)
     return ok(await rgpd.erase_my_data(uow, me["id"]))
+
+
+# ========== Bien-être / fil apaisé (Couche 10, Mongo — pas de Postgres requis) ==========
+@router.get("/net/wellbeing/prefs")
+async def get_wellbeing(me: dict = Depends(require_user)):
+    p = await get_mongo().social_wellbeing_prefs.find_one({"userId": me["id"]}, {"_id": 0}) or {}
+    return ok({"calmMode": bool(p.get("calmMode")), "hideCounts": bool(p.get("hideCounts")),
+               "eclatsPerPost": settings.ECLATS_SOCIAL_POST})
+
+
+@router.put("/net/wellbeing/prefs")
+async def set_wellbeing(request: Request, me: dict = Depends(require_user)):
+    body = await request.json() if await request.body() else {}
+    prefs = {"calmMode": bool(body.get("calmMode")), "hideCounts": bool(body.get("hideCounts"))}
+    await get_mongo().social_wellbeing_prefs.update_one(
+        {"userId": me["id"]}, {"$set": {"userId": me["id"], **prefs}}, upsert=True)
+    return ok(prefs)
