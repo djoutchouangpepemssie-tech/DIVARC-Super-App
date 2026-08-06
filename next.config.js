@@ -1,4 +1,9 @@
+// BUILD_TARGET=native => export statique bundlé dans l'app iOS/Android (Capacitor).
+// Sinon => build web classique (proxy /api, headers). Le web n'est JAMAIS impacté.
+const NATIVE = process.env.BUILD_TARGET === 'native'
+
 const nextConfig = {
+  ...(NATIVE ? { output: 'export', trailingSlash: true } : {}),
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -9,6 +14,7 @@ const nextConfig = {
   // backend Python (FastAPI). Définir BACKEND_URL (ex: https://divarc-api.up.railway.app).
   // Avantage : pas de CORS, et les <img src="/api/market/image/..."> fonctionnent tel quel.
   async rewrites() {
+    if (NATIVE) return []
     const api = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '')
     return api ? [{ source: '/api/:path*', destination: `${api}/api/:path*` }] : []
   },
@@ -28,6 +34,7 @@ const nextConfig = {
     pagesBufferLength: 2,
   },
   async headers() {
+    if (NATIVE) return []
     return [
       {
         source: "/(.*)",
