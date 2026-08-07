@@ -12,7 +12,8 @@ import {
   Landmark, CreditCard, Settings2, Trash2, Download, Users, Play, AtSign, Phone
 } from 'lucide-react'
 import { api, getToken, setToken, clearToken, flushQueue, pendingCount } from '@/lib/api'
-import { isAppStoreBuild, showMoneyWallet } from '@/lib/platform'
+import { isAppStoreBuild, showMoneyWallet, isNative } from '@/lib/platform'
+import { registerPush, haptic, biometricVerify, biometricAvailable } from '@/lib/native'
 import { connectRealtime, disconnectRealtime, onRealtime } from '@/lib/realtime'
 import { installAudioUnlock, playPing, soundEnabled, setSoundEnabled } from '@/lib/sound'
 import { registerServiceWorker, getPushStatus, enablePush, disablePush } from '@/lib/push'
@@ -238,6 +239,7 @@ const TABS = [
   { id: 'profile', label: 'Profil', icon: User },
 ]
 function TabBar({ active, onChange }) {
+  const tap = (id) => { haptic('light'); onChange(id) }
   return (
     <div className="fixed bottom-0 inset-x-0 z-40 pb-[max(env(safe-area-inset-bottom),12px)] pt-2 px-3 pointer-events-none">
       <Glass strong className="mx-auto max-w-md flex items-end justify-around px-2 py-2 pointer-events-auto">
@@ -246,7 +248,7 @@ function TabBar({ active, onChange }) {
           const on = active === t.id
           if (t.center) {
             return (
-              <button key={t.id} onClick={() => onChange(t.id)} aria-label={t.label}
+              <button key={t.id} onClick={() => tap(t.id)} aria-label={t.label}
                 className="press -mt-7 w-14 h-14 rounded-full grid place-items-center text-white glow-primary"
                 style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}>
                 <Icon size={24} />
@@ -254,7 +256,7 @@ function TabBar({ active, onChange }) {
             )
           }
           return (
-            <button key={t.id} onClick={() => onChange(t.id)} aria-label={t.label} aria-current={on}
+            <button key={t.id} onClick={() => tap(t.id)} aria-label={t.label} aria-current={on}
               className={cx('press flex flex-col items-center gap-1 px-3 py-1.5 rounded-2xl min-w-[56px] transition-colors', on ? 'text-primary bg-primary/10' : 'text-muted-foreground')}>
               <Icon size={21} strokeWidth={on ? 2.4 : 2} />
               <span className={cx('text-[10px]', on ? 'font-semibold' : 'font-medium')}>{t.label}</span>
@@ -1049,6 +1051,30 @@ const SocialTeaser = () => (
 )
 
 /* ============================= PROFILE ============================= */
+function FaceIdRow() {
+  const [avail, setAvail] = useState(false)
+  const [on, setOn] = useState(false)
+  useEffect(() => {
+    (async () => {
+      if (!isNative()) return
+      setAvail(await biometricAvailable())
+      setOn(localStorage.getItem('divarc_faceid_lock') === '1')
+    })()
+  }, [])
+  if (!avail) return null
+  const toggle = async () => {
+    if (!on) { const ok = await biometricVerify('Activer le verrouillage'); if (!ok) return }
+    const next = !on
+    setOn(next); localStorage.setItem('divarc_faceid_lock', next ? '1' : '0')
+  }
+  return (
+    <div className="flex items-center justify-between p-3.5">
+      <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><Fingerprint size={18} /></div><span className="font-medium text-sm">Verrouiller avec Face ID</span></div>
+      <Toggle on={on} onClick={toggle} />
+    </div>
+  )
+}
+
 function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout, onOpenPlus }) {
   const plusActive = !!(user?.plusUntil && new Date(user.plusUntil) > new Date())
   const [snd, setSnd] = useState(true)
@@ -1146,6 +1172,7 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout, onOp
               <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><EyeOff size={18} /></div><span className="font-medium text-sm">Mode Confiance (masquer montants)</span></div>
               <Toggle on={mask} onClick={() => setMask((m) => !m)} />
             </div>
+            <FaceIdRow />
             <div className="p-3.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><Bell size={18} /></div>
@@ -1408,6 +1435,7 @@ function Sheet({ children, onClose, title, gold }) {
 function App() {
   const { theme, setTheme } = useTheme()
   const [booted, setBooted] = useState(false)
+  const [locked, setLocked] = useState(false)
   const [tab, setTab] = useState('hub')
   const [mask, setMask] = useState(false)
   const [mktImmersive, setMktImmersive] = useState(false)
@@ -1467,7 +1495,7 @@ function App() {
     (async () => {
       if (getToken()) {
         const me = await api('/auth/me')
-        if (!me.error) { setUser(me); await load() }
+        if (!me.error) { setUser(me); await load(); registerPush() }
         else clearToken()
       }
       setBooted(true)
@@ -1541,7 +1569,7 @@ function App() {
     return () => window.removeEventListener('storage', onStorage)
   }, [load])
 
-  const onAuthed = async (u) => { setUser(u); setTab('hub'); await load() }
+  const onAuthed = async (u) => { setUser(u); setTab('hub'); await load(); registerPush() }
   const logout = async () => { await api('/auth/logout', { method: 'POST' }); clearToken(); setUser(null); setWallet(null); setTxs([]); setContacts([]) }
 
   const handleAction = (id) => {
@@ -1560,8 +1588,28 @@ function App() {
   }
   const goTab = (t) => { setMktImmersive(false); setTab(t) }
 
+  // Verrouillage biométrique (Face ID / Touch ID) — natif uniquement, si activé par l'utilisateur.
+  const unlock = useCallback(async () => {
+    const ok = await biometricVerify('Déverrouille DIVARC')
+    if (ok) setLocked(false)
+  }, [])
+  useEffect(() => {
+    if (isNative() && localStorage.getItem('divarc_faceid_lock') === '1') setLocked(true)
+  }, [])
+  useEffect(() => { if (locked) unlock() }, [locked, unlock])
+
   if (!booted) return <Boot />
   if (!user) return <Login onAuthed={onAuthed} />
+  if (locked) return (
+    <div className="min-h-[100dvh] bg-app-gradient grid place-items-center p-6 text-center">
+      <div>
+        <div className="w-16 h-16 rounded-3xl grid place-items-center mx-auto mb-4 text-white" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}><Lock size={28} /></div>
+        <div className="font-display text-2xl mb-1">DIVARC est verrouillé</div>
+        <div className="text-sm text-muted-foreground mb-5">Déverrouille avec Face ID pour continuer.</div>
+        <button onClick={unlock} className="press px-6 py-3 rounded-full font-semibold text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>Déverrouiller</button>
+      </div>
+    </div>
+  )
 
   return (
     <div className="font-body text-foreground">

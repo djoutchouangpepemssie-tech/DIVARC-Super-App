@@ -9,16 +9,20 @@
         "build": "next build",
         "build:native": "cross-env BUILD_TARGET=native next build",
         "sync:ios": "npm run build:native && cap sync ios",
+        "assets": "capacitor-assets generate --ios --iconBackgroundColor #0e1020 --splashBackgroundColor #0e1020 --splashBackgroundColorDark #0e1020",
         "open:ios": "cap open ios",
         "start": "next start -H 0.0.0.0"
     },
     "dependencies": {
+        "@aparajita/capacitor-biometric-auth": "^9.1.2",
         "@capacitor/app": "^6.0.3",
         "@capacitor/core": "^6.2.1",
         "@capacitor/haptics": "^6.0.3",
         "@capacitor/ios": "^6.2.1",
         "@capacitor/keyboard": "^6.0.4",
         "@capacitor/preferences": "^6.0.4",
+        "@capacitor/push-notifications": "^6.0.5",
+        "@capacitor/share": "^6.0.4",
         "@capacitor/splash-screen": "^6.0.4",
         "@capacitor/status-bar": "^6.0.3",
         "@hookform/resolvers": "5.1.1",
@@ -77,6 +81,7 @@
         "zod": "3.25.67"
     },
     "devDependencies": {
+        "@capacitor/assets": "^3.0.5",
         "@capacitor/cli": "^6.2.1",
         "@types/lodash": "4.17.24",
         "autoprefixer": "10.4.19",

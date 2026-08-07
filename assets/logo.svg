@@ -1,0 +1,18 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5A67FF"/>
+      <stop offset="0.42" stop-color="#4353F0"/>
+      <stop offset="0.78" stop-color="#2C39C7"/>
+      <stop offset="1" stop-color="#212A9E"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="512" y1="300" x2="512" y2="740" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F0CE7E"/>
+      <stop offset="1" stop-color="#E2AA2B"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <circle cx="815" cy="205" r="360" fill="#E2AA2B" fill-opacity="0.18"/>
+  <!-- Éclair DIVARC stylisé -->
+  <path d="M565 250 L360 560 H505 L455 774 L690 430 H540 Z" fill="url(#gold)"/>
+</svg>
