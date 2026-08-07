@@ -5,13 +5,12 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { X, Star, Check, RefreshCw, Heart, Eye, Zap, ShieldOff, Sparkles, Infinity as InfinityIcon } from 'lucide-react'
 import { api } from '@/lib/api'
-import { showPaidPlans } from '@/lib/platform'
 
 const eur = (c) => (c / 100).toFixed(2).replace('.', ',')
 const PERK_ICONS = [InfinityIcon, Eye, ShieldOff, Zap, Sparkles, Heart]
 
 export function PlusBadge() {
-  return <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#9B5DE5)' }}><Star size={10} fill="#fff" /> DIVARC+</span>
+  return <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full text-white grad-diva"><Star size={10} fill="#fff" /> DIVARC+</span>
 }
 
 export default function PlusSheet({ onClose }) {
@@ -41,7 +40,7 @@ export default function PlusSheet({ onClose }) {
 
       <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-safe">
         {/* Hero */}
-        <div className="rounded-[var(--radius)] p-6 my-4 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7 55%,#9B5DE5)' }}>
+        <div className="rounded-lg p-6 my-4 text-white relative overflow-hidden grad-diva">
           <div className="font-display text-3xl leading-tight">Passe en illimité</div>
           <div className="text-white/80 text-sm mt-1">Tout DIVARC, sans limites ni publicité.</div>
           {data?.active && (
@@ -51,17 +50,17 @@ export default function PlusSheet({ onClose }) {
           )}
         </div>
 
-        {msg && <div className="mb-3 rounded-2xl bg-gold/12 border border-gold/30 px-4 py-2.5 text-sm text-center">{msg}</div>}
+        {msg && <div className="mb-3 rounded-inner bg-gold/12 border border-gold/30 px-4 py-2.5 text-sm text-center">{msg}</div>}
 
         {/* Avantages */}
-        <div className="rounded-2xl border border-border bg-card/40 divide-y divide-border/60 mb-4">
+        <div className="rounded-lg border border-border bg-card/40 divide-y divide-border/60 mb-4">
           {(data?.perks || []).map((p, i) => {
             const Icon = PERK_ICONS[i % PERK_ICONS.length]
             return (
               <div key={i} className="flex items-center gap-3 p-3.5">
-                <div className="w-9 h-9 rounded-xl grid place-items-center text-primary bg-primary/10"><Icon size={18} /></div>
+                <div className="w-9 h-9 rounded-inner grid place-items-center text-primary bg-primary/10"><Icon size={18} /></div>
                 <span className="text-sm font-medium">{p}</span>
-                <Check size={16} className="text-green-500 ml-auto" />
+                <Check size={16} className="text-success ml-auto" />
               </div>
             )
           })}
@@ -73,28 +72,21 @@ export default function PlusSheet({ onClose }) {
         ) : data.active ? (
           <>
             {data.autoRenew ? (
-              <button onClick={() => act('/plus/cancel', 'cancel')} disabled={busy === 'cancel'} className="press w-full rounded-2xl py-3 font-medium border border-border bg-card/60 mb-3">
+              <button onClick={() => act('/plus/cancel', 'cancel')} disabled={busy === 'cancel'} className="press w-full rounded-inner py-3 font-medium border border-border bg-card/60 mb-3">
                 Résilier (garder jusqu'à l'échéance)
               </button>
             ) : (
               <div className="text-center text-sm text-muted-foreground mb-3">Ne se renouvellera pas automatiquement.</div>
             )}
           </>
-        ) : !showPaidPlans() ? (
-          // iOS App Store V1 : pas de vente hors achats intégrés Apple -> on présente les
-          // avantages sans CTA d'achat (conforme règle 3.1.1). Achat dispo sur divarc.fr.
-          <div className="text-center text-sm text-muted-foreground mb-4 rounded-2xl border border-border bg-card/60 p-4">
-            L'abonnement DIVARC+ n'est pas encore disponible à l'achat dans l'app.
-            <br />Retrouve tous ces avantages prochainement.
-          </div>
         ) : (
           <>
             {!data.trialUsed && (
-              <button onClick={() => act('/plus/trial', 'trial')} disabled={busy === 'trial'} className="press w-full rounded-2xl py-3.5 font-semibold text-white mb-3" style={{ background: 'linear-gradient(135deg,#4353F0,#9B5DE5)' }}>
+              <button onClick={() => act('/plus/trial', 'trial')} disabled={busy === 'trial'} className="press w-full rounded-inner py-3.5 font-semibold text-white mb-3 grad-diva">
                 {busy === 'trial' ? <RefreshCw size={18} className="animate-spin mx-auto" /> : `Essai gratuit ${data.trialDays} jours`}
               </button>
             )}
-            <button onClick={() => act('/plus/subscribe', 'sub')} disabled={busy === 'sub'} className="press w-full rounded-2xl py-3.5 font-semibold border border-primary/40 bg-primary/10 text-primary mb-2">
+            <button onClick={() => act('/plus/subscribe', 'sub')} disabled={busy === 'sub'} className="press w-full rounded-inner py-3.5 font-semibold bg-primary/10 text-primary mb-2">
               {busy === 'sub' ? <RefreshCw size={18} className="animate-spin mx-auto" /> : `S'abonner · ${eur(data.priceCents)} €/mois`}
             </button>
             <p className="text-center text-[11px] text-muted-foreground mb-4">

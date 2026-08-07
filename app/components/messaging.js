@@ -6,21 +6,16 @@ import { api } from '@/lib/api'
 import { onRealtime, sendRealtime, isOnline } from '@/lib/realtime'
 import Discovery from './discovery'
 import { startCall } from './call'
+import { toast, Avatar } from './ui-kit'
 import {
-  Plus, Search, ArrowLeft, Send as SendIcon, X, Lock, BadgeCheck, Users, Hash,
-  Smile, Flame, Check, Sparkles, Globe, MessageCircle, UserPlus, Crown, Paperclip, RefreshCw,
+  Plus, ArrowLeft, Send as SendIcon, X, Lock, BadgeCheck, Users, Hash,
+  Smile, Globe, MessageCircle, Paperclip, RefreshCw,
   Phone, Video, Trash2, Ban
 } from 'lucide-react'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
 const Glass = ({ className, strong, children, ...p }) => (
   <div className={cx('glass', strong && 'glass-strong', className)} {...p}>{children}</div>
-)
-const Avatar = ({ c, size = 44, ring }) => (
-  <div className="grid place-items-center rounded-full text-white font-semibold shrink-0"
-    style={{ width: size, height: size, background: c?.avatarColor || c?.color || '#4353F0', fontSize: size * 0.36, boxShadow: ring ? `0 0 0 3px ${ring}` : 'none' }}>
-    {c?.initials}
-  </div>
 )
 const timeShort = (d) => {
   if (!d) return ''
@@ -297,7 +292,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
     const file = e.target.files?.[0]
     e.target.value = '' // permet de re-choisir le même fichier
     if (!file) return
-    if (file.size > 6.5 * 1024 * 1024) { alert('Fichier trop lourd (max ~6 Mo).'); return }
+    if (file.size > 6.5 * 1024 * 1024) { toast('Fichier trop lourd (max ~6 Mo).', 'error'); return }
     const kind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'audio'
     const reader = new FileReader()
     reader.onload = () => setPendingMedia({ kind, dataUrl: reader.result, preview: reader.result, name: file.name })
@@ -314,7 +309,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
       setUploading(true)
       const up = await api('/chat/upload', { method: 'POST', body: JSON.stringify({ data: pendingMedia.dataUrl }) })
       setUploading(false)
-      if (up.error) { alert(up.error); setSending(false); return }
+      if (up.error) { toast(up.error, 'error'); setSending(false); return }
       media = { mediaUrl: up.url, mediaType: up.kind }
     }
     const payload = { text, ...(media || {}), kind: media ? media.mediaType : 'text' }
@@ -357,7 +352,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
           <div className="flex items-center justify-between gap-3 mb-4">
             <h1 className="font-display text-3xl">Messages</h1>
             <button onClick={() => setNewOpen(true)} aria-label="Ajouter / nouvelle discussion"
-              className="press w-11 h-11 rounded-full grid place-items-center text-white shadow-lg shrink-0" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+              className="press w-11 h-11 rounded-full grid place-items-center text-white shadow-lg shrink-0 grad-primary">
               <Plus size={22} />
             </button>
           </div>
@@ -378,7 +373,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
                 <button key={c.id} onClick={() => openConv(c.id)}
                   className={cx('press w-full flex items-center gap-3 p-2.5 rounded-2xl text-left', active === c.id && 'bg-primary/10')}>
                   <div className="relative">
-                    <Avatar c={c.type === 'dm' ? c.other : { initials: c.title?.[0] || '#', avatarColor: c.avatarColor }} size={48} />
+                    <Avatar c={c.type === 'dm' ? c.other : { title: c.title, avatarColor: c.avatarColor }} size={48} />
                     {c.type !== 'dm' && <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-card border border-border grid place-items-center"><Users size={11} /></span>}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -401,7 +396,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
             <Glass className="p-2 space-y-1">
               {communities.map((c) => (
                 <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-2xl">
-                  <Avatar c={{ initials: c.name?.[0] || '#', avatarColor: c.avatarColor }} size={48} />
+                  <Avatar c={{ name: c.name, avatarColor: c.avatarColor }} size={48} />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm flex items-center gap-1"><Hash size={13} />{c.name}</div>
                     <div className="text-xs text-muted-foreground truncate">{c.topic} · {c.memberCount} membres</div>
@@ -410,7 +405,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
                     <button onClick={() => { setTab('dm'); openConv(c.id) }} className="press text-xs font-semibold px-3 py-1.5 rounded-full bg-primary/10 text-primary">Ouvrir</button>
                   ) : (
                     <button onClick={async () => { await api(`/conversations/${c.id}/join`, { method: 'POST' }); loadCommunities(); loadConvos() }}
-                      className="press text-xs font-semibold px-3 py-1.5 rounded-full text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>Rejoindre</button>
+                      className="press text-xs font-semibold px-3 py-1.5 rounded-full text-white grad-primary">Rejoindre</button>
                   )}
                 </div>
               ))}
@@ -434,7 +429,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
               {/* header */}
               <div className="flex items-center gap-3 p-4 pt-safe md:pt-4 border-b border-border/60">
                 <button onClick={() => setActive(null)} className="md:hidden press"><ArrowLeft size={20} /></button>
-                <Avatar c={conv?.type === 'dm' ? conv.other : { initials: conv?.name?.[0] || '#', avatarColor: '#4353F0' }} size={40}
+                <Avatar c={conv?.type === 'dm' ? conv.other : { name: conv?.name }} size={40}
                   ring={conv?.friendship ? LEVEL_COLORS[conv.friendship.level] : null} />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm flex items-center gap-1 truncate">
@@ -444,7 +439,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
                   <div className="text-xs text-muted-foreground">
                     {conv?.type === 'dm'
                       ? (isOnline(conv?.other?.id)
-                          ? <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />en ligne</span>
+                          ? <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-success inline-block" />en ligne</span>
                           : 'hors ligne')
                       : `${conv?.memberCount} membres`}
                   </div>
@@ -491,8 +486,8 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
                 <div className="px-3 pt-2 flex items-center gap-2">
                   <div className="relative">
                     {pendingMedia.kind === 'image'
-                      ? <img src={pendingMedia.preview} alt="" className="w-16 h-16 rounded-xl object-cover border border-border" />
-                      : <div className="w-16 h-16 rounded-xl border border-border grid place-items-center bg-muted/60 text-xs text-muted-foreground text-center px-1">{pendingMedia.kind === 'video' ? '🎥 Vidéo' : '🎤 Audio'}</div>}
+                      ? <img src={pendingMedia.preview} alt="" className="w-16 h-16 rounded-inner object-cover border border-border" />
+                      : <div className="w-16 h-16 rounded-inner border border-border grid place-items-center bg-muted/60 text-xs text-muted-foreground text-center px-1">{pendingMedia.kind === 'video' ? '🎥 Vidéo' : '🎤 Audio'}</div>}
                     <button onClick={() => setPendingMedia(null)} aria-label="Retirer" className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-ink text-white grid place-items-center"><X size={12} /></button>
                   </div>
                   <span className="text-xs text-muted-foreground truncate">{pendingMedia.name}</span>
@@ -509,7 +504,7 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
                 <input value={input} onChange={(e) => { setInput(e.target.value); const t = Date.now(); if (active && t - lastTypingSent.current > 1500) { lastTypingSent.current = t; sendRealtime({ type: 'typing', conversationId: active }) } }} onKeyDown={(e) => e.key === 'Enter' && send()}
                   placeholder="Message…" className="flex-1 rounded-full border border-border bg-card/60 px-4 py-2.5 text-sm" />
                 <button onClick={send} disabled={(!input.trim() && !pendingMedia) || sending} aria-label="Envoyer"
-                  className="press w-10 h-10 rounded-full grid place-items-center text-white disabled:opacity-40 shrink-0" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+                  className="press w-10 h-10 rounded-full grid place-items-center text-white disabled:opacity-40 shrink-0 grad-primary">
                   <SendIcon size={18} />
                 </button>
               </div>
@@ -520,95 +515,10 @@ export default function Messaging({ me, openConvId, onConsumed, openDiscovery, o
       </div>
 
       <AnimatePresence>
-        <AnimatePresence>
-          {newOpen && <Discovery onClose={() => setNewOpen(false)} onOpenConversation={(id) => { setNewOpen(false); setTab('dm'); loadConvos(); openConv(id) }} />}
-        </AnimatePresence>
+        {newOpen && <Discovery onClose={() => setNewOpen(false)} onOpenConversation={(id) => { setNewOpen(false); setTab('dm'); loadConvos(); openConv(id) }} />}
       </AnimatePresence>
     </div>
   )
 }
 
 const Empty = ({ text }) => <div className="text-center text-sm text-muted-foreground py-10 px-4">{text}</div>
-
-/* ---------- New chat / group modal ---------- */
-function NewChat({ me, onClose, onOpen }) {
-  const [q, setQ] = useState('')
-  const [results, setResults] = useState([])
-  const [mode, setMode] = useState('dm') // dm | group
-  const [selected, setSelected] = useState([])
-  const [groupName, setGroupName] = useState('')
-
-  useEffect(() => {
-    const t = setTimeout(async () => { const r = await api(`/users?q=${encodeURIComponent(q)}`); if (Array.isArray(r)) setResults(r) }, 250)
-    return () => clearTimeout(t)
-  }, [q])
-
-  const toggle = (u) => setSelected((s) => s.find((x) => x.id === u.id) ? s.filter((x) => x.id !== u.id) : [...s, u])
-
-  const startDm = async (u) => {
-    const r = await api('/conversations', { method: 'POST', body: JSON.stringify({ type: 'dm', memberHandles: [u.handle] }) })
-    if (r.id) onOpen(r.id)
-  }
-  const createGroup = async () => {
-    if (selected.length === 0) return
-    const r = await api('/conversations', { method: 'POST', body: JSON.stringify({ type: 'group', name: groupName || 'Nouveau groupe', memberHandles: selected.map((s) => s.handle) }) })
-    if (r.id) onOpen(r.id)
-  }
-
-  return (
-    <motion.div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} />
-      <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }} className="relative w-full sm:max-w-md">
-        <Glass strong className="p-5 pb-safe rounded-b-none sm:rounded-b-[var(--radius)] max-h-[88dvh] overflow-y-auto overscroll-contain no-scrollbar">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-display text-2xl">Nouvelle discussion</h3>
-            <button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60"><X size={18} /></button>
-          </div>
-          <div className="flex gap-2 p-1 rounded-2xl bg-muted/60 mb-4">
-            {[['dm', 'Message', MessageCircle], ['group', 'Groupe', Users]].map(([id, label, Icon]) => (
-              <button key={id} onClick={() => setMode(id)} className={cx('press flex-1 py-2 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5', mode === id ? 'bg-card shadow' : 'text-muted-foreground')}><Icon size={15} />{label}</button>
-            ))}
-          </div>
-          {mode === 'group' && (
-            <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="Nom du groupe…"
-              className="w-full mb-3 rounded-2xl border border-border bg-card/60 px-4 py-3 text-sm" />
-          )}
-          <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3 py-2.5 mb-3">
-            <Search size={16} className="text-muted-foreground" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher par nom ou @handle…" className="flex-1 bg-transparent text-sm outline-none" />
-          </div>
-          {mode === 'group' && selected.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {selected.map((u) => (
-                <span key={u.id} className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary rounded-full pl-1 pr-2 py-0.5">
-                  <Avatar c={u} size={20} /> {u.name.split(' ')[0]} <button onClick={() => toggle(u)}><X size={12} /></button>
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="space-y-1 max-h-[40dvh] overflow-y-auto no-scrollbar">
-            {results.map((u) => (
-              <button key={u.id} onClick={() => mode === 'dm' ? startDm(u) : toggle(u)}
-                className={cx('press w-full flex items-center gap-3 p-2.5 rounded-2xl text-left', selected.find((x) => x.id === u.id) && 'bg-primary/10')}>
-                <Avatar c={u} size={44} />
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm flex items-center gap-1">{u.name} {u.verified && <BadgeCheck size={13} className="text-primary" />}</div>
-                  <div className="text-xs text-muted-foreground">{u.handle}</div>
-                </div>
-                {mode === 'dm' ? <UserPlus size={18} className="text-muted-foreground" />
-                  : <div className={cx('w-5 h-5 rounded-md grid place-items-center', selected.find((x) => x.id === u.id) ? 'bg-primary text-white' : 'bg-muted')}>{selected.find((x) => x.id === u.id) && <Check size={13} />}</div>}
-              </button>
-            ))}
-            {results.length === 0 && <Empty text="Aucun utilisateur trouvé." />}
-          </div>
-          {mode === 'group' && (
-            <button onClick={createGroup} disabled={selected.length === 0}
-              className="press w-full mt-4 rounded-2xl py-3.5 font-semibold text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
-              Créer le groupe ({selected.length})
-            </button>
-          )}
-        </Glass>
-      </motion.div>
-    </motion.div>
-  )
-}

@@ -6,8 +6,9 @@ import { api } from '@/lib/api'
 import { FeedSkeleton, EmptyState, ErrorState } from './states'
 import {
   Heart, MessageCircle, Bookmark, Share2, Volume2, VolumeX, Plus, X, ArrowLeft,
-  ShoppingBag, Info, BadgeCheck, Sparkles, Check, UserPlus, UserCheck, EyeOff, Send as SendIcon, Gift, Cpu, ChevronRight, Zap
+  ShoppingBag, Info, BadgeCheck, Sparkles, Check, EyeOff, Send as SendIcon, Gift, Cpu, ChevronRight, Zap
 } from 'lucide-react'
+import { toast, Toggle } from './ui-kit'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
 const eur = (c) => (c / 100).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -35,7 +36,6 @@ export default function Social({ me, onBack }) {
   const [createOpen, setCreateOpen] = useState(false)
   const [commentsFor, setCommentsFor] = useState(null)
   const [tipFor, setTipFor] = useState(null)
-  const [toast, setToast] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -49,8 +49,6 @@ export default function Social({ me, onBack }) {
   }, [mode])
   useEffect(() => { load() }, [load])
 
-  const showToast = (t) => { setToast(t); setTimeout(() => setToast(null), 2200) }
-
   const onLike = async (p) => {
     setFeed((f) => f.map((x) => x.id === p.id ? { ...x, liked: !x.liked, likes: x.likes + (x.liked ? -1 : 1) } : x))
     await api(`/social/posts/${p.id}/like`, { method: 'POST' })
@@ -58,7 +56,7 @@ export default function Social({ me, onBack }) {
   const onSave = async (p) => {
     setFeed((f) => f.map((x) => x.id === p.id ? { ...x, saved: !x.saved, saves: x.saves + (x.saved ? -1 : 1) } : x))
     await api(`/social/posts/${p.id}/save`, { method: 'POST' })
-    showToast(p.saved ? 'Retiré des enregistrements' : 'Enregistré ✓')
+    toast(p.saved ? 'Retiré des enregistrements' : 'Enregistré')
   }
   const onFollow = async (p) => {
     setFeed((f) => f.map((x) => x.author?.id === p.author?.id ? { ...x, following: !x.following } : x))
@@ -66,23 +64,23 @@ export default function Social({ me, onBack }) {
   }
   const onNotInterested = async (p) => {
     await api(`/social/posts/${p.id}/notinterested`, { method: 'POST' })
-    setFeed((f) => f.filter((x) => x.id !== p.id)); showToast('Merci, moins de contenu comme ça')
+    setFeed((f) => f.filter((x) => x.id !== p.id)); toast('Merci, moins de contenu comme ça', 'info')
   }
   const onBuy = async (p) => {
     const r = await api(`/social/posts/${p.id}/buy`, { method: 'POST' })
-    if (r.error) return showToast('⚠️ ' + r.error)
-    showToast(`Acheté ✓ ${p.product.title} · ${eur(r.amountCents)} €`)
+    if (r.error) return toast(r.error, 'error')
+    toast(`Acheté ${p.product.title} · ${eur(r.amountCents)} €`)
   }
   const boostPost = async (p) => {
     const r = await api(`/social/posts/${p.id}/boost`, { method: 'POST' })
-    if (r.error) return showToast('⚠️ ' + r.error)
-    showToast(`Publication boostée 🚀 · -${r.cost} ⚡`)
+    if (r.error) return toast(r.error, 'error')
+    toast(`Publication boostée · -${r.cost} Éclats`, 'eclat')
   }
   const onTip = async (p, amountCents) => {
     const r = await api(`/social/posts/${p.id}/tip`, { method: 'POST', body: JSON.stringify({ amountCents }) })
     setTipFor(null)
-    if (r.error) return showToast('⚠️ ' + r.error)
-    showToast(`Pourboire envoyé 💛 ${eur(amountCents)} €`)
+    if (r.error) return toast(r.error, 'error')
+    toast(`Pourboire envoyé · ${eur(amountCents)} €`)
   }
 
   return (
@@ -101,7 +99,7 @@ export default function Social({ me, onBack }) {
         {feed.map((p, i) => (
           <PostCard key={p.id} p={p} me={me} muted={muted} setMuted={setMuted}
             onLike={onLike} onSave={onSave} onFollow={onFollow} onComments={() => setCommentsFor(p)}
-            onTip={() => setTipFor(p)} onBuy={onBuy} onNotInterested={onNotInterested} onBoost={boostPost} showToast={showToast} />
+            onTip={() => setTipFor(p)} onBuy={onBuy} onNotInterested={onNotInterested} onBoost={boostPost} />
         ))}
         {!loading && feed.length > 0 && <WellnessCard />}
       </div>
@@ -121,16 +119,8 @@ export default function Social({ me, onBack }) {
         <button onClick={() => setCreateOpen(true)} aria-label="Créer" className="press w-9 h-9 rounded-full grid place-items-center bg-white text-black"><Plus size={20} /></button>
       </div>
 
-      {/* toast */}
       <AnimatePresence>
-        {toast && (
-          <motion.div role="status" aria-live="polite" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="absolute bottom-28 left-1/2 -translate-x-1/2 z-30 bg-white text-ink text-sm font-medium px-4 py-2.5 rounded-full shadow-xl">{toast}</motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {createOpen && <CreatePost me={me} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); setMode('chrono'); load(); showToast('Publié ✓') }} />}
+        {createOpen && <CreatePost me={me} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); setMode('chrono'); load(); toast('Publié') }} />}
         {commentsFor && <CommentsSheet post={commentsFor} me={me} onClose={() => setCommentsFor(null)} onAdded={() => setFeed((f) => f.map((x) => x.id === commentsFor.id ? { ...x, comments: x.comments + 1 } : x))} />}
         {tipFor && <TipSheet post={tipFor} onClose={() => setTipFor(null)} onTip={(amt) => onTip(tipFor, amt)} />}
       </AnimatePresence>
@@ -138,7 +128,7 @@ export default function Social({ me, onBack }) {
   )
 }
 
-function PostCard({ p, me, muted, setMuted, onLike, onSave, onFollow, onComments, onTip, onBuy, onNotInterested, onBoost, showToast }) {
+function PostCard({ p, me, muted, setMuted, onLike, onSave, onFollow, onComments, onTip, onBuy, onNotInterested, onBoost }) {
   const vidRef = useRef()
   const cardRef = useRef()
   const [showWhy, setShowWhy] = useState(false)
@@ -203,17 +193,17 @@ function PostCard({ p, me, muted, setMuted, onLike, onSave, onFollow, onComments
       <div className="absolute right-3 bottom-32 flex flex-col items-center gap-5 z-10 text-white">
         <button onClick={() => onFollow(p)} className="press relative">
           <Avatar c={p.author} size={48} />
-          <span className={cx('absolute -bottom-2 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full grid place-items-center text-white', p.following ? 'bg-green-500' : 'bg-primary')}>
+          <span className={cx('absolute -bottom-2 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full grid place-items-center text-white', p.following ? 'bg-success' : 'bg-primary')}>
             {p.following ? <Check size={12} /> : <Plus size={12} />}
           </span>
         </button>
-        <RailBtn onClick={() => onLike(p)} active={p.liked} icon={<Heart size={30} fill={p.liked ? '#F15BB5' : 'none'} color={p.liked ? '#F15BB5' : '#fff'} />} label={kf(p.likes)} />
+        <RailBtn onClick={() => onLike(p)} active={p.liked} icon={<Heart size={30} className={p.liked ? 'text-love' : 'text-white'} fill={p.liked ? 'currentColor' : 'none'} />} label={kf(p.likes)} />
         <RailBtn onClick={onComments} icon={<MessageCircle size={30} />} label={kf(p.comments)} />
-        <RailBtn onClick={() => onSave(p)} active={p.saved} icon={<Bookmark size={28} fill={p.saved ? '#E2AA2B' : 'none'} color={p.saved ? '#E2AA2B' : '#fff'} />} label={kf(p.saves)} />
-        <RailBtn onClick={() => onTip(p)} icon={<Gift size={28} color="#F0CE7E" />} label="Pourboire" />
-        <RailBtn onClick={() => showToast('Lien copié · partage dans le Chat')} icon={<Share2 size={28} />} label="Partager" />
+        <RailBtn onClick={() => onSave(p)} active={p.saved} icon={<Bookmark size={28} className={p.saved ? 'text-gold' : 'text-white'} fill={p.saved ? 'currentColor' : 'none'} />} label={kf(p.saves)} />
+        <RailBtn onClick={() => onTip(p)} icon={<Gift size={28} className="text-gold-soft" />} label="Pourboire" />
+        <RailBtn onClick={() => toast('Lien copié · partage dans le Chat')} icon={<Share2 size={28} />} label="Partager" />
         {p.author?.id === me?.id
-          ? <RailBtn onClick={() => onBoost(p)} icon={<Zap size={26} color="#E2AA2B" />} label="Booster" />
+          ? <RailBtn onClick={() => onBoost(p)} icon={<Zap size={26} className="text-gold" />} label="Booster" />
           : <RailBtn onClick={() => onNotInterested(p)} icon={<EyeOff size={24} />} label="Moins" />}
       </div>
 
@@ -230,8 +220,8 @@ function PostCard({ p, me, muted, setMuted, onLike, onSave, onFollow, onComments
           {p.hashtags?.map((h) => <span key={h} className="text-xs text-white/85 font-medium">{h}</span>)}
         </div>
         {p.sponsored && (
-          <button onClick={() => api(`/ads/campaigns/${p.campaignId}/track`, { method: 'POST', body: JSON.stringify({ type: 'click' }) }).then(() => showToast('Merci de ton intérêt ! 🙌'))}
-            className="press mb-2 inline-flex items-center gap-2 bg-white text-ink rounded-2xl px-4 py-2 font-semibold text-sm shadow-lg">
+          <button onClick={() => api(`/ads/campaigns/${p.campaignId}/track`, { method: 'POST', body: JSON.stringify({ type: 'click' }) }).then(() => toast('Merci de ton intérêt !'))}
+            className="press mb-2 inline-flex items-center gap-2 bg-white text-ink rounded-lg px-4 py-2 font-semibold text-sm shadow-lg">
             {p.cta} <ChevronRight size={16} />
           </button>
         )}
@@ -244,7 +234,7 @@ function PostCard({ p, me, muted, setMuted, onLike, onSave, onFollow, onComments
           {showWhy && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden">
-              <div className="text-xs bg-black/50 backdrop-blur rounded-2xl p-3 mb-2 max-w-xs">
+              <div className="text-xs bg-black/50 backdrop-blur rounded-lg p-3 mb-2 max-w-xs">
                 <b className="text-gold">{p.reason}</b>
                 <div className="text-white/70 mt-1">Algorithme transparent (DSA). Tu peux régler tes intérêts ou passer en Chrono à tout moment.</div>
               </div>
@@ -255,8 +245,8 @@ function PostCard({ p, me, muted, setMuted, onLike, onSave, onFollow, onComments
         {/* shoppable */}
         {p.product && (
           <motion.button onClick={() => onBuy(p)} initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-            className="press flex items-center gap-2 bg-white text-ink rounded-2xl pl-2 pr-3 py-2 shadow-lg max-w-xs">
-            <span className="w-9 h-9 rounded-xl grid place-items-center bg-gold/20 text-lg">{p.product.emoji}</span>
+            className="press flex items-center gap-2 bg-white text-ink rounded-lg pl-2 pr-3 py-2 shadow-lg max-w-xs">
+            <span className="w-9 h-9 rounded-inner grid place-items-center bg-gold/20 text-lg">{p.product.emoji}</span>
             <div className="text-left leading-tight">
               <div className="text-xs font-semibold truncate">{p.product.title}</div>
               <div className="text-[11px] text-muted-foreground">Acheter en 1 tap</div>
@@ -281,7 +271,7 @@ function WellnessCard() {
     <div className="h-full w-full snap-start grid place-items-center bg-gradient-to-b from-black to-[#0E1020] text-white text-center px-8">
       <div className="card-hero p-8 max-w-sm w-full glow-primary">
         <div className="relative">
-          <div className="w-20 h-20 rounded-3xl grid place-items-center mx-auto mb-5 bg-white/15 backdrop-blur hairline float-slow text-4xl">✨</div>
+          <div className="w-20 h-20 rounded-lg grid place-items-center mx-auto mb-5 bg-white/15 backdrop-blur hairline float-slow text-4xl">✨</div>
           <div className="font-display text-3xl mb-2">Tu es à jour</div>
           <p className="text-white/80 text-sm max-w-xs mx-auto leading-relaxed">DIVARC ne force pas le scroll infini — tu as vu toutes les nouveautés. Reviens quand tu veux. 💛</p>
         </div>
@@ -332,7 +322,7 @@ function CommentsSheet({ post, me, onClose, onAdded }) {
       <div className="flex items-center gap-2 sticky bottom-0">
         <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()}
           placeholder="Ajoute un commentaire…" className="flex-1 rounded-full border border-border bg-card/60 px-4 py-2.5 text-sm" />
-        <button onClick={add} className="press w-10 h-10 rounded-full grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><SendIcon size={17} /></button>
+        <button onClick={add} className="press w-10 h-10 rounded-full grid place-items-center text-white grad-primary"><SendIcon size={17} /></button>
       </div>
     </BottomSheet>
   )
@@ -349,13 +339,13 @@ function TipSheet({ post, onClose, onTip }) {
       </div>
       <div className="grid grid-cols-3 gap-2 mb-3">
         {[100, 200, 500].map((a) => (
-          <button key={a} onClick={() => onTip(a)} className="press py-4 rounded-2xl border border-gold/40 bg-gold/10 hairline hover:glow-gold transition-shadow"><span className="gold-text font-display text-xl">{eur(a)} €</span></button>
+          <button key={a} onClick={() => onTip(a)} className="press py-4 rounded-inner border border-gold/40 bg-gold/10 hairline hover:glow-gold transition-shadow"><span className="gold-text font-display text-xl">{eur(a)} €</span></button>
         ))}
       </div>
       <div className="flex gap-2">
         <input value={custom} onChange={(e) => setCustom(e.target.value.replace(/\D/g, ''))} placeholder="Autre montant (€)"
-          className="flex-1 rounded-2xl border border-border bg-card/60 px-4 py-3 text-sm" />
-        <button onClick={() => custom && onTip(Number(custom) * 100)} className="press px-5 rounded-2xl font-semibold text-ink" style={{ background: 'linear-gradient(135deg,#F0CE7E,#E2AA2B,#B98514)' }}>Envoyer</button>
+          className="flex-1 rounded-inner border border-border bg-card/60 px-4 py-3 text-sm" />
+        <button onClick={() => custom && onTip(Number(custom) * 100)} className="press px-5 rounded-inner font-semibold text-ink grad-gold">Envoyer</button>
       </div>
     </BottomSheet>
   )
@@ -393,7 +383,7 @@ function CreatePost({ me, onClose, onCreated }) {
       <label className="text-xs text-muted-foreground">Choisis un clip</label>
       <div className="flex gap-2 overflow-x-auto no-scrollbar my-2 pb-1">
         {LIBRARY.map((v) => (
-          <button key={v.url} onClick={() => setMedia(v.url)} className={cx('press shrink-0 w-20 h-28 rounded-xl overflow-hidden relative border-2', media === v.url ? 'border-primary' : 'border-transparent')}>
+          <button key={v.url} onClick={() => setMedia(v.url)} className={cx('press shrink-0 w-20 h-28 rounded-inner overflow-hidden relative border-2', media === v.url ? 'border-primary' : 'border-transparent')}>
             <video src={v.url} muted className="w-full h-full object-cover" />
             <span className="absolute bottom-1 left-1 text-[9px] text-white bg-black/40 px-1 rounded">{v.label}</span>
           </button>
@@ -404,20 +394,20 @@ function CreatePost({ me, onClose, onCreated }) {
         <button onClick={suggest} className="press text-xs text-primary font-medium flex items-center gap-1"><Sparkles size={12} /> Idée IA</button>
       </div>
       <textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={2} placeholder="Raconte ton histoire…"
-        className={cx('w-full rounded-2xl border border-border bg-card/60 px-4 py-3 text-sm transition', aiIdea && 'ring-2 ring-primary')} />
+        className={cx('w-full rounded-inner border border-border bg-card/60 px-4 py-3 text-sm transition', aiIdea && 'ring-2 ring-primary')} />
       <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Hashtags (séparés par des virgules)"
-        className="w-full mt-3 rounded-2xl border border-border bg-card/60 px-4 py-3 text-sm" />
-      <button onClick={() => setShop((s) => !s)} className="press w-full mt-3 flex items-center justify-between rounded-2xl border border-border bg-card/60 px-4 py-3">
+        className="w-full mt-3 rounded-inner border border-border bg-card/60 px-4 py-3 text-sm" />
+      <div className="w-full mt-3 flex items-center justify-between rounded-inner border border-border bg-card/60 px-4 py-3">
         <span className="text-sm font-medium flex items-center gap-2"><ShoppingBag size={16} /> Vidéo achetable</span>
-        <div className={cx('w-11 h-6 rounded-full p-0.5 transition-colors', shop ? 'bg-primary' : 'bg-muted')}><motion.div className="w-5 h-5 rounded-full bg-white" animate={{ x: shop ? 20 : 0 }} /></div>
-      </button>
+        <Toggle on={shop} onClick={() => setShop((s) => !s)} aria-label="Vidéo achetable" />
+      </div>
       {shop && (
         <div className="grid grid-cols-3 gap-2 mt-2">
-          <input value={pTitle} onChange={(e) => setPTitle(e.target.value)} placeholder="Produit" className="col-span-2 rounded-2xl border border-border bg-card/60 px-4 py-3 text-sm" />
-          <input value={pPrice} onChange={(e) => setPPrice(e.target.value)} placeholder="€" className="rounded-2xl border border-border bg-card/60 px-3 py-3 text-sm" />
+          <input value={pTitle} onChange={(e) => setPTitle(e.target.value)} placeholder="Produit" className="col-span-2 rounded-inner border border-border bg-card/60 px-4 py-3 text-sm" />
+          <input value={pPrice} onChange={(e) => setPPrice(e.target.value)} placeholder="€" className="rounded-inner border border-border bg-card/60 px-3 py-3 text-sm" />
         </div>
       )}
-      <button onClick={publish} disabled={busy} className="press w-full mt-5 rounded-2xl py-3.5 font-semibold text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+      <button onClick={publish} disabled={busy} className="press w-full mt-5 rounded-lg py-3.5 font-semibold text-white disabled:opacity-40 grad-primary">
         {busy ? 'Publication…' : 'Publier'}
       </button>
     </BottomSheet>

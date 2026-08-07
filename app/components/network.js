@@ -4,13 +4,16 @@
 // Appelle le nouveau contexte social /api/net/* (PostgreSQL). Réactions/commentaires = Couche 3.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight, UserPlus, UserCheck, Check, Clock, UserX, EyeOff, Info, Search, Bell, Flag, Download, ShieldAlert, Leaf } from 'lucide-react'
+import { X, Image as ImageIcon, Globe, Users, Lock, RefreshCw, Trash2, MoreHorizontal, ShieldCheck, MessageCircle, Share2, Bookmark, Send, CornerDownRight, UserPlus, UserCheck, Check, Clock, UserX, EyeOff, Info, Search, Bell, Flag, Download, ShieldAlert, Leaf, ArrowLeft } from 'lucide-react'
 
 const REPORT_REASONS = [['spam', 'Spam / publicité'], ['harcelement', 'Harcèlement'], ['haine', 'Discours haineux'], ['violence', 'Violence'], ['nudite', 'Nudité / contenu sexuel'], ['arnaque', 'Arnaque'], ['autre', 'Autre']]
 import { api } from '@/lib/api'
+import { toast, askConfirm, Toggle } from './ui-kit'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
 const VIS = [['public', 'Public', Globe], ['friends', 'Amis', Users], ['only_me', 'Moi', Lock]]
+// Anneau des stories — unique dégradé tri-couleur conservé du DS v2.
+const STORY_RING = 'linear-gradient(135deg,#EF476F,#9B5DE5,#4353F0)'
 
 function timeAgo(d) {
   const s = (Date.now() - new Date(d).getTime()) / 1000
@@ -34,7 +37,6 @@ export default function NetworkModule({ me, onClose }) {
   const [showMod, setShowMod] = useState(false)
   const [calm, setCalm] = useState(false)
   const [caughtUp, setCaughtUp] = useState(false)
-  const [toast, setToast] = useState(null)
 
   useEffect(() => { (async () => { const c = await api('/net/moderation/config'); if (!c.error) setIsMod(!!c.isModerator) })() }, [])
 
@@ -50,7 +52,7 @@ export default function NetworkModule({ me, onClose }) {
 
   const onPublished = (post) => {
     setItems((prev) => [post, ...(prev || [])])
-    if (post?.eclatsEarned) { setToast(`+${post.eclatsEarned} ⚡ Éclats — première publication du jour !`); setTimeout(() => setToast(null), 3500) }
+    if (post?.eclatsEarned) toast(`+${post.eclatsEarned} Éclats — première publication du jour !`, 'eclat')
   }
   const onDeleted = (id) => setItems((prev) => (prev || []).filter((p) => p.id !== id))
 
@@ -110,7 +112,7 @@ export default function NetworkModule({ me, onClose }) {
               caughtUp ? (
                 <div className="text-center py-14 text-sm text-muted-foreground">
                   <div className="w-11 h-11 rounded-full bg-primary/10 grid place-items-center mx-auto mb-2"><Check size={20} className="text-primary" /></div>
-                  Tu es à jour ✨<div className="text-xs mt-1">Tu as vu toutes les nouveautés. Reviens plus tard, ou passe en « Récent ».</div>
+                  Tu es à jour<div className="text-xs mt-1">Tu as vu toutes les nouveautés. Reviens plus tard, ou passe en « Récent ».</div>
                 </div>
               ) : (
                 <div className="text-center py-14 text-sm text-muted-foreground">Ton fil est vide. Publie ou suis des gens pour le remplir.</div>
@@ -120,13 +122,13 @@ export default function NetworkModule({ me, onClose }) {
                 {items.map((p) => <PostCard key={p.id} p={p} onDeleted={onDeleted} onOpenProfile={setProfileId} />)}
                 {cursor ? (
                   <button onClick={async () => { setLoadingMore(true); await load(cursor); setLoadingMore(false) }}
-                    className="press w-full py-3 rounded-2xl border border-border bg-card/60 text-sm font-medium">
+                    className="press w-full py-3 rounded-lg border border-border bg-card/60 text-sm font-medium">
                     {loadingMore ? <RefreshCw size={16} className="animate-spin mx-auto" /> : 'Voir plus'}
                   </button>
                 ) : caughtUp && (
                   <div className="text-center py-8 text-sm text-muted-foreground">
                     <div className="w-11 h-11 rounded-full bg-primary/10 grid place-items-center mx-auto mb-2"><Check size={20} className="text-primary" /></div>
-                    Tu es à jour ✨<div className="text-xs mt-1">Prends une pause si tu veux — le Réseau t'attendra.</div>
+                    Tu es à jour<div className="text-xs mt-1">Prends une pause si tu veux — le Réseau t'attendra.</div>
                   </div>
                 )}
               </div>
@@ -136,10 +138,6 @@ export default function NetworkModule({ me, onClose }) {
       </div>
 
       <AnimatePresence>
-        {toast && (
-          <motion.div key="toast" className="fixed left-1/2 -translate-x-1/2 bottom-24 z-[90] px-4 py-2.5 rounded-full bg-ink text-white text-sm font-medium shadow-lg"
-            initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }}>{toast}</motion.div>
-        )}
         {profileId && <ProfileSheet userId={profileId} meId={me?.id} onClose={() => setProfileId(null)} />}
         {showPrefs && <NotifPrefsSheet onClose={() => setShowPrefs(false)} />}
         {showMod && <ModerationPanel onClose={() => setShowMod(false)} />}
@@ -184,26 +182,27 @@ function NotifPrefsSheet({ onClose }) {
   }
   const exportData = async () => {
     const d = await api('/net/me/export')
-    if (d.error) return alert(d.error)
+    if (d.error) return toast(d.error, 'error')
     const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url; a.download = 'mes-donnees-divarc-reseau.json'; a.click()
     URL.revokeObjectURL(url)
   }
   const eraseData = async () => {
-    const t = prompt('Cette action est IRRÉVERSIBLE : elle efface tes publications, commentaires, réactions et relations du Réseau (ton compte DIVARC n\'est pas supprimé).\n\nÉcris SUPPRIMER pour confirmer :')
-    if (t !== 'SUPPRIMER') return
+    const ok = await askConfirm({ title: 'Effacer tes données du Réseau ?', message: 'Publications, commentaires, amis et groupes seront définitivement supprimés.', confirmLabel: 'Tout effacer', danger: true })
+    if (!ok) return
     const r = await api('/net/me/erase', { method: 'POST', body: JSON.stringify({ confirm: 'SUPPRIMER' }) })
-    if (r.error) return alert(r.error)
-    alert(`Effacé : ${r.posts} publication(s), ${r.comments} commentaire(s). Recharge le Réseau.`)
+    if (r.error) return toast(r.error, 'error')
+    toast(`Effacé : ${r.posts} publication(s), ${r.comments} commentaire(s). Recharge le Réseau.`, 'success')
     onClose()
   }
   return (
-    <motion.div className="fixed inset-0 z-[80] bg-black/40 flex items-end sm:items-center sm:justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
-      <motion.div className="w-full sm:max-w-md bg-card rounded-t-3xl sm:rounded-3xl border border-border p-5 pb-safe" initial={{ y: 40 }} animate={{ y: 0 }} exit={{ y: 40 }} onClick={(e) => e.stopPropagation()}>
+    <motion.div className="fixed inset-0 z-[80] bg-ink/40 backdrop-blur-sm flex items-end sm:items-center sm:justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.div className="w-full sm:max-w-md glass glass-strong rounded-t-lg sm:rounded-lg p-5 pb-safe" initial={{ y: 40 }} animate={{ y: 0 }} exit={{ y: 40 }} onClick={(e) => e.stopPropagation()}>
+        <div className="w-10 h-1.5 rounded-full bg-muted mx-auto mb-3 sm:hidden" />
         <div className="flex items-center gap-3 mb-4">
           <Bell size={20} className="text-primary" />
-          <h2 className="font-display text-xl flex-1">Notifications</h2>
+          <h2 className="font-display text-2xl flex-1">Notifications</h2>
           {saving && <RefreshCw size={16} className="animate-spin text-muted-foreground" />}
           <button onClick={onClose} className="press" aria-label="Fermer"><X size={20} /></button>
         </div>
@@ -215,12 +214,10 @@ function NotifPrefsSheet({ onClose }) {
             {kinds.map((k) => {
               const on = !disabled.includes(k)
               return (
-                <button key={k} onClick={() => toggle(k)} className="press w-full flex items-center gap-3 py-3 px-1 text-left">
+                <div key={k} className="w-full flex items-center gap-3 py-3 px-1 text-left">
                   <span className="flex-1 text-sm">{NOTIF_LABELS[k] || k}</span>
-                  <span className={cx('w-11 h-6 rounded-full p-0.5 transition-colors', on ? 'bg-primary' : 'bg-muted')}>
-                    <span className={cx('block w-5 h-5 rounded-full bg-white transition-transform', on && 'translate-x-5')} />
-                  </span>
-                </button>
+                  <Toggle on={on} onClick={() => toggle(k)} busy={saving} aria-label={NOTIF_LABELS[k] || k} />
+                </div>
               )
             })}
           </div>
@@ -231,15 +228,13 @@ function NotifPrefsSheet({ onClose }) {
           <p className="text-xs text-muted-foreground mb-2">Un réseau qui te respecte, pas qui te capte.</p>
           {[['calmMode', 'Fil apaisé', 'Chronologique, sans « boost viral », chiffres masqués'],
             ['hideCounts', 'Masquer les compteurs', 'Moins de comparaison sociale (j\'aime & commentaires)']].map(([k, label, desc]) => (
-            <button key={k} onClick={() => toggleWb(k)} className="press w-full flex items-center gap-3 py-2.5 text-left">
+            <div key={k} className="w-full flex items-center gap-3 py-2.5 text-left">
               <div className="flex-1">
                 <div className="text-sm">{label}</div>
                 <div className="text-[11px] text-muted-foreground">{desc}</div>
               </div>
-              <span className={cx('w-11 h-6 rounded-full p-0.5 transition-colors shrink-0', wb[k] ? 'bg-primary' : 'bg-muted')}>
-                <span className={cx('block w-5 h-5 rounded-full bg-white transition-transform', wb[k] && 'translate-x-5')} />
-              </span>
-            </button>
+              <Toggle on={wb[k]} onClick={() => toggleWb(k)} busy={saving} aria-label={label} />
+            </div>
           ))}
         </div>
         {/* RGPD — Mes données (Couche 9) */}
@@ -285,7 +280,7 @@ function ModerationPanel({ onClose }) {
         ) : (
           <div className="space-y-3">
             {items.map((r) => (
-              <div key={r.id} className="rounded-2xl border border-border bg-card/60 p-4">
+              <div key={r.id} className="rounded-lg border border-border bg-card/60 p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">{RLABEL[r.reason] || r.reason}</span>
                   <span className="text-[11px] text-muted-foreground">{r.subjectType}</span>
@@ -427,7 +422,7 @@ function ProfileSheet({ userId, meId, onClose }) {
     <motion.div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} />
       <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }} className="relative w-full sm:max-w-md">
-        <div className="glass glass-strong p-5 pb-safe rounded-t-[var(--radius)] sm:rounded-[var(--radius)]">
+        <div className="glass glass-strong p-5 pb-safe rounded-t-lg sm:rounded-lg">
           {!p ? <div className="grid place-items-center py-10"><RefreshCw className="animate-spin text-muted-foreground" /></div> : (
             <>
               <div className="flex items-center gap-4 mb-4">
@@ -444,11 +439,11 @@ function ProfileSheet({ userId, meId, onClose }) {
                   {rel.friend ? (
                     <button onClick={() => act('DELETE', `/net/friends/${userId}`)} className="press py-3 rounded-2xl border border-border bg-card/60 text-sm font-medium flex items-center justify-center gap-1.5"><UserCheck size={16} /> Amis</button>
                   ) : rel.requestReceived ? (
-                    <button onClick={() => act('POST', `/net/friends/accept/${userId}`)} className="press py-3 rounded-2xl text-white text-sm font-semibold flex items-center justify-center gap-1.5" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><Check size={16} /> Accepter</button>
+                    <button onClick={() => act('POST', `/net/friends/accept/${userId}`)} className="press py-3 rounded-2xl text-white text-sm font-semibold flex items-center justify-center gap-1.5 grad-primary"><Check size={16} /> Accepter</button>
                   ) : rel.requestSent ? (
                     <button onClick={() => act('DELETE', `/net/friends/request/${userId}`)} className="press py-3 rounded-2xl border border-border bg-card/60 text-sm font-medium flex items-center justify-center gap-1.5"><Clock size={16} /> Demande envoyée</button>
                   ) : (
-                    <button onClick={() => act('POST', `/net/friends/request/${userId}`)} className="press py-3 rounded-2xl text-white text-sm font-semibold flex items-center justify-center gap-1.5" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><UserPlus size={16} /> Ajouter</button>
+                    <button onClick={() => act('POST', `/net/friends/request/${userId}`)} className="press py-3 rounded-2xl text-white text-sm font-semibold flex items-center justify-center gap-1.5 grad-primary"><UserPlus size={16} /> Ajouter</button>
                   )}
                   {rel.following ? (
                     <button onClick={() => act('DELETE', `/net/follow/${userId}`)} className="press py-3 rounded-2xl border border-border bg-card/60 text-sm font-medium">Suivi ✓</button>
@@ -483,7 +478,7 @@ function Composer({ me, onPublished }) {
     if (!f) return
     const isVideo = (f.type || '').startsWith('video/')
     const cap = isVideo ? 12 : 6.5
-    if (f.size > cap * 1024 * 1024) return alert(`Fichier trop lourd (max ~${cap} Mo)`)
+    if (f.size > cap * 1024 * 1024) return toast(`Fichier trop lourd (max ~${cap} Mo)`, 'error')
     setUpBusy(true)
     const dataUrl = await fileToDataUrl(f)
     const r = await api('/chat/upload', { method: 'POST', body: JSON.stringify({ data: dataUrl }) })
@@ -496,12 +491,12 @@ function Composer({ me, onPublished }) {
     const payload = { body, visibility: vis, media: media ? [{ url: media.url, alt: media.alt || (media.kind === 'video' ? 'vidéo' : 'image'), kind: media.kind }] : [] }
     const r = await api('/net/posts', { method: 'POST', body: JSON.stringify(payload) })
     setBusy(false)
-    if (r.error) return alert(r.error)
+    if (r.error) return toast(r.error, 'error')
     onPublished(r); setBody(''); setMedia(null); setVis('public')
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card/60 p-4 my-4">
+    <div className="rounded-lg border border-border bg-card/60 p-4 my-4">
       <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="Quoi de neuf ?"
         className="w-full bg-transparent outline-none resize-none text-sm" />
       {media && (
@@ -524,7 +519,7 @@ function Composer({ me, onPublished }) {
             </button>
           ))}
         </div>
-        <button onClick={publish} disabled={busy || (!body.trim() && !media)} className="press ml-auto px-4 py-2 rounded-full font-semibold text-white text-sm disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+        <button onClick={publish} disabled={busy || (!body.trim() && !media)} className="press ml-auto px-4 py-2 rounded-full font-semibold text-white text-sm disabled:opacity-40 grad-primary">
           {busy ? <RefreshCw size={16} className="animate-spin" /> : 'Publier'}
         </button>
       </div>
@@ -555,12 +550,13 @@ function ReportSheet({ subjectType, subjectId, onClose }) {
     setBusy(true)
     const r = await api('/net/report', { method: 'POST', body: JSON.stringify({ subjectType, subjectId, reason, details }) })
     setBusy(false)
-    if (r.error) return alert(r.error)
+    if (r.error) return toast(r.error, 'error')
     setDone(true)
   }
   return (
-    <motion.div className="fixed inset-0 z-[80] bg-black/40 flex items-end sm:items-center sm:justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
-      <motion.div className="w-full sm:max-w-md bg-card rounded-t-3xl sm:rounded-3xl border border-border p-5 pb-safe" initial={{ y: 40 }} animate={{ y: 0 }} exit={{ y: 40 }} onClick={(e) => e.stopPropagation()}>
+    <motion.div className="fixed inset-0 z-[80] bg-ink/40 backdrop-blur-sm flex items-end sm:items-center sm:justify-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.div className="w-full sm:max-w-md glass glass-strong rounded-t-lg sm:rounded-lg p-5 pb-safe" initial={{ y: 40 }} animate={{ y: 0 }} exit={{ y: 40 }} onClick={(e) => e.stopPropagation()}>
+        <div className="w-10 h-1.5 rounded-full bg-muted mx-auto mb-3 sm:hidden" />
         {done ? (
           <div className="text-center py-6">
             <div className="w-12 h-12 rounded-full bg-primary/10 grid place-items-center mx-auto mb-3"><Check size={22} className="text-primary" /></div>
@@ -572,7 +568,7 @@ function ReportSheet({ subjectType, subjectId, onClose }) {
           <>
             <div className="flex items-center gap-3 mb-1">
               <Flag size={20} className="text-primary" />
-              <h2 className="font-display text-xl flex-1">Signaler</h2>
+              <h2 className="font-display text-2xl flex-1">Signaler</h2>
               <button onClick={onClose} className="press" aria-label="Fermer"><X size={20} /></button>
             </div>
             <p className="text-xs text-muted-foreground mb-3">Pourquoi signales-tu ce contenu ? Un humain de l'équipe examinera.</p>
@@ -585,8 +581,8 @@ function ReportSheet({ subjectType, subjectId, onClose }) {
               ))}
             </div>
             <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={2} placeholder="Détails (optionnel)"
-              className="w-full mt-3 text-sm rounded-xl border border-border bg-background/60 px-3 py-2 outline-none resize-none" />
-            <button onClick={submit} disabled={!reason || busy} className="press w-full mt-3 py-3 rounded-full font-semibold text-white text-sm disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+              className="w-full mt-3 text-sm rounded-inner border border-border bg-background/60 px-3 py-2 outline-none resize-none" />
+            <button onClick={submit} disabled={!reason || busy} className="press w-full mt-3 py-3 rounded-full font-semibold text-white text-sm disabled:opacity-40 grad-primary">
               {busy ? <RefreshCw size={16} className="animate-spin mx-auto" /> : 'Envoyer le signalement'}
             </button>
           </>
@@ -608,7 +604,12 @@ function PostCard({ p, onDeleted, onOpenProfile }) {
   const [cCount, setCCount] = useState(p.commentCount || 0)
   const VisIcon = (VIS.find((v) => v[0] === p.visibility) || VIS[0])[2]
 
-  const del = async () => { setMenu(false); if (confirm('Supprimer cette publication ?')) { await api(`/net/posts/${p.id}`, { method: 'DELETE' }); onDeleted(p.id) } }
+  const del = async () => {
+    setMenu(false)
+    const ok = await askConfirm({ title: 'Supprimer cette publication ?', message: 'Elle sera retirée définitivement du fil.', confirmLabel: 'Supprimer', danger: true })
+    if (!ok) return
+    await api(`/net/posts/${p.id}`, { method: 'DELETE' }); onDeleted(p.id)
+  }
   const hide = async () => { setMenu(false); await api(`/net/posts/${p.id}/hide`, { method: 'POST' }); onDeleted(p.id) }
   const react = async (type) => {
     setPalette(false)
@@ -623,9 +624,8 @@ function PostCard({ p, onDeleted, onOpenProfile }) {
   }
   const share = async () => {
     setMenu(false)
-    const text = prompt('Ajouter un mot au partage (optionnel) :') || ''
-    const r = await api(`/net/posts/${p.id}/share`, { method: 'POST', body: JSON.stringify({ body: text }) })
-    if (r.error) alert(r.error)
+    const r = await api(`/net/posts/${p.id}/share`, { method: 'POST', body: JSON.stringify({ body: '' }) })
+    if (r.error) toast(r.error, 'error')
   }
   const toggleBk = async () => { const r = await api(`/net/posts/${p.id}/bookmark`, { method: 'PUT' }); if (!r.error) setBookmarked(r.bookmarked) }
   const openComments = async () => {
@@ -635,7 +635,7 @@ function PostCard({ p, onDeleted, onOpenProfile }) {
   const emojis = Object.keys(byType).filter((t) => byType[t] > 0).slice(0, 3)
 
   return (
-    <div className="rounded-2xl border border-border bg-card/60 p-4">
+    <div className="rounded-lg border border-border bg-card/60 p-4">
       <div className="flex items-center gap-3">
         <button onClick={() => onOpenProfile?.(p.author?.id)} className="w-11 h-11 rounded-full grid place-items-center text-white font-semibold shrink-0" style={{ background: p.author?.avatarColor || '#4353F0' }}>{p.author?.initials}</button>
         <div className="flex-1 min-w-0">
@@ -691,7 +691,7 @@ function PostCard({ p, onDeleted, onOpenProfile }) {
         </button>
         <button onClick={openComments} className="press flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium text-muted-foreground"><MessageCircle size={17} /> Comm.</button>
         <button onClick={share} className="press flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium text-muted-foreground"><Share2 size={17} /> Partager</button>
-        <button onClick={toggleBk} className={cx('press flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium', bookmarked ? 'text-gold' : 'text-muted-foreground')}><Bookmark size={17} fill={bookmarked ? '#E2AA2B' : 'none'} /> Enreg.</button>
+        <button onClick={toggleBk} className={cx('press flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium', bookmarked ? 'text-gold' : 'text-muted-foreground')}><Bookmark size={17} fill={bookmarked ? 'currentColor' : 'none'} /> Enreg.</button>
 
         {palette && (
           <div className="absolute -top-11 left-0 flex gap-1 p-1.5 rounded-full glass shadow-lg z-20">
@@ -713,7 +713,7 @@ function CommentsSection({ postId, comments, setComments, setCCount, postOwner }
   const send = async () => {
     if (!text.trim()) return
     const r = await api(`/net/posts/${postId}/comments`, { method: 'POST', body: JSON.stringify({ body: text, parentId: replyTo?.id || null }) })
-    if (r.error) return alert(r.error)
+    if (r.error) return toast(r.error, 'error')
     setComments((c) => [...c, r]); setCCount((n) => n + 1); setText(''); setReplyTo(null)
   }
   const del = async (id) => { await api(`/net/comments/${id}`, { method: 'DELETE' }); setComments((c) => c.map((x) => x.id === id ? { ...x, deleted: true, body: '' } : x)); setCCount((n) => Math.max(0, n - 1)) }
@@ -745,7 +745,7 @@ function CommentsSection({ postId, comments, setComments, setCCount, postOwner }
       <div className="flex items-center gap-2">
         <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder="Écrire un commentaire…"
           className="flex-1 rounded-full border border-border bg-background/60 px-3 py-2 text-sm outline-none focus:border-primary" />
-        <button onClick={send} disabled={!text.trim()} className="press w-9 h-9 rounded-full grid place-items-center text-white disabled:opacity-40 shrink-0" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><Send size={16} /></button>
+        <button onClick={send} disabled={!text.trim()} className="press w-9 h-9 rounded-full grid place-items-center text-white disabled:opacity-40 shrink-0 grad-primary"><Send size={16} /></button>
       </div>
     </div>
   )
@@ -761,7 +761,7 @@ function StoriesBar({ me }) {
   const addStory = async (e) => {
     const f = e.target.files?.[0]; e.target.value = ''
     if (!f) return
-    if (f.size > 6.5 * 1024 * 1024) return alert('Trop lourd (max ~6 Mo)')
+    if (f.size > 6.5 * 1024 * 1024) return toast('Trop lourd (max ~6 Mo)', 'error')
     const dataUrl = await fileToDataUrl(f)
     const up = await api('/chat/upload', { method: 'POST', body: JSON.stringify({ data: dataUrl }) })
     if (up.url) { await api('/net/stories', { method: 'POST', body: JSON.stringify({ mediaUrl: up.url }) }); load() }
@@ -775,7 +775,7 @@ function StoriesBar({ me }) {
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={addStory} />
       {groups.map((g) => (
         <button key={g.author.id} onClick={() => setViewer({ ...g, index: 0 })} className="press flex flex-col items-center gap-1 shrink-0">
-          <div className="w-16 h-16 rounded-full p-0.5" style={{ background: 'linear-gradient(135deg,#EF476F,#9B5DE5,#4353F0)' }}>
+          <div className="w-16 h-16 rounded-full p-0.5" style={{ background: STORY_RING }}>
             <div className="w-full h-full rounded-full grid place-items-center text-white font-semibold border-2 border-background" style={{ background: g.author.avatarColor || '#4353F0' }}>{g.author.initials}</div>
           </div>
           <span className="text-[10px] truncate max-w-[64px]">{g.mine ? 'Toi' : (g.author.name || '').split(' ')[0]}</span>
@@ -831,10 +831,10 @@ function GroupsPanel({ me, onOpenProfile }) {
   if (!data) return <div className="grid place-items-center py-16"><RefreshCw className="animate-spin text-muted-foreground" /></div>
   return (
     <div className="py-4 space-y-5">
-      <button onClick={() => setCreating((v) => !v)} className="press w-full py-3 rounded-2xl text-white font-semibold text-sm" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>+ Créer un groupe</button>
+      <button onClick={() => setCreating((v) => !v)} className="press w-full py-3 rounded-2xl text-white font-semibold text-sm grad-primary">+ Créer un groupe</button>
       {creating && (
-        <div className="rounded-2xl border border-border bg-card/60 p-4 space-y-2">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom du groupe" className="w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
+        <div className="rounded-lg border border-border bg-card/60 p-4 space-y-2">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom du groupe" className="w-full rounded-inner border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
           <div className="flex gap-2">
             {[['public', 'Public'], ['private', 'Privé'], ['secret', 'Secret']].map(([v, l]) => (
               <button key={v} onClick={() => setPrivacy(v)} className={cx('press flex-1 py-2 rounded-xl text-xs font-medium border', privacy === v ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border')}>{l}</button>
@@ -884,8 +884,8 @@ function GroupView({ me, groupId, onBack, onOpenProfile }) {
   const isMember = g.myStatus === 'active'
   return (
     <div className="py-4">
-      <button onClick={onBack} className="press text-sm text-muted-foreground mb-3">‹ Retour</button>
-      <div className="rounded-2xl p-5 text-white mb-4" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+      <button onClick={onBack} className="press flex items-center gap-1 text-sm font-semibold text-muted-foreground mb-3"><ArrowLeft size={16} /> Retour</button>
+      <div className="rounded-lg p-5 text-white mb-4 grad-primary">
         <div className="font-display text-2xl">{g.name}</div>
         <div className="text-sm text-white/80">{g.memberCount} membre{g.memberCount > 1 ? 's' : ''} · {g.privacy}</div>
         {g.description && <p className="text-sm text-white/90 mt-2">{g.description}</p>}
@@ -896,9 +896,9 @@ function GroupView({ me, groupId, onBack, onOpenProfile }) {
         </div>
       </div>
       {isMember && (
-        <div className="rounded-2xl border border-border bg-card/60 p-3 mb-4 flex items-center gap-2">
+        <div className="rounded-lg border border-border bg-card/60 p-3 mb-4 flex items-center gap-2">
           <input value={body} onChange={(e) => setBody(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && post()} placeholder="Publier dans le groupe…" className="flex-1 rounded-full border border-border bg-background/60 px-3 py-2 text-sm outline-none" />
-          <button onClick={post} disabled={!body.trim()} className="press w-9 h-9 rounded-full grid place-items-center text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><Send size={16} /></button>
+          <button onClick={post} disabled={!body.trim()} className="press w-9 h-9 rounded-full grid place-items-center text-white disabled:opacity-40 grad-primary"><Send size={16} /></button>
         </div>
       )}
       {feed === null ? <div className="grid place-items-center py-10"><RefreshCw className="animate-spin text-muted-foreground" /></div>
@@ -938,10 +938,10 @@ function PagesPanel({ me, onOpenProfile }) {
   if (!data) return <div className="grid place-items-center py-12"><RefreshCw className="animate-spin text-muted-foreground" /></div>
   return (
     <div className="space-y-4">
-      <button onClick={() => setCreating((v) => !v)} className="press w-full py-3 rounded-2xl text-white font-semibold text-sm" style={{ background: 'linear-gradient(135deg,#9B5DE5,#4353F0)' }}>+ Créer une page</button>
+      <button onClick={() => setCreating((v) => !v)} className="press w-full py-3 rounded-2xl text-white font-semibold text-sm grad-violet">+ Créer une page</button>
       {creating && (
-        <div className="rounded-2xl border border-border bg-card/60 p-4 space-y-2">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom de la page" className="w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
+        <div className="rounded-lg border border-border bg-card/60 p-4 space-y-2">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom de la page" className="w-full rounded-inner border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
           <button onClick={create} className="press w-full py-2.5 rounded-xl bg-primary text-white text-sm font-semibold">Créer</button>
         </div>
       )}
@@ -983,17 +983,17 @@ function PageView({ me, pageId, onBack, onOpenProfile }) {
   const canPublish = p.myRole === 'admin' || p.myRole === 'editor'
   return (
     <div>
-      <button onClick={onBack} className="press text-sm text-muted-foreground mb-3">‹ Retour</button>
-      <div className="rounded-2xl p-5 text-white mb-4" style={{ background: 'linear-gradient(135deg,#9B5DE5,#4353F0)' }}>
+      <button onClick={onBack} className="press flex items-center gap-1 text-sm font-semibold text-muted-foreground mb-3"><ArrowLeft size={16} /> Retour</button>
+      <div className="rounded-lg p-5 text-white mb-4 grad-violet">
         <div className="font-display text-2xl flex items-center gap-1">{p.name}{p.verified && <ShieldCheck size={16} />}</div>
         <div className="text-sm text-white/80">{p.followerCount} abonné{p.followerCount > 1 ? 's' : ''}{p.category ? ` · ${p.category}` : ''}</div>
         {p.bio && <p className="text-sm text-white/90 mt-2">{p.bio}</p>}
         {!canPublish && <button onClick={toggleFollow} className="press mt-3 px-4 py-1.5 rounded-full bg-white text-primary text-sm font-semibold">{p.following ? 'Abonné ✓' : "S'abonner"}</button>}
       </div>
       {canPublish && (
-        <div className="rounded-2xl border border-border bg-card/60 p-3 mb-4 flex items-center gap-2">
+        <div className="rounded-lg border border-border bg-card/60 p-3 mb-4 flex items-center gap-2">
           <input value={body} onChange={(e) => setBody(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && publish()} placeholder="Publier au nom de la page…" className="flex-1 rounded-full border border-border bg-background/60 px-3 py-2 text-sm outline-none" />
-          <button onClick={publish} disabled={!body.trim()} className="press w-9 h-9 rounded-full grid place-items-center text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#9B5DE5,#4353F0)' }}><Send size={16} /></button>
+          <button onClick={publish} disabled={!body.trim()} className="press w-9 h-9 rounded-full grid place-items-center text-white disabled:opacity-40 grad-violet"><Send size={16} /></button>
         </div>
       )}
       {feed === null ? <div className="grid place-items-center py-8"><RefreshCw className="animate-spin text-muted-foreground" /></div>
@@ -1018,7 +1018,7 @@ function EventsPanel({ me }) {
   const rsvp = async (id, status) => { await api(`/net/events/${id}/rsvp`, { method: 'POST', body: JSON.stringify({ status }) }); load() }
   if (!data) return <div className="grid place-items-center py-12"><RefreshCw className="animate-spin text-muted-foreground" /></div>
   const card = (e) => (
-    <div key={e.id} className="rounded-2xl border border-border bg-card/60 p-4">
+    <div key={e.id} className="rounded-lg border border-border bg-card/60 p-4">
       <div className="font-medium text-sm">{e.title}</div>
       <div className="text-[11px] text-muted-foreground mb-1">{new Date(e.startsAt).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}{e.location ? ` · ${e.location}` : ''}{e.online ? ' · en ligne' : ''}</div>
       <div className="text-[11px] text-muted-foreground mb-2">{e.going} participant{e.going > 1 ? 's' : ''} · {e.interested} intéressé{e.interested > 1 ? 's' : ''}</div>
@@ -1031,12 +1031,12 @@ function EventsPanel({ me }) {
   )
   return (
     <div className="space-y-4">
-      <button onClick={() => setCreating((v) => !v)} className="press w-full py-3 rounded-2xl text-white font-semibold text-sm" style={{ background: 'linear-gradient(135deg,#3FB68B,#4353F0)' }}>+ Créer un événement</button>
+      <button onClick={() => setCreating((v) => !v)} className="press w-full py-3 rounded-2xl text-white font-semibold text-sm grad-success">+ Créer un événement</button>
       {creating && (
-        <div className="rounded-2xl border border-border bg-card/60 p-4 space-y-2">
-          <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Titre" className="w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
-          <input type="datetime-local" value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} className="w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
-          <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Lieu (optionnel)" className="w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
+        <div className="rounded-lg border border-border bg-card/60 p-4 space-y-2">
+          <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Titre" className="w-full rounded-inner border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
+          <input type="datetime-local" value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} className="w-full rounded-inner border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
+          <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Lieu (optionnel)" className="w-full rounded-inner border border-border bg-background/60 px-3 py-2.5 text-sm outline-none" />
           <button onClick={create} className="press w-full py-2.5 rounded-xl bg-primary text-white text-sm font-semibold">Créer</button>
         </div>
       )}

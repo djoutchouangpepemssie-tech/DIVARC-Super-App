@@ -6,9 +6,10 @@ import { api } from '@/lib/api'
 import { ListingsSkeleton, EmptyState, ErrorState } from './states'
 import {
   Search, X, Heart, MapPin, SlidersHorizontal, Plus, ChevronRight, ChevronLeft, Camera,
-  MessageCircle, Store, Compass, Check, Crosshair, Loader2, Send, Tag, Trash2, ShieldCheck,
-  ArrowLeft, Eye, Sparkles, Home, Car, Building2, HandCoins, Zap, RefreshCw,
+  MessageCircle, Store, Check, Crosshair, Loader2, Send, ShieldCheck,
+  ArrowLeft, Eye, HandCoins, RefreshCw,
 } from 'lucide-react'
+import { toast, EclatIcon } from './ui-kit'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
 const Glass = ({ className, sheen, strong, children, ...p }) => <div className={cx('glass', sheen && 'glass-sheen', strong && 'glass-strong', className)} {...p}>{children}</div>
@@ -48,7 +49,6 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
   const [err, setErr] = useState(false)
   const [detail, setDetail] = useState(null)
   const [activeThread, setActiveThread] = useState(null)
-  const [toast, setToast] = useState(null)
 
   // filtres
   const [q, setQ] = useState('')
@@ -63,8 +63,6 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
   const [geo, setGeo] = useState(null) // {city, lat, lon}
   const [radius, setRadius] = useState(0)
   const [showLoc, setShowLoc] = useState(false)
-
-  const showToast = (t) => { setToast(t); setTimeout(() => setToast(null), 2600) }
 
   useEffect(() => { onImmersive?.(view !== 'browse') }, [view, onImmersive])
 
@@ -97,7 +95,7 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
 
   const openDetail = async (id) => {
     const r = await api(`/market/listings/${id}`)
-    if (r.error) return showToast('⚠️ ' + r.error)
+    if (r.error) return toast(r.error, 'error')
     setDetail(r); setView('detail')
   }
   const toggleFav = async (id) => {
@@ -106,7 +104,7 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
   }
   const openChat = async (listing, text) => {
     const r = await api(`/market/listings/${listing.id}/chat`, { method: 'POST', body: JSON.stringify({ text }) })
-    if (r.error) return showToast('⚠️ ' + r.error)
+    if (r.error) return toast(r.error, 'error')
     setActiveThread(r.thread.id); setView('thread')
   }
   const applyGeo = (g) => { const ng = { ...g, radius }; setGeo(g); try { localStorage.setItem('divarc_geo', JSON.stringify(ng)) } catch (e) {}; setShowLoc(false) }
@@ -120,7 +118,7 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
         <div className="mx-auto max-w-5xl px-4 pt-6 pb-28">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl grid place-items-center text-white shrink-0 glow-primary float-slow" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}><Store size={22} /></div>
+              <div className="w-11 h-11 rounded-inner grid place-items-center text-white shrink-0 glow-primary float-slow grad-primary"><Store size={22} /></div>
               <div>
                 <h1 className="font-display text-3xl leading-none">Marketplace</h1>
                 <p className="text-[11px] text-muted-foreground mt-1">Achète & vends partout en Europe</p>
@@ -128,22 +126,22 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
             </div>
             <div className="flex gap-2">
               <button onClick={() => setView('threads')} aria-label="Voir mes messages" className="press w-10 h-10 rounded-full grid place-items-center glass hairline relative"><MessageCircle size={18} /></button>
-              <button onClick={() => setView('sell')} className="press h-10 px-4 rounded-full grid place-items-center text-white font-semibold text-sm gap-1.5 flex glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}><Plus size={17} /> Vendre</button>
+              <button onClick={() => setView('sell')} className="press h-10 px-4 rounded-full grid place-items-center text-white font-semibold text-sm gap-1.5 flex glow-primary grad-primary"><Plus size={17} /> Vendre</button>
             </div>
           </div>
 
           {/* recherche + localisation */}
-          <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3 py-2.5 mb-2">
+          <div className="flex items-center gap-2 rounded-inner border border-border bg-card/60 px-3 py-2.5 mb-2">
             <Search size={16} className="text-muted-foreground" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Que recherches-tu ?" className="flex-1 bg-transparent text-sm outline-none" />
             {q && <button onClick={() => setQ('')}><X size={15} className="text-muted-foreground" /></button>}
           </div>
           <div className="flex gap-2 mb-3">
-            <button onClick={() => setShowLoc(true)} className="press flex-1 flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3 py-2.5 text-sm">
+            <button onClick={() => setShowLoc(true)} className="press flex-1 flex items-center gap-2 rounded-inner border border-border bg-card/60 px-3 py-2.5 text-sm">
               <MapPin size={16} className="text-primary" />
               <span className="truncate flex-1 text-left">{geo?.city ? `${geo.city}${radius ? ` · ${radius} km` : ''}` : 'Toute l\u2019Europe'}</span>
             </button>
-            <button onClick={() => setShowFilters(true)} className="press flex items-center gap-1.5 rounded-2xl border border-border bg-card/60 px-3.5 py-2.5 text-sm font-medium relative">
+            <button onClick={() => setShowFilters(true)} className="press flex items-center gap-1.5 rounded-inner border border-border bg-card/60 px-3.5 py-2.5 text-sm font-medium relative">
               <SlidersHorizontal size={16} /> Filtres
               {activeFilters > 0 && <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-primary text-white text-[10px] grid place-items-center font-bold">{activeFilters}</span>}
             </button>
@@ -172,7 +170,7 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
             <ErrorState onRetry={load} />
           ) : listings.length === 0 ? (
             <EmptyState icon={Store} title="Aucune annonce" desc="Élargis ta zone de recherche ou modifie tes filtres pour découvrir plus d'annonces." emoji="🔍"
-              action={<button onClick={() => setView('sell')} className="press px-5 py-2.5 rounded-full text-white font-semibold text-sm glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}>Vendre un article</button>} />
+              action={<button onClick={() => setView('sell')} className="press px-5 py-2.5 rounded-full text-white font-semibold text-sm glow-primary grad-primary">Vendre un article</button>} />
           ) : (
             <>
               <div className="text-xs text-muted-foreground mb-2">{listings.length} annonce{listings.length > 1 ? 's' : ''}</div>
@@ -184,18 +182,17 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
         </div>
       )}
 
-      {view === 'detail' && detail && <DetailView l={detail} me={me} onBack={() => { setView('browse'); load() }} onFav={() => toggleFav(detail.id)} onOpenListing={openDetail} onChat={openChat} onBought={(cb) => { onWalletRefresh?.(); showToast(cb > 0 ? `Achat effectué ✅ · +${cb} ⚡` : 'Achat effectué ✅'); setView('browse'); load() }} showToast={showToast} />}
+      {view === 'detail' && detail && <DetailView l={detail} me={me} onBack={() => { setView('browse'); load() }} onFav={() => toggleFav(detail.id)} onOpenListing={openDetail} onChat={openChat} onBought={(cb) => { onWalletRefresh?.(); cb > 0 ? toast(`Achat effectué · +${cb}`, 'eclat') : toast('Achat effectué'); setView('browse'); load() }} showToast={toast} />}
 
-      {view === 'sell' && <SellView cats={cats} conditions={conditions} onCancel={() => setView('browse')} onPublished={() => { showToast('Annonce publiée 🎉'); setView('browse'); load() }} showToast={showToast} />}
+      {view === 'sell' && <SellView cats={cats} conditions={conditions} onCancel={() => setView('browse')} onPublished={() => { toast('Annonce publiée'); setView('browse'); load() }} showToast={toast} />}
 
       {view === 'threads' && <ThreadsView onBack={() => setView('browse')} onOpen={(id) => { setActiveThread(id); setView('thread') }} />}
 
-      {view === 'thread' && activeThread && <ThreadView me={me} threadId={activeThread} onBack={() => setView('threads')} onBought={() => { onWalletRefresh?.(); showToast('Achat effectué ✅') }} showToast={showToast} />}
+      {view === 'thread' && activeThread && <ThreadView me={me} threadId={activeThread} onBack={() => setView('threads')} onBought={() => { onWalletRefresh?.(); toast('Achat effectué') }} showToast={toast} />}
 
       <AnimatePresence>
-        {showLoc && <LocationSheet current={geo} radius={radius} setRadius={setRadius} onApply={applyGeo} onClear={clearGeo} onClose={() => setShowLoc(false)} showToast={showToast} />}
+        {showLoc && <LocationSheet current={geo} radius={radius} setRadius={setRadius} onApply={applyGeo} onClear={clearGeo} onClose={() => setShowLoc(false)} showToast={toast} />}
         {showFilters && <FiltersSheet {...{ conditions, cond, setCond, minPrice, setMinPrice, maxPrice, setMaxPrice, sort, setSort, geo }} onClose={() => setShowFilters(false)} onReset={() => { setCond(''); setMinPrice(''); setMaxPrice(''); setSort('recent') }} />}
-        {toast && <motion.div role="status" aria-live="polite" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[70] bg-ink text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-xl max-w-[92vw] text-center">{toast}</motion.div>}
       </AnimatePresence>
     </div>
   )
@@ -205,14 +202,14 @@ export default function Marketplace({ me, onWalletRefresh, onImmersive }) {
 function ListingCard({ l, onOpen, onFav }) {
   return (
     <div className="press cursor-pointer group" onClick={onOpen}>
-      <Glass className="rounded-2xl overflow-hidden transition-shadow duration-300 group-hover:shadow-[0_18px_46px_-14px_rgba(67,83,240,0.4)]">
+      <Glass className="rounded-lg overflow-hidden transition-shadow duration-300 group-hover:shadow-[0_18px_46px_-14px_rgba(67,83,240,0.4)]">
         <div className="relative aspect-[4/3] bg-muted/60 overflow-hidden">
           {l.images?.[0] ? <img src={imgSrc(l.images[0])} alt={l.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" /> : <div className="w-full h-full grid place-items-center text-3xl">📦</div>}
           <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent pointer-events-none" />
-          <button onClick={(e) => { e.stopPropagation(); onFav() }} aria-label={l.favorited ? 'Retirer des favoris' : 'Ajouter aux favoris'} aria-pressed={!!l.favorited} className="press absolute top-2 right-2 w-8 h-8 rounded-full grid place-items-center bg-white/85 backdrop-blur shadow-md"><Heart size={16} className={l.favorited ? 'text-destructive' : 'text-ink'} fill={l.favorited ? '#EF476F' : 'none'} /></button>
+          <button onClick={(e) => { e.stopPropagation(); onFav() }} aria-label={l.favorited ? 'Retirer des favoris' : 'Ajouter aux favoris'} aria-pressed={!!l.favorited} className="press absolute top-2 right-2 w-8 h-8 rounded-full grid place-items-center bg-ink/55 text-white backdrop-blur shadow-md"><Heart size={16} className={l.favorited ? 'text-love fill-love' : 'text-white'} /></button>
           <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
-            {l.boosted && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white flex items-center gap-1 shadow" style={{ background: 'linear-gradient(135deg,#7a5b12,#E2AA2B)' }}><Zap size={9} /> Boosté</span>}
-            {l.transactionType === 'rent' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white glow-gold" style={{ background: 'linear-gradient(135deg,#F0CE7E,#E2AA2B,#B98514)' }}>LOCATION</span>}
+            {l.boosted && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white flex items-center gap-1 shadow grad-gold-deep"><EclatIcon size={11} /> Boosté</span>}
+            {l.transactionType === 'rent' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white glow-gold grad-gold">LOCATION</span>}
           </div>
           {l.distanceKm != null && <span className="absolute bottom-2 left-2 text-[10px] font-medium px-2 py-0.5 rounded-full bg-ink/70 backdrop-blur text-white flex items-center gap-1"><MapPin size={9} /> {l.distanceKm} km</span>}
         </div>
@@ -231,18 +228,17 @@ function DetailView({ l, me, onBack, onFav, onOpenListing, onChat, onBought, sho
   const [idx, setIdx] = useState(0)
   const [msg, setMsg] = useState('')
   const [boosting, setBoosting] = useState(false)
-  const cat = null
   const buy = async () => {
     const r = await api(`/market/listings/${l.id}/buy`, { method: 'POST' })
-    if (r.error) return showToast('⚠️ ' + r.error)
+    if (r.error) return showToast(r.error, 'error')
     onBought(r.eclatsCashback)
   }
   const boost = async () => {
     setBoosting(true)
     const r = await api(`/market/listings/${l.id}/boost`, { method: 'POST' })
     setBoosting(false)
-    if (r.error) return showToast('⚠️ ' + r.error)
-    showToast(`Annonce boostée 🚀 · -${r.cost} ⚡`)
+    if (r.error) return showToast(r.error, 'error')
+    showToast(`Annonce boostée · -${r.cost}`, 'eclat')
   }
   const attrs = Object.entries(l.attributes || {}).filter(([, v]) => v !== '' && v != null && v !== false)
   return (
@@ -250,11 +246,11 @@ function DetailView({ l, me, onBack, onFav, onOpenListing, onChat, onBought, sho
       <div className="sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-app-gradient/90 backdrop-blur">
         <button onClick={onBack} aria-label="Retour" className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><ArrowLeft size={18} /></button>
         <div className="flex-1 font-semibold truncate">{l.title}</div>
-        <button onClick={onFav} aria-label={l.favorited ? 'Retirer des favoris' : 'Ajouter aux favoris'} aria-pressed={!!l.favorited} className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><Heart size={17} className={l.favorited ? 'text-destructive' : ''} fill={l.favorited ? '#EF476F' : 'none'} /></button>
+        <button onClick={onFav} aria-label={l.favorited ? 'Retirer des favoris' : 'Ajouter aux favoris'} aria-pressed={!!l.favorited} className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><Heart size={17} className={l.favorited ? 'text-love fill-love' : ''} /></button>
       </div>
 
       {/* galerie */}
-      <div className="relative aspect-[4/3] md:aspect-[16/9] bg-muted/60 md:rounded-2xl overflow-hidden mx-0 md:mx-4">
+      <div className="relative aspect-[4/3] md:aspect-[16/9] bg-muted/60 md:rounded-lg overflow-hidden mx-0 md:mx-4">
         {l.images?.length ? <img src={imgSrc(l.images[idx])} alt={l.title} className="w-full h-full object-cover" /> : <div className="w-full h-full grid place-items-center text-5xl">📦</div>}
         {l.images?.length > 1 && <>
           <button onClick={() => setIdx((i) => (i - 1 + l.images.length) % l.images.length)} aria-label="Image précédente" className="press absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/85 grid place-items-center shadow"><ChevronLeft size={18} /></button>
@@ -307,7 +303,7 @@ function DetailView({ l, me, onBack, onFav, onOpenListing, onChat, onBought, sho
             <div className="flex gap-3 overflow-x-auto no-scrollbar">
               {l.similar.map((s) => (
                 <button key={s.id} onClick={() => { setIdx(0); onOpenListing(s.id) }} className="press min-w-[140px] text-left">
-                  <Glass className="rounded-2xl overflow-hidden"><div className="aspect-[4/3] bg-muted/60">{s.images?.[0] && <img src={imgSrc(s.images[0])} className="w-full h-full object-cover" alt="" />}</div><div className="p-2"><div className="font-display tabular text-gold text-sm">{priceLabel(s)}</div><div className="text-xs truncate">{s.title}</div></div></Glass>
+                  <Glass className="rounded-lg overflow-hidden"><div className="aspect-[4/3] bg-muted/60">{s.images?.[0] && <img src={imgSrc(s.images[0])} className="w-full h-full object-cover" alt="" />}</div><div className="p-2"><div className="font-display tabular text-gold text-sm">{priceLabel(s)}</div><div className="text-xs truncate">{s.title}</div></div></Glass>
                 </button>
               ))}
             </div>
@@ -319,9 +315,9 @@ function DetailView({ l, me, onBack, onFav, onOpenListing, onChat, onBought, sho
       {!l.isMine ? (
         <div className="fixed bottom-0 inset-x-0 z-30 p-3 bg-app-gradient/95 backdrop-blur border-t border-border">
           <div className="mx-auto max-w-3xl flex gap-2">
-            <button onClick={() => onChat(l, `Bonjour, votre annonce « ${l.title} » est-elle toujours disponible ?`)} className="press flex-1 py-3 rounded-2xl border border-border bg-card/70 font-semibold flex items-center justify-center gap-1.5"><MessageCircle size={17} /> Message</button>
-            <button onClick={() => onChat(l, null)} className="press px-4 py-3 rounded-2xl border border-gold/40 bg-gold/12 text-gold font-semibold flex items-center justify-center gap-1.5"><HandCoins size={17} /> Offre</button>
-            <button onClick={buy} className="press flex-[1.2] py-3 rounded-2xl font-semibold text-white flex items-center justify-center gap-1.5 glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}>{l.transactionType === 'rent' ? 'Réserver' : 'Acheter'}</button>
+            <button onClick={() => onChat(l, `Bonjour, votre annonce « ${l.title} » est-elle toujours disponible ?`)} className="press flex-1 py-3 rounded-inner border border-border bg-card/70 font-semibold flex items-center justify-center gap-1.5"><MessageCircle size={17} /> Message</button>
+            <button onClick={() => onChat(l, null)} className="press px-4 py-3 rounded-inner border border-gold/40 bg-gold/12 text-gold font-semibold flex items-center justify-center gap-1.5"><HandCoins size={17} /> Offre</button>
+            <button onClick={buy} className="press flex-[1.2] py-3 rounded-inner font-semibold text-white flex items-center justify-center gap-1.5 glow-primary grad-primary">{l.transactionType === 'rent' ? 'Réserver' : 'Acheter'}</button>
           </div>
         </div>
       ) : (
@@ -329,10 +325,10 @@ function DetailView({ l, me, onBack, onFav, onOpenListing, onChat, onBought, sho
           <div className="mx-auto max-w-3xl flex items-center gap-3">
             <div className="flex-1 text-sm text-muted-foreground">C'est ton annonce</div>
             {l.boostedUntil && new Date(l.boostedUntil) > new Date() ? (
-              <span className="px-4 py-3 rounded-2xl font-semibold text-gold bg-gold/12 border border-gold/30 flex items-center gap-1.5"><Zap size={16} /> Boostée ✓</span>
+              <span className="px-4 py-3 rounded-inner font-semibold text-gold bg-gold/12 border border-gold/30 flex items-center gap-1.5"><EclatIcon size={16} /> Boostée ✓</span>
             ) : (
-              <button onClick={boost} disabled={boosting} className="press px-4 py-3 rounded-2xl font-semibold text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#7a5b12,#E2AA2B)' }}>
-                {boosting ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} />} Booster · 50 ⚡
+              <button onClick={boost} disabled={boosting} className="press px-4 py-3 rounded-inner font-semibold text-white flex items-center gap-1.5 disabled:opacity-50 grad-gold-deep">
+                {boosting ? <RefreshCw size={16} className="animate-spin" /> : <EclatIcon size={16} />} Booster · 50 <EclatIcon size={13} />
               </button>
             )}
           </div>
@@ -366,15 +362,15 @@ function SellView({ cats, conditions, onCancel, onPublished, showToast }) {
     if (!files.length) return
     setUploading(true)
     for (const f of files) {
-      try { const dataUrl = await fileToResizedDataUrl(f); const r = await api('/market/upload', { method: 'POST', body: JSON.stringify({ data: dataUrl }) }); if (r.url) setImages((im) => [...im, r.url]) } catch (err) { showToast('⚠️ Échec upload image') }
+      try { const dataUrl = await fileToResizedDataUrl(f); const r = await api('/market/upload', { method: 'POST', body: JSON.stringify({ data: dataUrl }) }); if (r.url) setImages((im) => [...im, r.url]) } catch (err) { showToast('Échec upload image', 'error') }
     }
     setUploading(false)
     if (fileRef.current) fileRef.current.value = ''
   }
 
   const publish = async () => {
-    if (!title.trim()) return showToast('Ajoute un titre')
-    if (!price || +price <= 0) return showToast('Ajoute un prix')
+    if (!title.trim()) return showToast('Ajoute un titre', 'error')
+    if (!price || +price <= 0) return showToast('Ajoute un prix', 'error')
     setPublishing(true)
     const r = await api('/market/listings', { method: 'POST', body: JSON.stringify({
       title: title.trim(), description: description.trim(), priceCents: Math.round(+price * 100),
@@ -382,7 +378,7 @@ function SellView({ cats, conditions, onCancel, onPublished, showToast }) {
       city: loc?.city || '', postcode: loc?.postcode || '', country: loc?.country || 'FR', lat: loc?.lat, lon: loc?.lon,
     }) })
     setPublishing(false)
-    if (r.error) return showToast('⚠️ ' + r.error)
+    if (r.error) return showToast(r.error, 'error')
     onPublished()
   }
 
@@ -398,7 +394,7 @@ function SellView({ cats, conditions, onCancel, onPublished, showToast }) {
         <div className="cascade">
           <div className="font-semibold mb-3">Choisis une catégorie</div>
           <div className="grid grid-cols-2 gap-3">
-            {cats.map((c) => <button key={c.id} onClick={() => pickCat(c)} className="press text-left"><Glass className="p-4 flex items-center gap-3"><div className="w-11 h-11 rounded-2xl grid place-items-center text-2xl text-white" style={{ background: c.color }}>{c.emoji}</div><div className="flex-1 min-w-0"><div className="font-semibold text-sm">{c.name}</div><div className="text-[11px] text-muted-foreground truncate">{c.subcats?.slice(0, 2).join(', ')}…</div></div></Glass></button>)}
+            {cats.map((c) => <button key={c.id} onClick={() => pickCat(c)} className="press text-left"><Glass className="p-4 flex items-center gap-3"><div className="w-11 h-11 rounded-inner grid place-items-center text-2xl text-white" style={{ background: c.color }}>{c.emoji}</div><div className="flex-1 min-w-0"><div className="font-semibold text-sm">{c.name}</div><div className="text-[11px] text-muted-foreground truncate">{c.subcats?.slice(0, 2).join(', ')}…</div></div></Glass></button>)}
           </div>
         </div>
       )}
@@ -406,17 +402,17 @@ function SellView({ cats, conditions, onCancel, onPublished, showToast }) {
       {step === 1 && cat && (
         <div className="cascade space-y-3">
           <div className="flex gap-2">
-            <select value={subcat} onChange={(e) => setSubcat(e.target.value)} className="flex-1 rounded-2xl border border-border bg-card/60 px-3.5 py-3 text-sm outline-none">{cat.subcats?.map((s) => <option key={s} value={s}>{s}</option>)}</select>
-            {cat.types?.length > 1 && <select value={txType} onChange={(e) => setTxType(e.target.value)} className="rounded-2xl border border-border bg-card/60 px-3.5 py-3 text-sm outline-none">{cat.types.map((t) => <option key={t} value={t}>{t === 'sale' ? 'Vente' : t === 'rent' ? 'Location' : 'Service'}</option>)}</select>}
+            <select value={subcat} onChange={(e) => setSubcat(e.target.value)} className="flex-1 rounded-inner border border-border bg-card/60 px-3.5 py-3 text-sm outline-none">{cat.subcats?.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+            {cat.types?.length > 1 && <select value={txType} onChange={(e) => setTxType(e.target.value)} className="rounded-inner border border-border bg-card/60 px-3.5 py-3 text-sm outline-none">{cat.types.map((t) => <option key={t} value={t}>{t === 'sale' ? 'Vente' : t === 'rent' ? 'Location' : 'Service'}</option>)}</select>}
           </div>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Titre de l'annonce" className="w-full rounded-2xl border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary" />
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Décris ton bien (état, détails, remise en main propre…)" rows={4} className="w-full rounded-2xl border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary resize-none" />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Titre de l'annonce" className="w-full rounded-inner border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary" />
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Décris ton bien (état, détails, remise en main propre…)" rows={4} className="w-full rounded-inner border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary resize-none" />
           <div className="flex gap-2">
-            <div className="flex-1 flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3.5 py-3">
+            <div className="flex-1 flex items-center gap-2 rounded-inner border border-border bg-card/60 px-3.5 py-3">
               <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Prix" className="flex-1 bg-transparent text-sm outline-none tabular" />
               <span className="text-sm text-muted-foreground">€{txType === 'rent' ? '/mois' : ''}</span>
             </div>
-            <select value={condition} onChange={(e) => setCondition(e.target.value)} className="rounded-2xl border border-border bg-card/60 px-3.5 py-3 text-sm outline-none">{conditions.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+            <select value={condition} onChange={(e) => setCondition(e.target.value)} className="rounded-inner border border-border bg-card/60 px-3.5 py-3 text-sm outline-none">{conditions.map((c) => <option key={c} value={c}>{c}</option>)}</select>
           </div>
           {cat.fields?.length > 0 && (
             <Glass className="p-4 space-y-3">
@@ -427,15 +423,15 @@ function SellView({ cats, conditions, onCancel, onPublished, showToast }) {
                   {f.type === 'bool' ? (
                     <button onClick={() => setAttrs((a) => ({ ...a, [f.key]: !a[f.key] }))} className={cx('press px-3 py-1.5 rounded-full text-sm font-medium border', attrs[f.key] ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>{attrs[f.key] ? 'Oui' : 'Non'}</button>
                   ) : f.type === 'select' ? (
-                    <select value={attrs[f.key] || ''} onChange={(e) => setAttrs((a) => ({ ...a, [f.key]: e.target.value }))} className="flex-1 rounded-xl border border-border bg-card/60 px-3 py-2 text-sm outline-none"><option value="">—</option>{f.options.map((o) => <option key={o} value={o}>{o}</option>)}</select>
+                    <select value={attrs[f.key] || ''} onChange={(e) => setAttrs((a) => ({ ...a, [f.key]: e.target.value }))} className="flex-1 rounded-inner border border-border bg-card/60 px-3 py-2 text-sm outline-none"><option value="">—</option>{f.options.map((o) => <option key={o} value={o}>{o}</option>)}</select>
                   ) : (
-                    <div className="flex-1 flex items-center gap-1"><input type={f.type === 'number' ? 'number' : 'text'} value={attrs[f.key] || ''} onChange={(e) => setAttrs((a) => ({ ...a, [f.key]: f.type === 'number' ? (e.target.value === '' ? '' : +e.target.value) : e.target.value }))} className="flex-1 rounded-xl border border-border bg-card/60 px-3 py-2 text-sm outline-none" />{f.unit && <span className="text-xs text-muted-foreground">{f.unit}</span>}</div>
+                    <div className="flex-1 flex items-center gap-1"><input type={f.type === 'number' ? 'number' : 'text'} value={attrs[f.key] || ''} onChange={(e) => setAttrs((a) => ({ ...a, [f.key]: f.type === 'number' ? (e.target.value === '' ? '' : +e.target.value) : e.target.value }))} className="flex-1 rounded-inner border border-border bg-card/60 px-3 py-2 text-sm outline-none" />{f.unit && <span className="text-xs text-muted-foreground">{f.unit}</span>}</div>
                   )}
                 </div>
               ))}
             </Glass>
           )}
-          <button onClick={() => setStep(2)} className="press w-full py-3.5 rounded-2xl font-semibold text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>Continuer</button>
+          <button onClick={() => setStep(2)} className="press w-full py-3.5 rounded-inner font-semibold text-white grad-primary">Continuer</button>
         </div>
       )}
 
@@ -444,8 +440,8 @@ function SellView({ cats, conditions, onCancel, onPublished, showToast }) {
           <div>
             <div className="font-semibold text-sm mb-2">Photos ({images.length}/8)</div>
             <div className="grid grid-cols-3 gap-2">
-              {images.map((im, i) => <div key={i} className="relative aspect-square rounded-xl overflow-hidden"><img src={imgSrc(im)} className="w-full h-full object-cover" alt="" /><button onClick={() => setImages((x) => x.filter((_, j) => j !== i))} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-ink/70 grid place-items-center text-white"><X size={13} /></button></div>)}
-              {images.length < 8 && <button onClick={() => fileRef.current?.click()} className="press aspect-square rounded-xl border-2 border-dashed border-border grid place-items-center text-muted-foreground">{uploading ? <Loader2 className="animate-spin" size={22} /> : <Camera size={22} />}</button>}
+              {images.map((im, i) => <div key={i} className="relative aspect-square rounded-inner overflow-hidden"><img src={imgSrc(im)} className="w-full h-full object-cover" alt="" /><button onClick={() => setImages((x) => x.filter((_, j) => j !== i))} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-ink/70 grid place-items-center text-white"><X size={13} /></button></div>)}
+              {images.length < 8 && <button onClick={() => fileRef.current?.click()} className="press aspect-square rounded-inner border-2 border-dashed border-border grid place-items-center text-muted-foreground">{uploading ? <Loader2 className="animate-spin" size={22} /> : <Camera size={22} />}</button>}
             </div>
             <input ref={fileRef} type="file" accept="image/*" multiple capture="environment" onChange={onFiles} className="hidden" />
             <p className="text-[11px] text-muted-foreground mt-1.5">Depuis ton téléphone ou ordinateur · redimensionnées automatiquement.</p>
@@ -454,7 +450,7 @@ function SellView({ cats, conditions, onCancel, onPublished, showToast }) {
             <div className="font-semibold text-sm mb-2">Localisation</div>
             <SellLocation loc={loc} setLoc={setLoc} showToast={showToast} />
           </div>
-          <button onClick={publish} disabled={publishing} className="press w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>{publishing ? <Loader2 className="animate-spin" size={18} /> : <><Check size={18} /> Publier l'annonce</>}</button>
+          <button onClick={publish} disabled={publishing} className="press w-full py-3.5 rounded-inner font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 grad-primary">{publishing ? <Loader2 className="animate-spin" size={18} /> : <><Check size={18} /> Publier l'annonce</>}</button>
         </div>
       )}
     </div>
@@ -467,16 +463,16 @@ function SellLocation({ loc, setLoc, showToast }) {
   const [busy, setBusy] = useState(false)
   useEffect(() => { const t = setTimeout(async () => { if (q.trim().length < 3) return setResults([]); const r = await api(`/geo/autocomplete?q=${encodeURIComponent(q)}`); if (Array.isArray(r)) setResults(r) }, 300); return () => clearTimeout(t) }, [q])
   const useGPS = () => {
-    if (!navigator.geolocation) return showToast('GPS indisponible')
+    if (!navigator.geolocation) return showToast('GPS indisponible', 'error')
     setBusy(true)
-    navigator.geolocation.getCurrentPosition(async ({ coords }) => { const r = await api(`/geo/reverse?lat=${coords.latitude}&lon=${coords.longitude}`); setLoc({ city: r.city, postcode: r.postcode, country: r.country, lat: r.lat, lon: r.lon }); setBusy(false) }, () => { showToast('Autorise la localisation'); setBusy(false) }, { enableHighAccuracy: true, timeout: 10000 })
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => { const r = await api(`/geo/reverse?lat=${coords.latitude}&lon=${coords.longitude}`); setLoc({ city: r.city, postcode: r.postcode, country: r.country, lat: r.lat, lon: r.lon }); setBusy(false) }, () => { showToast('Autorise la localisation', 'error'); setBusy(false) }, { enableHighAccuracy: true, timeout: 10000 })
   }
   return (
     <div>
       {loc?.city && <Glass className="p-3 mb-2 flex items-center gap-2 text-sm !bg-primary/8"><MapPin size={15} className="text-primary" /> {loc.city}{loc.postcode ? ` (${loc.postcode})` : ''}<button onClick={() => setLoc(null)} className="ml-auto"><X size={15} className="text-muted-foreground" /></button></Glass>}
       <div className="flex gap-2">
-        <div className="flex-1 flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3 py-2.5"><Search size={15} className="text-muted-foreground" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ville, code postal…" className="flex-1 bg-transparent text-sm outline-none" /></div>
-        <button onClick={useGPS} className="press px-3 rounded-2xl border border-border bg-card/60 grid place-items-center">{busy ? <Loader2 className="animate-spin" size={17} /> : <Crosshair size={17} className="text-primary" />}</button>
+        <div className="flex-1 flex items-center gap-2 rounded-inner border border-border bg-card/60 px-3 py-2.5"><Search size={15} className="text-muted-foreground" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ville, code postal…" className="flex-1 bg-transparent text-sm outline-none" /></div>
+        <button onClick={useGPS} className="press px-3 rounded-inner border border-border bg-card/60 grid place-items-center">{busy ? <Loader2 className="animate-spin" size={17} /> : <Crosshair size={17} className="text-primary" />}</button>
       </div>
       {results.length > 0 && <Glass className="mt-2 divide-y divide-border max-h-52 overflow-y-auto">{results.map((r, i) => <button key={i} onClick={() => { setLoc({ city: r.city, postcode: r.postcode, country: r.country, lat: r.lat, lon: r.lon }); setQ(''); setResults([]) }} className="press w-full text-left px-3.5 py-2.5 text-sm flex items-center gap-2"><MapPin size={14} className="text-muted-foreground shrink-0" /> <span className="truncate">{r.label}</span></button>)}</Glass>}
     </div>
@@ -491,15 +487,15 @@ function LocationSheet({ current, radius, setRadius, onApply, onClear, onClose, 
   const [busy, setBusy] = useState(false)
   useEffect(() => { const t = setTimeout(async () => { if (q.trim().length < 3) return setResults([]); const r = await api(`/geo/autocomplete?q=${encodeURIComponent(q)}`); if (Array.isArray(r)) setResults(r) }, 300); return () => clearTimeout(t) }, [q])
   const useGPS = () => {
-    if (!navigator.geolocation) return showToast('GPS indisponible')
+    if (!navigator.geolocation) return showToast('GPS indisponible', 'error')
     setBusy(true)
-    navigator.geolocation.getCurrentPosition(async ({ coords }) => { const r = await api(`/geo/reverse?lat=${coords.latitude}&lon=${coords.longitude}`); setPicked({ city: r.city, lat: r.lat, lon: r.lon }); setBusy(false) }, () => { showToast('Autorise la localisation'); setBusy(false) }, { enableHighAccuracy: true, timeout: 10000 })
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => { const r = await api(`/geo/reverse?lat=${coords.latitude}&lon=${coords.longitude}`); setPicked({ city: r.city, lat: r.lat, lon: r.lon }); setBusy(false) }, () => { showToast('Autorise la localisation', 'error'); setBusy(false) }, { enableHighAccuracy: true, timeout: 10000 })
   }
   return (
     <Sheet onClose={onClose} title="Où cherches-tu ?">
       <div className="flex gap-2 mb-3">
-        <div className="flex-1 flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3 py-2.5"><Search size={15} className="text-muted-foreground" /><input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ville, code postal, région…" className="flex-1 bg-transparent text-sm outline-none" /></div>
-        <button onClick={useGPS} className="press px-3 rounded-2xl border border-border bg-card/60 grid place-items-center gap-1 text-primary">{busy ? <Loader2 className="animate-spin" size={17} /> : <Crosshair size={17} />}</button>
+        <div className="flex-1 flex items-center gap-2 rounded-inner border border-border bg-card/60 px-3 py-2.5"><Search size={15} className="text-muted-foreground" /><input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ville, code postal, région…" className="flex-1 bg-transparent text-sm outline-none" /></div>
+        <button onClick={useGPS} className="press px-3 rounded-inner border border-border bg-card/60 grid place-items-center gap-1 text-primary">{busy ? <Loader2 className="animate-spin" size={17} /> : <Crosshair size={17} />}</button>
       </div>
       {results.length > 0 && <Glass className="mb-3 divide-y divide-border max-h-48 overflow-y-auto">{results.map((r, i) => <button key={i} onClick={() => { setPicked({ city: r.city, lat: r.lat, lon: r.lon }); setQ(''); setResults([]) }} className="press w-full text-left px-3.5 py-2.5 text-sm flex items-center gap-2"><MapPin size={14} className="text-muted-foreground shrink-0" /><span className="truncate">{r.label}</span></button>)}</Glass>}
       {picked?.city && (
@@ -507,13 +503,13 @@ function LocationSheet({ current, radius, setRadius, onApply, onClear, onClose, 
           <Glass className="p-3 mb-4 flex items-center gap-2 text-sm !bg-primary/8"><MapPin size={15} className="text-primary" /> <b>{picked.city}</b></Glass>
           <div className="mb-4">
             <div className="flex justify-between text-sm mb-2"><span className="font-medium">Rayon</span><span className="text-primary font-semibold">{radius === 0 ? 'Toute distance' : `${radius} km`}</span></div>
-            <input type="range" min="0" max="200" step="5" value={radius} onChange={(e) => setRadius(+e.target.value)} className="w-full accent-[#4353F0]" />
+            <input type="range" min="0" max="200" step="5" value={radius} onChange={(e) => setRadius(+e.target.value)} className="w-full accent-indigo" />
           </div>
         </>
       )}
       <div className="flex gap-2">
-        <button onClick={onClear} className="press flex-1 py-3 rounded-2xl border border-border bg-card/70 font-medium">Toute l'Europe</button>
-        <button onClick={() => picked?.city ? onApply(picked) : showToast('Choisis une ville')} className="press flex-[1.5] py-3 rounded-2xl font-semibold text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>Appliquer</button>
+        <button onClick={onClear} className="press flex-1 py-3 rounded-inner border border-border bg-card/70 font-medium">Toute l'Europe</button>
+        <button onClick={() => picked?.city ? onApply(picked) : showToast('Choisis une ville', 'error')} className="press flex-[1.5] py-3 rounded-inner font-semibold text-white grad-primary">Appliquer</button>
       </div>
     </Sheet>
   )
@@ -527,7 +523,7 @@ function FiltersSheet({ conditions, cond, setCond, minPrice, setMinPrice, maxPri
       <div className="space-y-5">
         <div>
           <div className="font-semibold text-sm mb-2">Prix (€)</div>
-          <div className="flex items-center gap-2"><input type="number" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder="Min" className="flex-1 rounded-xl border border-border bg-card/60 px-3 py-2.5 text-sm outline-none tabular" /><span className="text-muted-foreground">—</span><input type="number" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder="Max" className="flex-1 rounded-xl border border-border bg-card/60 px-3 py-2.5 text-sm outline-none tabular" /></div>
+          <div className="flex items-center gap-2"><input type="number" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder="Min" className="flex-1 rounded-inner border border-border bg-card/60 px-3 py-2.5 text-sm outline-none tabular" /><span className="text-muted-foreground">—</span><input type="number" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder="Max" className="flex-1 rounded-inner border border-border bg-card/60 px-3 py-2.5 text-sm outline-none tabular" /></div>
         </div>
         <div>
           <div className="font-semibold text-sm mb-2">État</div>
@@ -538,8 +534,8 @@ function FiltersSheet({ conditions, cond, setCond, minPrice, setMinPrice, maxPri
           <div className="flex flex-wrap gap-2">{sorts.map(([v, l]) => <button key={v} onClick={() => setSort(v)} className={cx('press px-3 py-1.5 rounded-full text-sm border', sort === v ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>{l}</button>)}</div>
         </div>
         <div className="flex gap-2 pt-2">
-          <button onClick={onReset} className="press flex-1 py-3 rounded-2xl border border-border bg-card/70 font-medium">Réinitialiser</button>
-          <button onClick={onClose} className="press flex-[1.5] py-3 rounded-2xl font-semibold text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>Voir les résultats</button>
+          <button onClick={onReset} className="press flex-1 py-3 rounded-inner border border-border bg-card/70 font-medium">Réinitialiser</button>
+          <button onClick={onClose} className="press flex-[1.5] py-3 rounded-inner font-semibold text-white grad-primary">Voir les résultats</button>
         </div>
       </div>
     </Sheet>
@@ -558,7 +554,7 @@ function ThreadsView({ onBack, onOpen }) {
         <div className="space-y-2">
           {threads.map((t) => (
             <button key={t.id} onClick={() => onOpen(t.id)} className="press w-full text-left"><Glass className="p-3 flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-muted/60 overflow-hidden shrink-0">{t.listingImage && <img src={imgSrc(t.listingImage)} className="w-full h-full object-cover" alt="" />}</div>
+              <div className="w-12 h-12 rounded-inner bg-muted/60 overflow-hidden shrink-0">{t.listingImage && <img src={imgSrc(t.listingImage)} className="w-full h-full object-cover" alt="" />}</div>
               <div className="flex-1 min-w-0"><div className="font-semibold text-sm truncate">{t.listingTitle}</div><div className="text-xs text-muted-foreground truncate">{t.other?.name} · {t.lastMessage ? (t.lastMessage.type === 'offer' ? `💰 Offre ${euro(t.lastMessage.amountCents)} €` : t.lastMessage.text) : 'Nouvelle conversation'}</div></div>
               <span className={cx('text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0', t.role === 'seller' ? 'bg-gold/15 text-gold' : 'bg-primary/10 text-primary')}>{t.role === 'seller' ? 'Vends' : 'Achat'}</span>
             </Glass></button>
@@ -581,9 +577,9 @@ function ThreadView({ me, threadId, onBack, onBought, showToast }) {
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight) }, [data])
 
   const send = async () => { if (!text.trim()) return; const r = await api(`/market/threads/${threadId}/messages`, { method: 'POST', body: JSON.stringify({ text }) }); if (!r.error) { setText(''); load() } }
-  const makeOffer = async () => { if (!offerAmt || +offerAmt <= 0) return; const r = await api(`/market/threads/${threadId}/offer`, { method: 'POST', body: JSON.stringify({ amountCents: Math.round(+offerAmt * 100) }) }); if (r.error) return showToast('⚠️ ' + r.error); setShowOffer(false); setOfferAmt(''); load() }
-  const respond = async (offerId, action) => { const r = await api(`/market/threads/${threadId}/offer/${offerId}/respond`, { method: 'POST', body: JSON.stringify({ action }) }); if (r.error) return showToast('⚠️ ' + r.error); load() }
-  const buyAt = async (amountCents) => { const r = await api(`/market/listings/${data.listing.id}/buy`, { method: 'POST', body: JSON.stringify({ priceCents: amountCents }) }); if (r.error) return showToast('⚠️ ' + r.error); onBought(); load() }
+  const makeOffer = async () => { if (!offerAmt || +offerAmt <= 0) return; const r = await api(`/market/threads/${threadId}/offer`, { method: 'POST', body: JSON.stringify({ amountCents: Math.round(+offerAmt * 100) }) }); if (r.error) return showToast(r.error, 'error'); setShowOffer(false); setOfferAmt(''); load() }
+  const respond = async (offerId, action) => { const r = await api(`/market/threads/${threadId}/offer/${offerId}/respond`, { method: 'POST', body: JSON.stringify({ action }) }); if (r.error) return showToast(r.error, 'error'); load() }
+  const buyAt = async (amountCents) => { const r = await api(`/market/listings/${data.listing.id}/buy`, { method: 'POST', body: JSON.stringify({ priceCents: amountCents }) }); if (r.error) return showToast(r.error, 'error'); onBought(); load() }
 
   if (!data) return <div className="min-h-[60dvh] grid place-items-center"><Loader2 className="animate-spin text-primary" /></div>
   const isSeller = data.thread.role === 'seller'
@@ -592,7 +588,7 @@ function ThreadView({ me, threadId, onBack, onBought, showToast }) {
     <div className="mx-auto max-w-2xl flex flex-col h-[100dvh]">
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-app-gradient/90 backdrop-blur">
         <button onClick={onBack} className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><ArrowLeft size={18} /></button>
-        <div className="w-10 h-10 rounded-xl bg-muted/60 overflow-hidden shrink-0">{data.listing?.images?.[0] && <img src={imgSrc(data.listing.images[0])} className="w-full h-full object-cover" alt="" />}</div>
+        <div className="w-10 h-10 rounded-inner bg-muted/60 overflow-hidden shrink-0">{data.listing?.images?.[0] && <img src={imgSrc(data.listing.images[0])} className="w-full h-full object-cover" alt="" />}</div>
         <div className="flex-1 min-w-0"><div className="font-semibold text-sm truncate">{data.thread.listingTitle}</div><div className="text-xs text-muted-foreground">{data.other?.name} · <span className="text-gold font-medium tabular">{euro(data.thread.listingPriceCents)} €</span></div></div>
       </div>
 
@@ -602,12 +598,12 @@ function ThreadView({ me, threadId, onBack, onBought, showToast }) {
           if (m.type === 'system') return <div key={m.id} className="text-center text-xs text-muted-foreground py-1">{m.text}</div>
           if (m.type === 'offer') return (
             <div key={m.id} className={cx('flex', mine ? 'justify-end' : 'justify-start')}>
-              <Glass className={cx('p-3 max-w-[80%] rounded-2xl', m.offerStatus === 'accepted' ? '!bg-green-500/10' : m.offerStatus === 'rejected' ? '!bg-destructive/8' : '!bg-gold/10')}>
+              <Glass className={cx('p-3 max-w-[80%] rounded-2xl', m.offerStatus === 'accepted' ? '!bg-success/10' : m.offerStatus === 'rejected' ? '!bg-danger/8' : '!bg-gold/10')}>
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><HandCoins size={13} className="text-gold" /> Offre {mine ? 'envoyée' : 'reçue'}</div>
                 <div className="font-display tabular text-gold text-2xl">{euro(m.amountCents)} €</div>
-                {m.offerStatus === 'pending' && !mine && <div className="flex gap-2 mt-2"><button onClick={() => respond(m.offerId, 'reject')} className="press flex-1 py-1.5 rounded-xl border border-border text-sm">Refuser</button><button onClick={() => respond(m.offerId, 'accept')} className="press flex-1 py-1.5 rounded-xl bg-green-500 text-white text-sm font-semibold">Accepter</button></div>}
-                {m.offerStatus === 'accepted' && <div className="mt-2 text-xs font-medium text-green-600 dark:text-green-400 flex items-center gap-1"><Check size={13} /> Acceptée{!isSeller && <button onClick={() => buyAt(m.amountCents)} className="ml-auto press px-3 py-1 rounded-lg bg-primary text-white">Payer</button>}</div>}
-                {m.offerStatus === 'rejected' && <div className="mt-1 text-xs text-destructive">Refusée</div>}
+                {m.offerStatus === 'pending' && !mine && <div className="flex gap-2 mt-2"><button onClick={() => respond(m.offerId, 'reject')} className="press flex-1 py-1.5 rounded-inner border border-border text-sm">Refuser</button><button onClick={() => respond(m.offerId, 'accept')} className="press flex-1 py-1.5 rounded-inner bg-success text-white text-sm font-semibold">Accepter</button></div>}
+                {m.offerStatus === 'accepted' && <div className="mt-2 text-xs font-medium text-success flex items-center gap-1"><Check size={13} /> Acceptée{!isSeller && <button onClick={() => buyAt(m.amountCents)} className="ml-auto press px-3 py-1 rounded-lg bg-primary text-white">Payer</button>}</div>}
+                {m.offerStatus === 'rejected' && <div className="mt-1 text-xs text-danger">Refusée</div>}
                 {m.offerStatus === 'pending' && mine && <div className="mt-1 text-xs text-muted-foreground">En attente…</div>}
               </Glass>
             </div>
@@ -620,7 +616,7 @@ function ThreadView({ me, threadId, onBack, onBought, showToast }) {
         <div className="flex items-center gap-2">
           <button onClick={() => setShowOffer((s) => !s)} className="press w-10 h-10 rounded-full grid place-items-center border border-gold/40 bg-gold/12 text-gold shrink-0"><HandCoins size={18} /></button>
           <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder="Écris un message…" className="flex-1 rounded-full border border-border bg-card/60 px-4 py-2.5 text-sm outline-none" />
-          <button onClick={send} className="press w-10 h-10 rounded-full grid place-items-center text-white shrink-0" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><Send size={17} /></button>
+          <button onClick={send} className="press w-10 h-10 rounded-full grid place-items-center text-white shrink-0 grad-primary"><Send size={17} /></button>
         </div>
         <AnimatePresence>{showOffer && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
@@ -639,7 +635,7 @@ function Sheet({ onClose, title, children }) {
       <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} />
       <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', stiffness: 320, damping: 34 }} className="relative w-full sm:max-w-md">
         <Glass sheen strong className="p-5 pb-safe rounded-b-none sm:rounded-b-[var(--radius)] max-h-[90dvh] overflow-y-auto overscroll-contain no-scrollbar">
-          <div className="flex items-center justify-between mb-4"><h3 className="font-display text-xl">{title}</h3><button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60"><X size={18} /></button></div>
+          <div className="flex items-center justify-between mb-4"><h3 className="font-display text-2xl">{title}</h3><button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60"><X size={18} /></button></div>
           {children}
         </Glass>
       </motion.div>

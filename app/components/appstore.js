@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
+import { toast } from './ui-kit'
 import { Search, X, Star, Check, Shield, Link2, Unlink, ExternalLink, Sparkles, Users, Download } from 'lucide-react'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -25,22 +26,20 @@ export default function AppStore({ me }) {
   const [q, setQ] = useState('')
   const [cat, setCat] = useState('Tout')
   const [detail, setDetail] = useState(null)
-  const [toast, setToast] = useState(null)
 
   const load = useCallback(async () => { const r = await api(`/store/apps?q=${encodeURIComponent(q)}&cat=${encodeURIComponent(cat)}`); if (Array.isArray(r)) setApps(r) }, [q, cat])
   useEffect(() => { load() }, [load])
-  const showToast = (t) => { setToast(t); setTimeout(() => setToast(null), 2600) }
 
   const connect = async (a) => {
     const r = await api(`/store/apps/${a.id}/connect`, { method: 'POST' })
-    if (r.error) return showToast('⚠️ ' + r.error)
+    if (r.error) return toast(r.error, 'error')
     setDetail((d) => d ? { ...d, connected: true, pseudonym: r.connection.pseudonym } : d)
-    load(); showToast(`${a.name} connectée · pseudonyme ${r.connection.pseudonym}`)
+    load(); toast(`${a.name} connectée · pseudonyme ${r.connection.pseudonym}`)
   }
   const disconnect = async (a) => {
     await api(`/store/apps/${a.id}/disconnect`, { method: 'POST' })
     setDetail((d) => d ? { ...d, connected: false } : d)
-    load(); showToast(`${a.name} déconnectée`)
+    load(); toast(`${a.name} déconnectée`, 'info')
   }
 
   const connected = apps.filter((a) => a.connected)
@@ -53,7 +52,7 @@ export default function AppStore({ me }) {
         <h1 className="font-display text-3xl mb-1">App Store</h1>
         <p className="text-sm text-muted-foreground mb-4">Connecte tes apps préférées — accès facile, identité cloisonnée par app.</p>
 
-        <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3 py-2.5 mb-3">
+        <div className="flex items-center gap-2 rounded-inner border border-border bg-card/60 px-3 py-2.5 mb-3">
           <Search size={16} className="text-muted-foreground" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher une app…" className="flex-1 bg-transparent text-sm outline-none" />
         </div>
@@ -67,7 +66,7 @@ export default function AppStore({ me }) {
             <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
               {featured.map((a) => (
                 <button key={a.id} onClick={() => setDetail(a)} className="press text-left min-w-[190px]">
-                  <div className="rounded-3xl p-4 h-full text-white relative overflow-hidden" style={{ background: `linear-gradient(150deg, ${a.color}, ${a.color}cc)` }}>
+                  <div className="rounded-lg p-4 h-full text-white relative overflow-hidden" style={{ background: `linear-gradient(150deg, ${a.color}, ${a.color}cc)` }}>
                     <div className="flex items-center justify-between mb-3"><Icon a={a} size={44} /><span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 backdrop-blur">{a.cat}</span></div>
                     <div className="font-display text-lg leading-none">{a.name}</div>
                     <div className="text-[11px] text-white/80 mt-1 line-clamp-2 leading-snug">{a.desc}</div>
@@ -85,7 +84,7 @@ export default function AppStore({ me }) {
             <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1">
               {connected.map((a) => (
                 <button key={a.id} onClick={() => setDetail(a)} className="press flex flex-col items-center gap-1.5 min-w-[64px]">
-                  <div className="relative"><Icon a={a} size={56} /><span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 grid place-items-center text-white"><Check size={12} /></span></div>
+                  <div className="relative"><Icon a={a} size={56} /><span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-success grid place-items-center text-white"><Check size={12} /></span></div>
                   <span className="text-[11px] font-medium truncate w-16 text-center">{a.name}</span>
                 </button>
               ))}
@@ -103,7 +102,7 @@ export default function AppStore({ me }) {
                   <div className="text-xs text-muted-foreground truncate">{a.desc}</div>
                   <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground"><span className="flex items-center gap-0.5"><Star size={11} className="text-gold" fill="#E2AA2B" /> {a.rating}</span><span className="flex items-center gap-0.5"><Users size={11} /> {kf(a.users)}</span></div>
                 </div>
-                <span className={cx('shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full', a.connected ? 'bg-green-500/12 text-green-600 dark:text-green-400' : 'bg-primary/10 text-primary')}>{a.connected ? 'Connectée' : 'Connecter'}</span>
+                <span className={cx('shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full', a.connected ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary')}>{a.connected ? 'Connectée' : 'Connecter'}</span>
               </Glass>
             </button>
           ))}
@@ -112,8 +111,7 @@ export default function AppStore({ me }) {
       </div>
 
       <AnimatePresence>
-        {detail && <AppDetail a={detail} onClose={() => setDetail(null)} onConnect={() => connect(detail)} onDisconnect={() => disconnect(detail)} onOpen={() => showToast(`Ouverture de ${detail.name}…`)} />}
-        {toast && <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[60] bg-ink text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-xl max-w-[92vw] text-center">{toast}</motion.div>}
+        {detail && <AppDetail a={detail} onClose={() => setDetail(null)} onConnect={() => connect(detail)} onDisconnect={() => disconnect(detail)} onOpen={() => toast(`Ouverture de ${detail.name}…`, 'info')} />}
       </AnimatePresence>
     </div>
   )
@@ -140,21 +138,21 @@ function AppDetail({ a, onClose, onConnect, onDisconnect, onOpen }) {
             <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Shield size={15} className="text-primary" /> Données demandées</h3>
             <div className="space-y-1.5">
               {a.perms?.map((p) => (
-                <div key={p} className="flex items-center gap-2 text-sm rounded-xl bg-card/60 border border-border px-3 py-2"><Check size={14} className="text-primary" /> {p}</div>
+                <div key={p} className="flex items-center gap-2 text-sm rounded-inner bg-card/60 border border-border px-3 py-2"><Check size={14} className="text-primary" /> {p}</div>
               ))}
             </div>
           </div>
 
           {a.connected ? (
             <>
-              <Glass className="p-3 mb-3 text-sm flex items-center gap-2 !bg-green-500/10"><Shield size={16} className="text-green-600 dark:text-green-400" /> Connectée sous le pseudonyme <b className="font-grotesk">{a.pseudonym || 'divarc-••••'}</b></Glass>
+              <Glass className="p-3 mb-3 text-sm flex items-center gap-2 !bg-success/10"><Shield size={16} className="text-success" /> Connectée sous le pseudonyme <b className="font-grotesk">{a.pseudonym || 'divarc-••••'}</b></Glass>
               <div className="flex gap-2">
-                <button onClick={onOpen} className="press flex-1 py-3 rounded-2xl font-semibold text-white flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><ExternalLink size={16} /> Ouvrir</button>
-                <button onClick={onDisconnect} className="press px-5 py-3 rounded-2xl border border-destructive/30 bg-destructive/10 text-destructive font-medium flex items-center gap-1.5"><Unlink size={16} /> Déconnecter</button>
+                <button onClick={onOpen} className="press flex-1 py-3 rounded-inner font-semibold text-white flex items-center justify-center gap-2 grad-primary"><ExternalLink size={16} /> Ouvrir</button>
+                <button onClick={onDisconnect} className="press px-5 py-3 rounded-inner border border-destructive/30 bg-destructive/10 text-destructive font-medium flex items-center gap-1.5"><Unlink size={16} /> Déconnecter</button>
               </div>
             </>
           ) : (
-            <button onClick={onConnect} className="press w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+            <button onClick={onConnect} className="press w-full py-3.5 rounded-inner font-semibold text-white flex items-center justify-center gap-2 grad-primary">
               <Link2 size={18} /> Connecter · identité cloisonnée
             </button>
           )}

@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Zap, X, Gift, Flame, Check, RefreshCw, Info } from 'lucide-react'
 import { api } from '@/lib/api'
+import { EclatIcon, Eclats } from './ui-kit'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
 const fmt = (n) => new Intl.NumberFormat('fr-FR').format(n || 0)
@@ -27,15 +28,14 @@ export function EclatsCard({ onOpen }) {
     return () => { alive = false }
   }, [])
   return (
-    <button onClick={onOpen} className="press w-full text-left rounded-[var(--radius)] p-4 relative overflow-hidden"
-      style={{ background: 'linear-gradient(135deg,#3a2f0e,#7a5b12 55%,#E2AA2B)' }}>
+    <button onClick={onOpen} className="press w-full text-left rounded-lg p-4 relative overflow-hidden grad-gold-deep">
       <div className="flex items-center gap-3 text-white">
-        <div className="w-11 h-11 rounded-2xl grid place-items-center bg-white/15 backdrop-blur"><Zap size={22} className="text-white" /></div>
+        <div className="w-11 h-11 rounded-inner grid place-items-center bg-white/15 backdrop-blur"><Zap size={22} className="text-white" /></div>
         <div className="flex-1 min-w-0">
           <div className="text-xs text-white/75">Mes Éclats</div>
-          <div className="font-display text-2xl leading-tight tabular">{balance == null ? '—' : fmt(balance)} ⚡</div>
+          <div className="font-display text-2xl leading-tight"><Eclats n={balance == null ? '—' : fmt(balance)} size={17} /></div>
         </div>
-        {canCheckin && <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white text-[#7a5b12] shrink-0">Check-in dispo</span>}
+        {canCheckin && <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-white text-gold-deep shrink-0">Check-in dispo</span>}
       </div>
     </button>
   )
@@ -60,7 +60,7 @@ export default function EclatsSheet({ onClose }) {
     const r = await api('/eclats/checkin', { method: 'POST' })
     setBusy(false)
     if (r.error) { setMsg(r.error); return }
-    setMsg(`+${r.reward} ⚡ · série de ${r.streak} jour${r.streak > 1 ? 's' : ''} 🔥`)
+    setMsg(`+${r.reward} Éclats · série de ${r.streak} jour${r.streak > 1 ? 's' : ''} 🔥`)
     load()
   }
 
@@ -71,7 +71,7 @@ export default function EclatsSheet({ onClose }) {
     const r = await api('/eclats/gift', { method: 'POST', body: JSON.stringify({ toHandle: giftHandle.trim(), amount }) })
     setBusy(false)
     if (r.error) { setMsg(r.error); return }
-    setMsg(`${amount} ⚡ offerts à ${r.to} 🎁`)
+    setMsg(`${amount} Éclats offerts à ${r.to} 🎁`)
     setGiftOpen(false); setGiftHandle(''); setGiftAmount(''); load()
   }
 
@@ -84,22 +84,21 @@ export default function EclatsSheet({ onClose }) {
 
       <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-safe">
         {/* Solde */}
-        <div className="rounded-[var(--radius)] p-6 my-4 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#3a2f0e,#7a5b12 55%,#E2AA2B)' }}>
+        <div className="rounded-lg p-6 my-4 text-white relative overflow-hidden grad-gold-deep">
           <div className="text-sm text-white/75 flex items-center gap-1.5"><Zap size={15} /> Mon solde</div>
-          <div className="font-display text-5xl mt-1 tabular">{data == null ? '—' : fmt(data.balance)} ⚡</div>
+          <div className="font-display text-5xl mt-1"><Eclats n={data == null ? '—' : fmt(data.balance)} size={32} /></div>
           {data?.streak > 0 && <div className="mt-2 inline-flex items-center gap-1 text-sm bg-white/15 backdrop-blur px-2.5 py-1 rounded-full"><Flame size={14} /> Série de {data.streak} jour{data.streak > 1 ? 's' : ''}</div>}
         </div>
 
-        {msg && <div className="mb-3 rounded-2xl bg-gold/12 border border-gold/30 px-4 py-2.5 text-sm text-center">{msg}</div>}
+        {msg && <div className="mb-3 rounded-lg bg-gold/12 border border-gold/30 px-4 py-2.5 text-sm text-center">{msg}</div>}
 
         {/* Actions */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <button onClick={checkin} disabled={busy || !data?.canCheckin}
-            className={cx('press rounded-2xl px-4 py-3.5 font-semibold flex items-center justify-center gap-2 text-white disabled:opacity-50', 'bg-gradient-to-br')}
-            style={{ backgroundImage: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
-            {busy ? <RefreshCw size={18} className="animate-spin" /> : <><Check size={18} /> {data?.canCheckin ? `Check-in +${data?.rates?.daily}` : 'Check-in fait ✓'}</>}
+            className="press rounded-lg px-4 py-3.5 font-semibold flex items-center justify-center gap-2 text-white disabled:opacity-50 grad-primary">
+            {busy ? <RefreshCw size={18} className="animate-spin" /> : <><Check size={18} /> {data?.canCheckin ? <>Check-in <Eclats n={`+${data?.rates?.daily}`} size={13} /></> : 'Check-in fait ✓'}</>}
           </button>
-          <button onClick={() => setGiftOpen((v) => !v)} className="press rounded-2xl px-4 py-3.5 font-semibold flex items-center justify-center gap-2 border border-border bg-card/60">
+          <button onClick={() => setGiftOpen((v) => !v)} className="press rounded-lg px-4 py-3.5 font-semibold flex items-center justify-center gap-2 border border-border bg-card/60">
             <Gift size={18} /> Offrir
           </button>
         </div>
@@ -109,18 +108,18 @@ export default function EclatsSheet({ onClose }) {
           {giftOpen && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden mb-4">
-              <div className="rounded-2xl border border-border bg-card/60 p-4 space-y-3">
+              <div className="rounded-lg border border-border bg-card/60 p-4 space-y-3">
                 <div>
                   <label className="text-xs text-muted-foreground">Contact (@identifiant)</label>
                   <input value={giftHandle} onChange={(e) => setGiftHandle(e.target.value)} placeholder="@son_nom"
-                    autoCapitalize="none" className="w-full mt-1 rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none focus:border-primary" />
+                    autoCapitalize="none" className="w-full mt-1 rounded-inner border border-border bg-background/60 px-3 py-2.5 text-sm outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground">Nombre d'Éclats</label>
                   <input value={giftAmount} onChange={(e) => setGiftAmount(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder="30"
-                    className="w-full mt-1 rounded-xl border border-border bg-background/60 px-3 py-2.5 text-sm outline-none focus:border-primary" />
+                    className="w-full mt-1 rounded-inner border border-border bg-background/60 px-3 py-2.5 text-sm outline-none focus:border-primary" />
                 </div>
-                <button onClick={gift} disabled={busy} className="press w-full rounded-xl py-3 font-semibold text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+                <button onClick={gift} disabled={busy} className="press w-full rounded-inner py-3 font-semibold text-white disabled:opacity-50 grad-primary">
                   Offrir les Éclats
                 </button>
               </div>
@@ -129,8 +128,8 @@ export default function EclatsSheet({ onClose }) {
         </AnimatePresence>
 
         {/* Comment en gagner */}
-        <div className="rounded-2xl border border-border bg-card/40 p-4 mb-4 text-sm">
-          <div className="font-semibold mb-2 flex items-center gap-1.5"><Zap size={15} className="text-gold" /> Comment gagner des Éclats</div>
+        <div className="rounded-lg border border-border bg-card/40 p-4 mb-4 text-sm">
+          <div className="font-semibold mb-2 flex items-center gap-1.5"><EclatIcon size={15} /> Comment gagner des Éclats</div>
           <ul className="space-y-1 text-muted-foreground text-[13px]">
             <li>• Check-in quotidien (+{data?.rates?.daily || 10}, bonus de série)</li>
             <li>• Parrainer un ami (+{data?.rates?.referral || 50} pour vous deux)</li>
@@ -141,7 +140,7 @@ export default function EclatsSheet({ onClose }) {
         {/* Historique */}
         <div className="mb-4">
           <div className="text-xs font-medium text-muted-foreground mb-2 px-1">Historique</div>
-          <div className="rounded-2xl border border-border bg-card/40 divide-y divide-border/60">
+          <div className="rounded-lg border border-border bg-card/40 divide-y divide-border/60">
             {(!data?.history || data.history.length === 0) ? (
               <div className="p-5 text-center text-sm text-muted-foreground">Aucun mouvement pour l'instant</div>
             ) : data.history.map((h) => (
@@ -150,8 +149,8 @@ export default function EclatsSheet({ onClose }) {
                   <div className="text-sm font-medium truncate">{h.meta?.label || h.reason}</div>
                   <div className="text-[11px] text-muted-foreground">{timeAgo(h.createdAt)}</div>
                 </div>
-                <div className={cx('font-display tabular text-sm', h.delta >= 0 ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground')}>
-                  {h.delta >= 0 ? '+' : ''}{fmt(h.delta)} ⚡
+                <div className={cx('font-display text-sm', h.delta >= 0 ? 'text-success' : 'text-muted-foreground')}>
+                  <Eclats n={`${h.delta >= 0 ? '+' : ''}${fmt(h.delta)}`} size={12} />
                 </div>
               </div>
             ))}

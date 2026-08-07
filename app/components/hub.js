@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
+import { toast, Pill } from './ui-kit'
 import {
   ArrowLeft, Shield, Lock, Link2, Unlink, Check, X, FileText, Plus, Share2,
   Trash2, Clock, ChevronRight, TrendingUp, TrendingDown, Landmark, Copy, AlertTriangle,
@@ -25,7 +26,6 @@ export default function AdminHub({ me, onBack }) {
   const [detail, setDetail] = useState(null)
   const [adding, setAdding] = useState(false)
   const [shareInfo, setShareInfo] = useState(null)
-  const [toast, setToast] = useState(null)
 
   const load = useCallback(async () => {
     const [c, d, a] = await Promise.all([api('/admin/connectors'), api('/admin/documents'), api('/admin/accounting')])
@@ -34,33 +34,32 @@ export default function AdminHub({ me, onBack }) {
     if (a && !a.error) setAcc(a)
   }, [])
   useEffect(() => { load() }, [load])
-  const showToast = (t) => { setToast(t); setTimeout(() => setToast(null), 2600) }
 
   const connect = async (c) => {
     const r = await api(`/admin/connectors/${c.id}/connect`, { method: 'POST' })
-    if (r.error) return showToast('⚠️ ' + r.error)
+    if (r.error) return toast(r.error, 'error')
     await load()
     setDetail((prev) => prev ? { ...prev, connected: true, pseudonym: r.connection.pseudonym, data: r.connection.data } : prev)
-    showToast(`${c.name} connecté · pseudonyme ${r.connection.pseudonym}`)
+    toast(`${c.name} connecté · pseudonyme ${r.connection.pseudonym}`)
   }
   const disconnect = async (c) => {
     await api(`/admin/connectors/${c.id}/disconnect`, { method: 'POST' })
     await load()
     setDetail((prev) => prev ? { ...prev, connected: false, data: [] } : prev)
-    showToast(`${c.name} déconnecté`)
+    toast(`${c.name} déconnecté`, 'info')
   }
   const addDoc = async (form) => {
     const r = await api('/admin/documents', { method: 'POST', body: JSON.stringify(form) })
-    if (r.error) return showToast('⚠️ ' + r.error)
-    setAdding(false); await load(); showToast('Document chiffré ajouté au coffre-fort')
+    if (r.error) return toast(r.error, 'error')
+    setAdding(false); await load(); toast('Document chiffré ajouté au coffre-fort')
   }
   const shareDoc = async (d) => {
     const r = await api(`/admin/documents/${d.id}/share`, { method: 'POST', body: JSON.stringify({ hours: 24 }) })
-    if (r.error) return showToast('⚠️ ' + r.error)
+    if (r.error) return toast(r.error, 'error')
     await load(); setShareInfo({ ...d, shareToken: r.shareToken, expiresAt: r.expiresAt })
   }
-  const unshareDoc = async (d) => { await api(`/admin/documents/${d.id}/unshare`, { method: 'POST' }); await load(); showToast('Partage révoqué') }
-  const delDoc = async (d) => { await api(`/admin/documents/${d.id}`, { method: 'DELETE' }); await load(); showToast('Document supprimé') }
+  const unshareDoc = async (d) => { await api(`/admin/documents/${d.id}/unshare`, { method: 'POST' }); await load(); toast('Partage révoqué', 'info') }
+  const delDoc = async (d) => { await api(`/admin/documents/${d.id}`, { method: 'DELETE' }); await load(); toast('Document supprimé', 'info') }
 
   const connectedCount = connectors.filter((c) => c.connected).length
 
@@ -80,10 +79,10 @@ export default function AdminHub({ me, onBack }) {
           <span>Connexions <b className="text-foreground">eIDAS</b> avec pseudonyme par service. Rien n'est partagé sans ton accord.</span>
         </Glass>
 
-        <div className="flex gap-2 mb-5">
+        <div className="p-1 rounded-inner bg-muted/60 flex gap-1 mb-5">
           {[['connectors', 'Connecteurs'], ['vault', 'Coffre-fort'], ['compta', 'Compta']].map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)}
-              className={cx('press flex-1 py-2.5 rounded-2xl text-sm font-semibold border', tab === id ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>{label}</button>
+              className={cx('press flex-1 py-2.5 rounded-[10px] text-sm font-semibold', tab === id ? 'bg-card shadow text-foreground' : 'text-muted-foreground')}>{label}</button>
           ))}
         </div>
 
@@ -96,10 +95,12 @@ export default function AdminHub({ me, onBack }) {
                 <Glass className="p-3 flex items-center gap-3">
                   <ConnIcon c={c} size={48} />
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-sm flex items-center gap-1.5">{c.name}{c.sensitive && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gold/15 text-gold font-semibold">Sensible</span>}</div>
+                    <div className="font-semibold text-sm flex items-center gap-1.5">{c.name}{c.sensitive && <Pill tone="gold">Sensible</Pill>}</div>
                     <div className="text-xs text-muted-foreground truncate">{c.desc}</div>
                   </div>
-                  <span className={cx('shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full', c.connected ? 'bg-green-500/12 text-green-600 dark:text-green-400' : 'bg-primary/10 text-primary')}>{c.connected ? 'Connecté' : 'Connecter'}</span>
+                  {c.connected
+                    ? <Pill tone="success" className="shrink-0">Connecté</Pill>
+                    : <span className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full bg-primary/10 text-primary">Connecter</span>}
                 </Glass>
               </button>
             ))}
@@ -146,8 +147,8 @@ export default function AdminHub({ me, onBack }) {
               <>
                 <div className="grid grid-cols-3 gap-2.5">
                   <Glass className="p-3.5 text-center">
-                    <TrendingUp size={16} className="mx-auto mb-1 text-green-600 dark:text-green-400" />
-                    <div className="font-display tabular text-lg text-green-600 dark:text-green-400">+{eur(acc.incomeCents)}</div>
+                    <TrendingUp size={16} className="mx-auto mb-1 text-success" />
+                    <div className="font-display tabular text-lg text-success">+{eur(acc.incomeCents)}</div>
                     <div className="text-[10px] text-muted-foreground">Entrées</div>
                   </Glass>
                   <Glass className="p-3.5 text-center">
@@ -170,7 +171,7 @@ export default function AdminHub({ me, onBack }) {
                       return (
                         <div key={c.name}>
                           <div className="flex justify-between text-sm mb-1"><span>{c.name}</span><span className="font-display tabular text-muted-foreground">{eur(c.amountCents)} €</span></div>
-                          <div className="h-2 rounded-full bg-muted/60 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#4353F0,#2C39C7)' }} /></div>
+                          <div className="h-2 rounded-full bg-muted/60 overflow-hidden"><div className="h-full rounded-full grad-primary" style={{ width: `${pct}%` }} /></div>
                         </div>
                       )
                     })}
@@ -188,8 +189,7 @@ export default function AdminHub({ me, onBack }) {
       <AnimatePresence>
         {detail && <ConnectorDetail c={detail} onClose={() => setDetail(null)} onConnect={() => connect(detail)} onDisconnect={() => disconnect(detail)} />}
         {adding && <AddDocSheet onClose={() => setAdding(false)} onAdd={addDoc} />}
-        {shareInfo && <ShareSheet d={shareInfo} onClose={() => setShareInfo(null)} onCopy={() => showToast('Lien copié')} />}
-        {toast && <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[60] bg-ink text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-xl max-w-[92vw] text-center">{toast}</motion.div>}
+        {shareInfo && <ShareSheet d={shareInfo} onClose={() => setShareInfo(null)} onCopy={() => toast('Lien copié')} />}
       </AnimatePresence>
     </div>
   )
@@ -215,7 +215,7 @@ function ConnectorDetail({ c, onClose, onConnect, onDisconnect }) {
           <div className="mb-4">
             <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Shield size={15} className="text-primary" /> Données consultées</h3>
             <div className="space-y-1.5">
-              {c.scopes?.map((s) => <div key={s} className="flex items-center gap-2 text-sm rounded-xl bg-card/60 border border-border px-3 py-2"><Check size={14} className="text-primary" /> {s}</div>)}
+              {c.scopes?.map((s) => <div key={s} className="flex items-center gap-2 text-sm rounded-inner bg-card/60 border border-border px-3 py-2"><Check size={14} className="text-primary" /> {s}</div>)}
             </div>
           </div>
 
@@ -232,11 +232,11 @@ function ConnectorDetail({ c, onClose, onConnect, onDisconnect }) {
 
           {c.connected ? (
             <>
-              <Glass className="p-3 mb-3 text-sm flex items-center gap-2 !bg-green-500/10"><Shield size={16} className="text-green-600 dark:text-green-400" /> Connecté sous <b className="font-grotesk">{c.pseudonym || 'eidas-••••'}</b></Glass>
-              <button onClick={onDisconnect} className="press w-full py-3 rounded-2xl border border-destructive/30 bg-destructive/10 text-destructive font-medium flex items-center justify-center gap-1.5"><Unlink size={16} /> Déconnecter</button>
+              <Glass className="p-3 mb-3 text-sm flex items-center gap-2 !bg-success/10"><Shield size={16} className="text-success" /> Connecté sous <b className="font-grotesk">{c.pseudonym || 'eidas-••••'}</b></Glass>
+              <button onClick={onDisconnect} className="press w-full py-3 rounded-inner border border-destructive/30 bg-destructive/10 text-destructive font-medium flex items-center justify-center gap-1.5"><Unlink size={16} /> Déconnecter</button>
             </>
           ) : (
-            <button onClick={onConnect} className="press w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><Link2 size={18} /> Connecter · eIDAS</button>
+            <button onClick={onConnect} className="press w-full py-3.5 rounded-inner font-semibold text-white flex items-center justify-center gap-2 grad-primary"><Link2 size={18} /> Connecter · eIDAS</button>
           )}
           <p className="text-[11px] text-muted-foreground text-center mt-3">Révocable à tout moment depuis Profil › Qui voit quoi.</p>
         </Glass>
@@ -259,15 +259,15 @@ function AddDocSheet({ onClose, onAdd }) {
         <Glass sheen strong className="p-5 pb-safe rounded-b-none sm:rounded-b-[var(--radius)] overlay-scroll no-scrollbar">
           <div className="flex items-center justify-between mb-4"><h3 className="font-display text-xl">Nouveau document</h3><button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-muted/60"><X size={18} /></button></div>
           <label className="text-xs text-muted-foreground">Intitulé</label>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex. Quittance de loyer" className="w-full mt-1 mb-3 rounded-2xl border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary" />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex. Quittance de loyer" className="w-full mt-1 mb-3 rounded-inner border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary" />
           <label className="text-xs text-muted-foreground">Catégorie</label>
           <div className="flex gap-2 overflow-x-auto no-scrollbar mt-1 mb-3">
             {CATS.map((c) => <button key={c} onClick={() => setCategory(c)} className={cx('press whitespace-nowrap px-3.5 py-1.5 rounded-full text-sm font-medium border', category === c ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>{EMOJIS[c]} {c}</button>)}
           </div>
           <label className="text-xs text-muted-foreground">Émetteur (optionnel)</label>
-          <input value={issuer} onChange={(e) => setIssuer(e.target.value)} placeholder="Ex. Mon bailleur" className="w-full mt-1 mb-4 rounded-2xl border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary" />
+          <input value={issuer} onChange={(e) => setIssuer(e.target.value)} placeholder="Ex. Mon bailleur" className="w-full mt-1 mb-4 rounded-inner border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary" />
           <Glass className="p-2.5 mb-4 text-xs text-muted-foreground flex items-center gap-2"><Lock size={13} className="text-primary" /> Chiffré côté client avant stockage.</Glass>
-          <button onClick={submit} disabled={!title.trim()} className="press w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><Plus size={18} /> Ajouter au coffre-fort</button>
+          <button onClick={submit} disabled={!title.trim()} className="press w-full py-3.5 rounded-inner font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-40 grad-primary"><Plus size={18} /> Ajouter au coffre-fort</button>
         </Glass>
       </motion.div>
     </motion.div>

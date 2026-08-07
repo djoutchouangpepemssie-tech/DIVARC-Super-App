@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { api } from '@/lib/api'
+import { toast, Avatar } from './ui-kit'
 import {
-  Search, X, UserPlus, MessageCircle, Check, Clock, Users, MapPin, Link2, Copy,
-  ContactRound, Sparkles, ShieldCheck, RefreshCw, ChevronRight,
+  Search, X, UserPlus, MessageCircle, Check, Clock, MapPin, Link2, Copy,
+  ContactRound, Sparkles, ShieldCheck, RefreshCw,
 } from 'lucide-react'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
@@ -18,18 +19,11 @@ async function sha256(str) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-const Avatar = ({ u, size = 44 }) => (
-  <div className="rounded-full grid place-items-center text-white font-semibold shrink-0"
-    style={{ width: size, height: size, background: u?.avatarColor || 'linear-gradient(135deg,#4353F0,#2C39C7)', fontSize: size * 0.36 }}>
-    {u?.initials || (u?.name || '?').slice(0, 1)}
-  </div>
-)
-
 function UserRow({ u, onMessage, onAdd, busy }) {
   const rel = u.relation
   return (
     <div className="flex items-center gap-3 p-3 rounded-2xl border border-border bg-card/60">
-      <Avatar u={u} />
+      <Avatar c={u} />
       <div className="flex-1 min-w-0">
         <div className="font-medium text-sm flex items-center gap-1 truncate">
           {u.name} {u.verified && <ShieldCheck size={13} className="text-primary shrink-0" />}
@@ -89,7 +83,7 @@ export default function Discovery({ onClose, onOpenConversation }) {
           <div className="space-y-2">
             {requests.map((r) => (
               <div key={r.requestId} className="flex items-center gap-3 p-3 rounded-2xl border border-primary/20 bg-primary/5">
-                <Avatar u={r} size={40} />
+                <Avatar c={r} size={40} />
                 <div className="flex-1 min-w-0"><div className="font-medium text-sm truncate">{r.name}</div><div className="text-xs text-muted-foreground">{r.handle}</div></div>
                 <button onClick={() => respond(r, 'accept')} className="press px-3 py-1.5 rounded-full bg-primary text-white text-xs font-medium">Accepter</button>
                 <button onClick={() => respond(r, 'reject')} className="press w-8 h-8 rounded-full grid place-items-center bg-muted"><X size={15} /></button>
@@ -162,7 +156,7 @@ function ContactsTab({ onMessage, onAdd, busy }) {
         const phones = picked.flatMap((c) => c.tel || []); const emails = picked.flatMap((c) => c.email || [])
         await runMatch(phones, emails)
       } else {
-        alert("L'import direct du carnet n'est pas disponible sur ce navigateur. Colle des numéros ou e-mails ci-dessous.")
+        toast("L'import direct du carnet n'est pas disponible sur ce navigateur. Colle des numéros ou e-mails ci-dessous.", 'error')
       }
     } catch (e) { /* annulé */ }
   }
@@ -176,13 +170,13 @@ function ContactsTab({ onMessage, onAdd, busy }) {
   return (
     <div className="space-y-4">
       <div className="p-4 rounded-2xl border border-border bg-card/60">
-        <div className="flex items-center gap-2 text-sm font-medium"><ShieldCheck size={16} className="text-emerald-500" /> Confidentialité</div>
+        <div className="flex items-center gap-2 text-sm font-medium"><ShieldCheck size={16} className="text-success" /> Confidentialité</div>
         <p className="text-xs text-muted-foreground mt-1">Tes contacts sont <b>hachés sur ton appareil</b> avant l'envoi. Aucun numéro ni e-mail n'est stocké en clair.</p>
       </div>
       <button onClick={importDevice} className="press w-full py-3 rounded-2xl bg-primary text-white font-medium flex items-center justify-center gap-2"><ContactRound size={18} /> Importer mes contacts</button>
       <div>
         <label className="text-xs text-muted-foreground">Ou colle des numéros / e-mails (un par ligne)</label>
-        <textarea value={manual} onChange={(e) => setManual(e.target.value)} rows={3} placeholder="0612345678&#10;ami@exemple.fr" className="w-full mt-1 rounded-xl border border-border bg-card/60 px-3 py-2 text-sm" />
+        <textarea value={manual} onChange={(e) => setManual(e.target.value)} rows={3} placeholder="0612345678&#10;ami@exemple.fr" className="w-full mt-1 rounded-inner border border-border bg-card/60 px-3 py-2 text-sm" />
         <button onClick={runManual} disabled={!manual.trim()} className="press mt-2 w-full py-2.5 rounded-xl bg-primary/10 text-primary text-sm font-medium disabled:opacity-40">Chercher sur DIVARC</button>
       </div>
       {loading && <div className="text-center py-4"><RefreshCw className="animate-spin mx-auto text-primary" size={20} /></div>}
@@ -219,7 +213,7 @@ function NearbyTab({ onMessage, onAdd, busy }) {
       <button onClick={activate} disabled={loading} className="press w-full py-3 rounded-2xl bg-primary text-white font-medium flex items-center justify-center gap-2">
         {loading ? <RefreshCw className="animate-spin" size={18} /> : <><MapPin size={18} /> Activer ma position</>}
       </button>
-      {err && <div className="text-sm text-rose-500 text-center">{err}</div>}
+      {err && <div className="text-sm text-danger text-center">{err}</div>}
       {list && (
         <div className="space-y-2">
           <div className="text-xs font-medium text-muted-foreground">{list.length} personne(s) à proximité</div>
@@ -240,7 +234,7 @@ function InviteTab() {
   if (!inv) return <div className="text-center py-8"><RefreshCw className="animate-spin mx-auto text-primary" size={20} /></div>
   return (
     <div className="space-y-4 text-center">
-      <div className="w-16 h-16 mx-auto rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#E2AA2B,#F0CE7E)' }}><Sparkles size={28} /></div>
+      <div className="w-16 h-16 mx-auto rounded-2xl grid place-items-center text-white grad-gold"><Sparkles size={28} /></div>
       <div className="font-display text-2xl">Invite tes amis</div>
       <p className="text-sm text-muted-foreground">Quand un ami rejoint DIVARC avec ton lien, tu gagnes <b className="text-foreground">+5,00 €</b> 🎁</p>
       <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 p-3">

@@ -13,10 +13,10 @@ const Glass = ({ className, sheen, strong, children, ...p }) => <div className={
 const euro = (c) => ((c || 0) / 100).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const SUGGESTIONS = ['Envoie 20 € à un ami', 'Vends mon vélo 150 €', 'Lance une pub Notoriété à 50 €', 'Montre-moi mon wallet']
 const ACTION_META = {
-  send_money: { icon: HandCoins, label: 'Envoi d\u2019argent', color: '#E2AA2B' },
-  create_listing: { icon: Store, label: 'Nouvelle annonce', color: '#3FB68B' },
-  launch_ad: { icon: Megaphone, label: 'Campagne pub', color: '#9B5DE5' },
-  navigate: { icon: Compass, label: 'Ouvrir', color: '#4353F0' },
+  send_money: { icon: HandCoins, label: 'Envoi d\u2019argent', color: '#E2AA2B', tint: 'bg-gold/15 text-gold-deep' },
+  create_listing: { icon: Store, label: 'Nouvelle annonce', color: '#3FB68B', tint: 'bg-success/10 text-success' },
+  launch_ad: { icon: Megaphone, label: 'Campagne pub', color: '#9B5DE5', tint: 'bg-violet/10 text-violet' },
+  navigate: { icon: Compass, label: 'Ouvrir', color: '#4353F0', tint: 'bg-primary/10 text-primary' },
 }
 
 export default function Assistant({ me, onNavigate, onWalletRefresh, onClose }) {
@@ -61,7 +61,7 @@ export default function Assistant({ me, onNavigate, onWalletRefresh, onClose }) 
         {/* header */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
           <button onClick={onClose} className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><ArrowLeft size={18} /></button>
-          <div className="w-9 h-9 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#9B5DE5)' }}><Sparkles size={17} /></div>
+          <div className="w-9 h-9 rounded-2xl grid place-items-center text-white grad-diva"><Sparkles size={17} /></div>
           <div className="flex-1"><div className="font-display text-lg leading-none">DIVA</div><div className="text-[11px] text-muted-foreground">Ton copilote IA · Claude Sonnet 4.5</div></div>
         </div>
 
@@ -69,8 +69,8 @@ export default function Assistant({ me, onNavigate, onWalletRefresh, onClose }) 
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 space-y-4">
           {messages.length === 0 && !busy && (
             <div className="text-center pt-10">
-              <div className="w-16 h-16 rounded-3xl grid place-items-center text-white mx-auto mb-4" style={{ background: 'linear-gradient(135deg,#4353F0,#9B5DE5)' }}><Sparkles size={28} /></div>
-              <h2 className="font-display text-2xl mb-1">Bonjour {me?.name?.split(' ')[0] || ''} 👋</h2>
+              <div className="w-16 h-16 rounded-3xl grid place-items-center text-white mx-auto mb-4 grad-diva"><Sparkles size={28} /></div>
+              <h2 className="font-display text-2xl mb-1">Bonjour {me?.name?.split(' ')[0] || ''}</h2>
               <p className="text-sm text-muted-foreground mb-6 max-w-xs mx-auto">Je peux envoyer de l'argent, créer une annonce, lancer une pub… Tu confirmes toujours d'un glissement.</p>
               <div className="flex flex-col gap-2 max-w-sm mx-auto">
                 {SUGGESTIONS.map((s) => <button key={s} onClick={() => send(s)} className="press text-left"><Glass className="p-3 flex items-center gap-2 text-sm"><Sparkles size={14} className="text-primary shrink-0" /> {s}<ChevronRight size={15} className="ml-auto text-muted-foreground" /></Glass></button>)}
@@ -96,7 +96,7 @@ export default function Assistant({ me, onNavigate, onWalletRefresh, onClose }) 
         <div className="p-3 border-t border-border">
           <div className="flex items-center gap-2">
             <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder="Écris à DIVA…" className="flex-1 rounded-full border border-border bg-card/60 px-4 py-3 text-sm outline-none focus:border-primary" />
-            <button onClick={() => send()} disabled={busy || !input.trim()} className="press w-11 h-11 rounded-full grid place-items-center text-white shrink-0 disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#4353F0,#9B5DE5)' }}><Send size={18} /></button>
+            <button onClick={() => send()} disabled={busy || !input.trim()} className="press w-11 h-11 rounded-full grid place-items-center text-white shrink-0 disabled:opacity-40 grad-diva"><Send size={18} /></button>
           </div>
         </div>
       </div>
@@ -121,14 +121,14 @@ function ActionCard({ action, onExecute }) {
   return (
     <Glass strong className="p-3.5 max-w-[92%]">
       <div className="flex items-center gap-2.5 mb-2">
-        <div className="w-9 h-9 rounded-xl grid place-items-center text-white shrink-0" style={{ background: meta.color }}><Icon size={17} /></div>
+        <div className={cx('w-9 h-9 rounded-inner grid place-items-center shrink-0', meta.tint)}><Icon size={17} /></div>
         <div className="flex-1 min-w-0"><div className="font-semibold text-sm">{action.title}</div><div className="text-[11px] text-muted-foreground">{meta.label}{action.risk === 'high' ? ' · sensible' : ''}</div></div>
         {action.risk === 'high' && !done && <ShieldAlert size={16} className="text-gold shrink-0" />}
       </div>
       {action.summary && <p className="text-xs text-muted-foreground mb-1">{action.summary}</p>}
       <div className="text-sm font-medium tabular mb-3">{detail()}</div>
       {done ? (
-        <div className="flex items-center gap-2 py-2 px-3 rounded-xl bg-green-500/12 text-green-600 dark:text-green-400 text-sm font-semibold"><Check size={16} /> Effectué{action.result?.balanceCents != null ? ` · solde ${euro(action.result.balanceCents)} €` : ''}</div>
+        <div className="flex items-center gap-2 py-2 px-3 rounded-inner bg-success/10 text-success text-sm font-semibold"><Check size={16} /> Effectué{action.result?.balanceCents != null ? ` · solde ${euro(action.result.balanceCents)} €` : ''}</div>
       ) : (
         <SlideToConfirm color={meta.color} onConfirm={async () => { const r = await onExecute(); if (r?.error) { setError(r.error); return false } return true }} />
       )}

@@ -1,14 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
 import { KpiSkeleton, RowsSkeleton, EmptyState, ErrorState, Skel } from './states'
 import {
-  ArrowLeft, Plus, X, Check, TrendingUp, MousePointerClick, Eye, Target, DollarSign,
-  Play, Pause, Trash2, ChevronRight, Sparkles, Search, Loader2, BarChart3, Users,
-  Megaphone, Zap, Wallet as WalletIcon, Gauge, MapPin, Percent,
+  ArrowLeft, Plus, X, MousePointerClick, Eye, Target, DollarSign,
+  Play, Pause, Trash2, Sparkles, Search, Loader2, BarChart3, Users,
+  Megaphone, Zap, Wallet as WalletIcon, Gauge,
 } from 'lucide-react'
+import { toast, Pill } from './ui-kit'
 
 const cx = (...a) => a.filter(Boolean).join(' ')
 const Glass = ({ className, sheen, strong, children, ...p }) => <div className={cx('glass', sheen && 'glass-sheen', strong && 'glass-strong', className)} {...p}>{children}</div>
@@ -22,10 +22,8 @@ export default function AdsManager({ me, onWalletRefresh, onImmersive }) {
   const [campaigns, setCampaigns] = useState([])
   const [insights, setInsights] = useState(null)
   const [detailId, setDetailId] = useState(null)
-  const [toast, setToast] = useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(false)
-  const showToast = (t) => { setToast(t); setTimeout(() => setToast(null), 2600) }
 
   useEffect(() => { onImmersive?.(view !== 'dashboard') }, [view, onImmersive])
 
@@ -39,20 +37,20 @@ export default function AdsManager({ me, onWalletRefresh, onImmersive }) {
   }, [])
   useEffect(() => { api('/ads/config').then((r) => { if (!r.error) setConfig(r) }); load() }, [load])
 
-  if (view === 'create' && config) return <CreateWizard me={me} config={config} onCancel={() => setView('dashboard')} onDone={() => { showToast('Campagne lancée 🚀'); onWalletRefresh?.(); setView('dashboard'); load() }} showToast={showToast} />
-  if (view === 'detail' && detailId) return <CampaignDetail id={detailId} config={config} onBack={() => { setView('dashboard'); load() }} onWalletRefresh={onWalletRefresh} showToast={showToast} />
+  if (view === 'create' && config) return <CreateWizard me={me} config={config} onCancel={() => setView('dashboard')} onDone={() => { toast('Campagne lancée'); onWalletRefresh?.(); setView('dashboard'); load() }} showToast={toast} />
+  if (view === 'detail' && detailId) return <CampaignDetail id={detailId} config={config} onBack={() => { setView('dashboard'); load() }} onWalletRefresh={onWalletRefresh} showToast={toast} />
 
   return (
     <div className="min-h-[100dvh] bg-app-gradient">
       <div className="mx-auto max-w-5xl px-4 pt-6 pb-28">
         <div className="flex items-center justify-between mb-4">
           <div><h1 className="font-display text-3xl leading-none">Ads Manager</h1><p className="text-sm text-muted-foreground mt-1">Crée, cible et pilote tes campagnes — comme les pros.</p></div>
-          <button onClick={() => setView('create')} className="press h-11 px-4 rounded-full grid place-items-center text-white font-semibold text-sm gap-1.5 flex glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}><Plus size={18} /> Nouvelle campagne</button>
+          <button onClick={() => setView('create')} className="press h-11 px-4 rounded-full grid place-items-center text-white font-semibold text-sm gap-1.5 flex glow-primary grad-primary"><Plus size={18} /> Nouvelle campagne</button>
         </div>
 
         {loading ? (
           <div className="space-y-5">
-            <div className="glass rounded-2xl p-5 space-y-3"><Skel className="h-3 w-1/3" /><Skel className="h-9 w-1/2" /><Skel className="h-3 w-2/3" /></div>
+            <div className="glass rounded-lg p-5 space-y-3"><Skel className="h-3 w-1/3" /><Skel className="h-9 w-1/2" /><Skel className="h-3 w-2/3" /></div>
             <KpiSkeleton count={4} />
             <RowsSkeleton count={3} />
           </div>
@@ -69,7 +67,7 @@ export default function AdsManager({ me, onWalletRefresh, onImmersive }) {
                 <div className="font-display text-4xl leading-none"><span className="gold-text">{eur0(insights.totals.spentCents)}</span> <span className="gold-text text-2xl">€</span></div>
                 <div className="text-white/70 text-xs mt-2">{insights.counts.active} campagne{insights.counts.active > 1 ? 's' : ''} active{insights.counts.active > 1 ? 's' : ''} · {kf(insights.totals.impressions)} impressions</div>
               </div>
-              <div className="w-16 h-16 rounded-3xl grid place-items-center bg-white/15 backdrop-blur hairline float-slow shrink-0"><Megaphone size={30} /></div>
+              <div className="w-16 h-16 rounded-lg grid place-items-center bg-white/15 backdrop-blur hairline float-slow shrink-0"><Megaphone size={30} /></div>
             </div>
           </div>
         )}
@@ -77,9 +75,9 @@ export default function AdsManager({ me, onWalletRefresh, onImmersive }) {
         {/* KPIs globaux */}
         {insights && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-5 cascade">
-            <Kpi icon={Eye} label="Impressions" value={kf(insights.totals.impressions)} color="#4353F0" />
-            <Kpi icon={MousePointerClick} label="Clics" value={kf(insights.totals.clicks)} sub={`CTR ${insights.totals.ctr}%`} color="#9B5DE5" />
-            <Kpi icon={Target} label="Conversions" value={kf(insights.totals.conversions)} sub={`${insights.totals.convRate}%`} color="#3FB68B" />
+            <Kpi icon={Eye} label="Impressions" value={kf(insights.totals.impressions)} tone="text-indigo" />
+            <Kpi icon={MousePointerClick} label="Clics" value={kf(insights.totals.clicks)} sub={`CTR ${insights.totals.ctr}%`} tone="text-violet" />
+            <Kpi icon={Target} label="Conversions" value={kf(insights.totals.conversions)} sub={`${insights.totals.convRate}%`} tone="text-success" />
             <Kpi icon={DollarSign} label="Dépensé" value={`${eur0(insights.totals.spentCents)} €`} sub={`CPC ${eur(insights.totals.cpcCents)} €`} gold />
           </div>
         )}
@@ -96,21 +94,20 @@ export default function AdsManager({ me, onWalletRefresh, onImmersive }) {
         <div className="flex items-center justify-between mb-2"><div className="font-semibold">Campagnes {insights && <span className="text-muted-foreground font-normal">· {insights.counts.active} active{insights.counts.active > 1 ? 's' : ''}</span>}</div></div>
         {campaigns.length === 0 ? (
           <EmptyState icon={Megaphone} emoji="📣" title="Aucune campagne" desc="Lance ta première campagne en 3 étapes et touche une audience européenne ciblée."
-            action={<button onClick={() => setView('create')} className="press px-5 py-2.5 rounded-full text-white font-semibold text-sm glow-primary" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}>Créer une campagne</button>} />
+            action={<button onClick={() => setView('create')} className="press px-5 py-2.5 rounded-full text-white font-semibold text-sm glow-primary grad-primary">Créer une campagne</button>} />
         ) : (
           <div className="space-y-2.5">{campaigns.map((c) => <CampaignRow key={c.id} c={c} config={config} onOpen={() => { setDetailId(c.id); setView('detail') }} />)}</div>
         )}
         </div>)}
       </div>
-      <AnimatePresence>{toast && <motion.div role="status" aria-live="polite" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[70] bg-ink text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-xl">{toast}</motion.div>}</AnimatePresence>
     </div>
   )
 }
 
-const Kpi = ({ icon: Icon, label, value, sub, color, gold }) => (
+const Kpi = ({ icon: Icon, label, value, sub, tone = 'text-indigo', gold }) => (
   <Glass className={cx('p-3.5', gold && 'glow-gold')}>
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><Icon size={13} style={{ color: gold ? '#E2AA2B' : color }} /> {label}</div>
-    <div className={cx('font-display tabular text-2xl leading-none', gold && 'text-gold')} style={!gold ? { color } : {}}>{value}</div>
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><Icon size={13} className={gold ? 'text-gold-deep' : tone} /> {label}</div>
+    <div className={cx('font-display tabular text-2xl leading-none', gold ? 'text-gold-deep' : tone)}>{value}</div>
     {sub && <div className="text-[11px] text-muted-foreground mt-1">{sub}</div>}
   </Glass>
 )
@@ -131,20 +128,20 @@ function BarChart({ data, field = 'impressions' }) {
 
 function CampaignRow({ c, config, onOpen }) {
   const typeDef = config?.types?.find((t) => t.id === c.type)
-  const statusColor = c.status === 'active' ? 'text-green-600 dark:text-green-400 bg-green-500/12' : c.status === 'paused' ? 'text-gold bg-gold/12' : 'text-muted-foreground bg-muted/60'
+  const statusTone = c.status === 'active' ? 'success' : c.status === 'paused' ? 'gold' : 'neutral'
   const statusLabel = c.status === 'active' ? 'Active' : c.status === 'paused' ? 'En pause' : 'Terminée'
   const pct = c.budgetCents ? Math.min(100, Math.round((c.spentCents || 0) / c.budgetCents * 100)) : 0
   return (
     <button onClick={onOpen} className="press w-full text-left"><Glass className={cx('p-3.5 transition-shadow duration-300', c.status === 'active' && 'glow-primary')}>
       <div className="flex items-center gap-3 mb-2.5">
-        <div className="w-10 h-10 rounded-2xl grid place-items-center text-white text-lg shrink-0" style={{ background: typeDef?.color || c.color || '#4353F0' }}>{typeDef?.emoji || '📣'}</div>
+        <div className="w-10 h-10 rounded-inner grid place-items-center text-white text-lg shrink-0" style={{ background: typeDef?.color || c.color || '#4353F0' }}>{typeDef?.emoji || '📣'}</div>
         <div className="flex-1 min-w-0"><div className="font-semibold text-sm truncate">{c.name}</div><div className="text-[11px] text-muted-foreground">{typeDef?.name || c.type} · {c.objective}</div></div>
-        <span className={cx('text-[11px] font-semibold px-2.5 py-1 rounded-full shrink-0', statusColor)}>{statusLabel}</span>
+        <Pill tone={statusTone} className="shrink-0">{statusLabel}</Pill>
       </div>
       <div className="grid grid-cols-4 gap-2 text-center mb-2.5">
         <Mini label="Impr." value={kf(c.impressions)} /><Mini label="Clics" value={kf(c.clicks)} /><Mini label="CTR" value={`${c.ctr}%`} /><Mini label="CPC" value={`${eur(c.cpcCents)}€`} gold />
       </div>
-      <div className="flex items-center gap-2"><div className="flex-1 h-1.5 rounded-full bg-muted/60 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#E2AA2B,#F0CE7E)' }} /></div><span className="text-[11px] text-muted-foreground tabular">{eur0(c.spentCents)} / {eur0(c.budgetCents)} €</span></div>
+      <div className="flex items-center gap-2"><div className="flex-1 h-1.5 rounded-full bg-muted/60 overflow-hidden"><div className="h-full rounded-full grad-gold" style={{ width: `${pct}%` }} /></div><span className="text-[11px] text-muted-foreground tabular">{eur0(c.spentCents)} / {eur0(c.budgetCents)} €</span></div>
     </Glass></button>
   )
 }
@@ -190,7 +187,7 @@ function CreateWizard({ me, config, onCancel, onDone, showToast }) {
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
 
   const launch = async () => {
-    if (!name.trim()) { setStep(0); return showToast('Nomme ta campagne') }
+    if (!name.trim()) { setStep(0); return showToast('Nomme ta campagne', 'error') }
     setBusy(true)
     const r = await api('/ads/campaigns', { method: 'POST', body: JSON.stringify({
       name: name.trim(), type, objective, budgetType, budgetCents: totalCents(), dailyBudgetCents: dailyCents(),
@@ -200,7 +197,7 @@ function CreateWizard({ me, config, onCancel, onDone, showToast }) {
       creative: { headline: headline || name, body: bodyTxt, cta: ctaTxt },
     }) })
     setBusy(false)
-    if (r.error) return showToast('⚠️ ' + r.error)
+    if (r.error) return showToast(r.error, 'error')
     onDone()
   }
 
@@ -213,7 +210,7 @@ function CreateWizard({ me, config, onCancel, onDone, showToast }) {
         <div className="cascade space-y-5">
           <div>
             <div className="font-semibold text-sm mb-2">Type de campagne</div>
-            <div className="grid grid-cols-2 gap-2.5">{config.types.map((t) => <button key={t.id} onClick={() => setType(t.id)} className="press text-left"><Glass className={cx('p-3.5 h-full border-2', type === t.id ? 'border-primary' : 'border-transparent')}><div className="w-9 h-9 rounded-xl grid place-items-center text-white text-lg mb-2" style={{ background: t.color }}>{t.emoji}</div><div className="font-semibold text-sm">{t.name}</div><div className="text-[11px] text-muted-foreground leading-tight mt-0.5">{t.desc}</div></Glass></button>)}</div>
+            <div className="grid grid-cols-2 gap-2.5">{config.types.map((t) => <button key={t.id} onClick={() => setType(t.id)} className="press text-left"><Glass className={cx('p-3.5 h-full border-2', type === t.id ? 'border-primary' : 'border-transparent')}><div className="w-9 h-9 rounded-inner grid place-items-center text-white text-lg mb-2" style={{ background: t.color }}>{t.emoji}</div><div className="font-semibold text-sm">{t.name}</div><div className="text-[11px] text-muted-foreground leading-tight mt-0.5">{t.desc}</div></Glass></button>)}</div>
           </div>
           <div>
             <div className="font-semibold text-sm mb-2">Objectif</div>
@@ -221,9 +218,9 @@ function CreateWizard({ me, config, onCancel, onDone, showToast }) {
           </div>
           <div>
             <div className="font-semibold text-sm mb-2">Nom de la campagne</div>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex. Soldes d'été — Paris" className="w-full rounded-2xl border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary" />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex. Soldes d'été — Paris" className="w-full rounded-inner border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary" />
           </div>
-          <button onClick={() => setStep(1)} className="press w-full py-3.5 rounded-2xl font-semibold text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>Continuer</button>
+          <button onClick={() => setStep(1)} className="press w-full py-3.5 rounded-inner font-semibold text-white grad-primary">Continuer</button>
         </div>
       )}
 
@@ -231,14 +228,14 @@ function CreateWizard({ me, config, onCancel, onDone, showToast }) {
         <div className="cascade space-y-5">
           <div>
             <div className="font-semibold text-sm mb-2">Budget</div>
-            <div className="flex gap-2 mb-2">{[['daily', 'Quotidien'], ['total', 'Total']].map(([v, l]) => <button key={v} onClick={() => setBudgetType(v)} className={cx('press flex-1 py-2 rounded-xl text-sm font-medium border', budgetType === v ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>{l}</button>)}</div>
-            <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3.5 py-3"><WalletIcon size={16} className="text-gold" /><input type="number" value={budgetType === 'daily' ? dailyBudget : totalBudget} onChange={(e) => budgetType === 'daily' ? setDailyBudget(e.target.value) : setTotalBudget(e.target.value)} className="flex-1 bg-transparent text-sm outline-none tabular" /><span className="text-sm text-muted-foreground">€ {budgetType === 'daily' ? '/ jour' : 'total'}</span></div>
+            <div className="flex gap-2 mb-2">{[['daily', 'Quotidien'], ['total', 'Total']].map(([v, l]) => <button key={v} onClick={() => setBudgetType(v)} className={cx('press flex-1 py-2 rounded-inner text-sm font-medium border', budgetType === v ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>{l}</button>)}</div>
+            <div className="flex items-center gap-2 rounded-inner border border-border bg-card/60 px-3.5 py-3"><WalletIcon size={16} className="text-gold" /><input type="number" value={budgetType === 'daily' ? dailyBudget : totalBudget} onChange={(e) => budgetType === 'daily' ? setDailyBudget(e.target.value) : setTotalBudget(e.target.value)} className="flex-1 bg-transparent text-sm outline-none tabular" /><span className="text-sm text-muted-foreground">€ {budgetType === 'daily' ? '/ jour' : 'total'}</span></div>
             <p className="text-[11px] text-muted-foreground mt-1">Débité de ton wallet : <b className="text-gold">{eur0(totalCents())} €</b></p>
           </div>
           <div>
             <div className="font-semibold text-sm mb-2">Enchère</div>
             <div className="flex flex-wrap gap-2 mb-2">{config.bidStrategies.map((b) => <button key={b.id} onClick={() => setBidStrategy(b.id)} className={cx('press px-3 py-1.5 rounded-full text-xs font-medium border', bidStrategy === b.id ? 'bg-primary text-white border-primary' : 'bg-card/60 border-border text-muted-foreground')}>{b.name}</button>)}</div>
-            {(bidStrategy === 'cpc' || bidStrategy === 'cpm') && <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3.5 py-2.5"><Gauge size={15} className="text-primary" /><span className="text-sm text-muted-foreground">Enchère max</span><input type="number" step="0.05" value={maxBid} onChange={(e) => setMaxBid(e.target.value)} className="flex-1 bg-transparent text-sm outline-none tabular text-right" /><span className="text-sm text-muted-foreground">€ / {bidStrategy === 'cpc' ? 'clic' : '1000 impr.'}</span></div>}
+            {(bidStrategy === 'cpc' || bidStrategy === 'cpm') && <div className="flex items-center gap-2 rounded-inner border border-border bg-card/60 px-3.5 py-2.5"><Gauge size={15} className="text-primary" /><span className="text-sm text-muted-foreground">Enchère max</span><input type="number" step="0.05" value={maxBid} onChange={(e) => setMaxBid(e.target.value)} className="flex-1 bg-transparent text-sm outline-none tabular text-right" /><span className="text-sm text-muted-foreground">€ / {bidStrategy === 'cpc' ? 'clic' : '1000 impr.'}</span></div>}
           </div>
           <div>
             <div className="font-semibold text-sm mb-2">Ciblage · centres d'intérêt</div>
@@ -259,7 +256,7 @@ function CreateWizard({ me, config, onCancel, onDone, showToast }) {
               <div className="text-[11px] text-muted-foreground text-center mt-3">Audience potentielle : <b>{kf(estimate.audience)}</b> · CTR estimé {estimate.estCtr}%</div>
             </Glass>
           )}
-          <button onClick={() => setStep(2)} className="press w-full py-3.5 rounded-2xl font-semibold text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>Continuer</button>
+          <button onClick={() => setStep(2)} className="press w-full py-3.5 rounded-inner font-semibold text-white grad-primary">Continuer</button>
         </div>
       )}
 
@@ -267,8 +264,8 @@ function CreateWizard({ me, config, onCancel, onDone, showToast }) {
         <div className="cascade space-y-5">
           <div>
             <div className="font-semibold text-sm mb-2">Annonce</div>
-            <input value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="Titre accrocheur (max 30)" maxLength={40} className="w-full mb-2 rounded-2xl border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary" />
-            <textarea value={bodyTxt} onChange={(e) => setBodyTxt(e.target.value)} placeholder="Description de ton offre…" rows={3} className="w-full mb-2 rounded-2xl border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary resize-none" />
+            <input value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="Titre accrocheur (max 40)" maxLength={40} className="w-full mb-2 rounded-inner border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary" />
+            <textarea value={bodyTxt} onChange={(e) => setBodyTxt(e.target.value)} placeholder="Description de ton offre…" rows={3} className="w-full mb-2 rounded-inner border border-border bg-card/60 px-3.5 py-3 text-sm outline-none focus:border-primary resize-none" />
             <div className="flex flex-wrap gap-2">{['En savoir plus', 'Acheter', 'S\u2019inscrire', 'Télécharger', 'Contacter'].map((c) => <button key={c} onClick={() => setCtaTxt(c)} className={cx('press px-3 py-1.5 rounded-full text-xs font-medium border', ctaTxt === c ? 'bg-gold/15 border-gold/40 text-gold' : 'bg-card/60 border-border text-muted-foreground')}>{c}</button>)}</div>
           </div>
 
@@ -281,13 +278,13 @@ function CreateWizard({ me, config, onCancel, onDone, showToast }) {
           {type === 'search' && (
             <div>
               <div className="font-semibold text-sm mb-2">Mots-clés</div>
-              <div className="flex gap-2 mb-2"><div className="flex-1 flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-3 py-2.5"><Search size={15} className="text-muted-foreground" /><input value={kwSeed} onChange={(e) => setKwSeed(e.target.value)} placeholder="Thème (ex. chaussures)" className="flex-1 bg-transparent text-sm outline-none" /></div><button onClick={suggestKw} className="press px-3 rounded-2xl bg-primary/10 text-primary text-sm font-semibold flex items-center gap-1"><Sparkles size={14} /> Suggérer</button></div>
+              <div className="flex gap-2 mb-2"><div className="flex-1 flex items-center gap-2 rounded-inner border border-border bg-card/60 px-3 py-2.5"><Search size={15} className="text-muted-foreground" /><input value={kwSeed} onChange={(e) => setKwSeed(e.target.value)} placeholder="Thème (ex. chaussures)" className="flex-1 bg-transparent text-sm outline-none" /></div><button onClick={suggestKw} className="press px-3 rounded-inner bg-primary/10 text-primary text-sm font-semibold flex items-center gap-1"><Sparkles size={14} /> Suggérer</button></div>
               {keywords.length > 0 && <div className="flex flex-wrap gap-2 mb-2">{keywords.map((k) => <span key={k} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary text-white text-xs">{k}<button onClick={() => setKeywords((x) => x.filter((y) => y !== k))}><X size={12} /></button></span>)}</div>}
               {kwSug.length > 0 && <Glass className="divide-y divide-border max-h-56 overflow-y-auto">{kwSug.filter((s) => !keywords.includes(s.text)).map((s) => <button key={s.text} onClick={() => setKeywords((k) => [...k, s.text])} className="press w-full text-left px-3.5 py-2.5 flex items-center gap-2"><Plus size={14} className="text-primary shrink-0" /><span className="flex-1 text-sm truncate">{s.text}</span><span className="text-[10px] text-muted-foreground">{kf(s.volume)}/mois · {s.competition}</span></button>)}</Glass>}
             </div>
           )}
 
-          <button onClick={launch} disabled={busy} className="press w-full py-3.5 rounded-2xl font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>{busy ? <Loader2 className="animate-spin" size={18} /> : <><Zap size={18} /> Lancer · {eur0(totalCents())} €</>}</button>
+          <button onClick={launch} disabled={busy} className="press w-full py-3.5 rounded-inner font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 grad-primary">{busy ? <Loader2 className="animate-spin" size={18} /> : <><Zap size={18} /> Lancer · {eur0(totalCents())} €</>}</button>
         </div>
       )}
     </div></div>
@@ -301,7 +298,7 @@ function CampaignDetail({ id, config, onBack, onWalletRefresh, showToast }) {
   const load = useCallback(async () => { const r = await api(`/ads/campaigns/${id}`); if (!r.error) setC(r) }, [id])
   useEffect(() => { load() }, [load])
 
-  const setStatus = async (status) => { const r = await api(`/ads/campaigns/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }); if (r.error) return showToast('⚠️ ' + r.error); if (status === 'ended') onWalletRefresh?.(); setC(r); showToast(status === 'active' ? 'Reprise' : status === 'paused' ? 'Mise en pause' : 'Terminée · budget remboursé') }
+  const setStatus = async (status) => { const r = await api(`/ads/campaigns/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }); if (r.error) return showToast(r.error, 'error'); if (status === 'ended') onWalletRefresh?.(); setC(r); showToast(status === 'active' ? 'Reprise' : status === 'paused' ? 'Mise en pause' : 'Terminée · budget remboursé') }
   const remove = async () => { await api(`/ads/campaigns/${id}`, { method: 'DELETE' }); onWalletRefresh?.(); onBack() }
   const simulate = async (type) => { await api(`/ads/campaigns/${id}/track`, { method: 'POST', body: JSON.stringify({ type }) }); load() }
 
@@ -312,26 +309,26 @@ function CampaignDetail({ id, config, onBack, onWalletRefresh, showToast }) {
   return (
     <div className="min-h-[100dvh] bg-app-gradient"><div className="mx-auto max-w-2xl px-4 pt-6 pb-28">
       <div className="flex items-center gap-3 mb-4"><button onClick={onBack} aria-label="Retour" className="press w-9 h-9 rounded-full grid place-items-center bg-card/60 border border-border"><ArrowLeft size={18} /></button><div className="flex-1"><h1 className="font-display text-xl leading-none truncate">{c.name}</h1><div className="text-xs text-muted-foreground mt-1">{typeDef?.name} · {c.objective}</div></div>
-        <div className="w-10 h-10 rounded-2xl grid place-items-center text-white text-lg" style={{ background: typeDef?.color || '#4353F0' }}>{typeDef?.emoji || '📣'}</div></div>
+        <div className="w-10 h-10 rounded-inner grid place-items-center text-white text-lg" style={{ background: typeDef?.color || '#4353F0' }}>{typeDef?.emoji || '📣'}</div></div>
 
       {/* contrôles */}
       <div className="flex gap-2 mb-5">
-        {c.status === 'active' && <button onClick={() => setStatus('paused')} className="press flex-1 py-2.5 rounded-2xl border border-gold/40 bg-gold/12 text-gold font-medium text-sm flex items-center justify-center gap-1.5"><Pause size={15} /> Pause</button>}
-        {c.status === 'paused' && <button onClick={() => setStatus('active')} className="press flex-1 py-2.5 rounded-2xl border border-green-500/40 bg-green-500/12 text-green-600 dark:text-green-400 font-medium text-sm flex items-center justify-center gap-1.5"><Play size={15} /> Reprendre</button>}
-        {c.status !== 'ended' && <button onClick={() => setStatus('ended')} className="press flex-1 py-2.5 rounded-2xl border border-border bg-card/70 font-medium text-sm">Terminer</button>}
-        <button onClick={remove} aria-label="Supprimer la campagne" className="press px-4 py-2.5 rounded-2xl border border-destructive/30 bg-destructive/10 text-destructive flex items-center justify-center"><Trash2 size={16} /></button>
+        {c.status === 'active' && <button onClick={() => setStatus('paused')} className="press flex-1 py-2.5 rounded-inner border border-gold/40 bg-gold/12 text-gold font-medium text-sm flex items-center justify-center gap-1.5"><Pause size={15} /> Pause</button>}
+        {c.status === 'paused' && <button onClick={() => setStatus('active')} className="press flex-1 py-2.5 rounded-inner border border-success/40 bg-success/12 text-success font-medium text-sm flex items-center justify-center gap-1.5"><Play size={15} /> Reprendre</button>}
+        {c.status !== 'ended' && <button onClick={() => setStatus('ended')} className="press flex-1 py-2.5 rounded-inner border border-border bg-card/70 font-medium text-sm">Terminer</button>}
+        <button onClick={remove} aria-label="Supprimer la campagne" className="press px-4 py-2.5 rounded-inner border border-danger/30 bg-danger/10 text-danger flex items-center justify-center"><Trash2 size={16} /></button>
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-5">
-        <Kpi icon={Eye} label="Impressions" value={kf(c.impressions)} color="#4353F0" />
-        <Kpi icon={MousePointerClick} label="Clics" value={kf(c.clicks)} sub={`CTR ${c.ctr}%`} color="#9B5DE5" />
-        <Kpi icon={Target} label="Conversions" value={kf(c.conversions)} sub={`${c.convRate}%`} color="#3FB68B" />
+        <Kpi icon={Eye} label="Impressions" value={kf(c.impressions)} tone="text-indigo" />
+        <Kpi icon={MousePointerClick} label="Clics" value={kf(c.clicks)} sub={`CTR ${c.ctr}%`} tone="text-violet" />
+        <Kpi icon={Target} label="Conversions" value={kf(c.conversions)} sub={`${c.convRate}%`} tone="text-success" />
         <Kpi icon={DollarSign} label="CPC moyen" value={`${eur(c.cpcCents)} €`} sub={`CPM ${eur(c.cpmCents)}€`} gold />
       </div>
 
       {/* budget */}
-      <Glass className="p-4 mb-5"><div className="flex justify-between text-sm mb-2"><span className="font-medium">Budget consommé</span><span className="tabular"><b className="text-gold">{eur(c.spentCents)} €</b> / {eur(c.budgetCents)} €</span></div><div className="h-2.5 rounded-full bg-muted/60 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${c.budgetCents ? Math.min(100, c.spentCents / c.budgetCents * 100) : 0}%`, background: 'linear-gradient(90deg,#E2AA2B,#F0CE7E)' }} /></div><div className="text-[11px] text-muted-foreground mt-1.5">Reste {eur(c.remainingCents)} € · {c.bidStrategy?.toUpperCase()} · enchère max {eur(c.maxBidCents)} €</div></Glass>
+      <Glass className="p-4 mb-5"><div className="flex justify-between text-sm mb-2"><span className="font-medium">Budget consommé</span><span className="tabular"><b className="text-gold">{eur(c.spentCents)} €</b> / {eur(c.budgetCents)} €</span></div><div className="h-2.5 rounded-full bg-muted/60 overflow-hidden"><div className="h-full rounded-full grad-gold" style={{ width: `${c.budgetCents ? Math.min(100, c.spentCents / c.budgetCents * 100) : 0}%` }} /></div><div className="text-[11px] text-muted-foreground mt-1.5">Reste {eur(c.remainingCents)} € · {c.bidStrategy?.toUpperCase()} · enchère max {eur(c.maxBidCents)} €</div></Glass>
 
       {/* graphe */}
       {c.daily?.length > 0 && (
@@ -352,7 +349,7 @@ function CampaignDetail({ id, config, onBack, onWalletRefresh, showToast }) {
 
       {/* simulateur (démo) */}
       {c.status === 'active' && (
-        <Glass className="p-4"><div className="font-semibold text-sm mb-2 flex items-center gap-1.5"><Zap size={15} className="text-gold" /> Simuler du trafic (démo)</div><div className="flex gap-2"><button onClick={() => simulate('impression')} className="press flex-1 py-2 rounded-xl border border-border bg-card/70 text-sm">+ Impression</button><button onClick={() => simulate('click')} className="press flex-1 py-2 rounded-xl border border-border bg-card/70 text-sm">+ Clic</button><button onClick={() => simulate('conversion')} className="press flex-1 py-2 rounded-xl border border-border bg-card/70 text-sm">+ Conversion</button></div></Glass>
+        <Glass className="p-4"><div className="font-semibold text-sm mb-2 flex items-center gap-1.5"><Zap size={15} className="text-gold" /> Simuler du trafic (démo)</div><div className="flex gap-2"><button onClick={() => simulate('impression')} className="press flex-1 py-2 rounded-inner border border-border bg-card/70 text-sm">+ Impression</button><button onClick={() => simulate('click')} className="press flex-1 py-2 rounded-inner border border-border bg-card/70 text-sm">+ Clic</button><button onClick={() => simulate('conversion')} className="press flex-1 py-2 rounded-inner border border-border bg-card/70 text-sm">+ Conversion</button></div></Glass>
       )}
     </div></div>
   )

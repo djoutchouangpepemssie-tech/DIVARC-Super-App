@@ -68,8 +68,18 @@ module.exports = {
           indigo: {
             DEFAULT: '#4353F0',
             soft: '#6E7BF5',
-            deep: '#2C39C7'
+            deep: '#2C39C7',
+            bright: '#5A67FF'
           },
+          /* Design System v2 — sémantiques uniques (LE vert, LE rouge) */
+          success: {
+            DEFAULT: '#2FA97C',
+            deep: '#2E9370'
+          },
+          danger: '#E14B4B',
+          violet: '#9B5DE5',
+          cyan: '#00BBF9',
+          love: '#EF476F',
           sidebar: {
             DEFAULT: 'hsl(var(--sidebar-background))',
             foreground: 'hsl(var(--sidebar-foreground))',
@@ -84,7 +94,9 @@ module.exports = {
         borderRadius: {
           lg: 'var(--radius)',
           md: 'calc(var(--radius) - 2px)',
-          sm: 'calc(var(--radius) - 4px)'
+          sm: 'calc(var(--radius) - 4px)',
+          /* DS v2 — échelle canonique : carte 20 (lg) · élément interne 14 (inner) · pilule (full) */
+          inner: '14px'
         },
         keyframes: {
           'accordion-down': {

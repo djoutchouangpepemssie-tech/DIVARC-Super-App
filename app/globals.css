@@ -173,6 +173,16 @@
   }
   .glow-primary { box-shadow: 0 18px 46px -14px rgba(67,83,240,0.55); }
   .glow-gold { box-shadow: 0 16px 40px -14px rgba(226,170,43,0.5); }
+  /* ---- DS v2 : dégradés canoniques — UN par rôle, plus aucun dégradé inline ---- */
+  .grad-primary { background-image: linear-gradient(135deg, #5A67FF, #2C39C7); }
+  .grad-gold { background-image: linear-gradient(135deg, #F0CE7E, #E2AA2B 55%, #B98514); }
+  .grad-gold-deep { background-image: linear-gradient(135deg, #2A2308, #6B5210 55%, #C9971F); }
+  .grad-success { background-image: linear-gradient(135deg, #3FB68B, #2E9370); }
+  .grad-love { background-image: linear-gradient(135deg, #EF476F, #9B5DE5); }
+  .grad-diva { background-image: linear-gradient(135deg, #4353F0, #9B5DE5); }
+  .grad-violet { background-image: linear-gradient(135deg, #9B5DE5, #4353F0); }
+  .grad-cyan { background-image: linear-gradient(135deg, #00BBF9, #4353F0); }
+  .gold-text-solid { color: #B98514; }
   .hairline { box-shadow: inset 0 1px 0 rgba(255,255,255,0.5); }
   .dark .hairline { box-shadow: inset 0 1px 0 rgba(255,255,255,0.12); }
 }

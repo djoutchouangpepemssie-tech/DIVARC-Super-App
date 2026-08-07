@@ -236,8 +236,8 @@ export default function CallLayer({ me }) {
               <div className="text-white/60 mt-1">{isVideo ? 'Appel vidéo entrant…' : 'Appel entrant…'}</div>
             </div>
             <div className="flex items-center gap-10 mt-4">
-              <button onClick={rejectCall} aria-label="Refuser" className="press w-16 h-16 rounded-full bg-red-500 grid place-items-center shadow-xl"><PhoneOff size={26} /></button>
-              <button onClick={acceptCall} aria-label="Accepter" className="press w-16 h-16 rounded-full bg-emerald-500 grid place-items-center shadow-xl"><Phone size={26} /></button>
+              <button onClick={rejectCall} aria-label="Refuser" className="press w-16 h-16 rounded-full bg-danger grid place-items-center shadow-xl"><PhoneOff size={26} /></button>
+              <button onClick={acceptCall} aria-label="Accepter" className="press w-16 h-16 rounded-full bg-success grid place-items-center shadow-xl"><Phone size={26} /></button>
             </div>
           </div>
         )}
@@ -285,7 +285,7 @@ export default function CallLayer({ me }) {
                   {camOff ? <VideoOff size={22} /> : <Video size={22} />}
                 </button>
               )}
-              <button onClick={hangup} aria-label="Raccrocher" className="press w-16 h-16 rounded-full bg-red-500 grid place-items-center shadow-xl">
+              <button onClick={hangup} aria-label="Raccrocher" className="press w-16 h-16 rounded-full bg-danger grid place-items-center shadow-xl">
                 <PhoneOff size={26} />
               </button>
             </div>

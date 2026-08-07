@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from 'next-themes'
 import {
-  Home, MessageCircle, QrCode, Compass, User, Send as SendIcon, Plus, Eye, EyeOff,
+  Home, MessageCircle, QrCode, Compass, User, Eye, EyeOff,
   Sun, Moon, ArrowUpRight, ArrowDownLeft, Gift, Split, Leaf, Shield, ChevronRight,
   Sparkles, X, Check, Fingerprint, Mail, ArrowLeft, Search, Bell, TrendingUp,
   Wallet as WalletIcon, Zap, Lock, ScanLine, RefreshCw, Delete, BadgeCheck,
@@ -12,8 +12,6 @@ import {
   Landmark, CreditCard, Settings2, Trash2, Download, Users, Play, AtSign, Phone
 } from 'lucide-react'
 import { api, getToken, setToken, clearToken, flushQueue, pendingCount } from '@/lib/api'
-import { isAppStoreBuild, showMoneyWallet, isNative } from '@/lib/platform'
-import { registerPush, haptic, biometricVerify, biometricAvailable } from '@/lib/native'
 import { connectRealtime, disconnectRealtime, onRealtime } from '@/lib/realtime'
 import { installAudioUnlock, playPing, soundEnabled, setSoundEnabled } from '@/lib/sound'
 import { registerServiceWorker, getPushStatus, enablePush, disablePush } from '@/lib/push'
@@ -32,6 +30,7 @@ import AppStore from './components/appstore'
 import AdminHub from './components/hub'
 import Assistant from './components/assistant'
 import { OfflineBanner } from './components/states'
+import { ToastHost, ConfirmHost, toast, Avatar, Toggle } from './components/ui-kit'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 
 /* ============================= helpers ============================= */
@@ -53,15 +52,6 @@ const Amount = ({ cents, mask, className, sign }) => (
   <span className={cx('font-display tabular', className)}>
     {sign && cents > 0 ? '+' : ''}{eur(Math.abs(cents), mask)}
   </span>
-)
-
-const Avatar = ({ c, size = 44 }) => (
-  <div
-    className="grid place-items-center rounded-full text-white font-semibold shrink-0 font-body"
-    style={{ width: size, height: size, background: c?.color || c?.avatarColor || '#4353F0', fontSize: size * 0.36 }}
-  >
-    {c?.initials}
-  </div>
 )
 
 const Pill = ({ children, className }) => (
@@ -140,7 +130,7 @@ function Login({ onAuthed }) {
         <AnimatePresence mode="wait">
           {step === 'email' ? (
             <motion.div key="email" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
-              <h1 className="font-display text-3xl leading-tight mb-2">Bienvenue 👋</h1>
+              <h1 className="font-display text-3xl leading-tight mb-2">Bienvenue.</h1>
               <p className="text-muted-foreground mb-6 leading-relaxed text-sm">Déjà un compte ? Connecte-toi avec ton e-mail ou ton nom d’utilisateur. Sinon, ton e-mail crée ton compte. Pas de mot de passe.</p>
               <label className="text-xs text-muted-foreground">E-mail ou nom d’utilisateur</label>
               <div className="flex items-center gap-2 rounded-2xl border border-border bg-card/60 px-4 py-3 mt-1.5 mb-2 focus-within:border-primary transition-colors">
@@ -158,7 +148,7 @@ function Login({ onAuthed }) {
             <motion.div key="otp" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}>
               <button onClick={() => { setStep('email'); setCode(''); setError('') }} className="text-sm text-muted-foreground flex items-center gap-1 mb-4"><ArrowLeft size={15} /> Modifier</button>
               <h1 className="font-display text-3xl leading-tight mb-1.5">Entre ton code</h1>
-              <p className="text-muted-foreground mb-5 text-sm">{isNew ? 'Nouveau compte · ' : 'Bon retour 👋 · '}Code envoyé à <b className="text-foreground">{sentTo || email}</b></p>
+              <p className="text-muted-foreground mb-5 text-sm">{isNew ? 'Nouveau compte · ' : 'Bon retour · '}Code envoyé à <b className="text-foreground">{sentTo || email}</b></p>
               {preview && (
                 <div className="mb-4 rounded-2xl bg-gold/12 border border-gold/30 px-4 py-2.5 text-sm flex items-center gap-2">
                   <Info size={15} className="text-gold" /> Mode aperçu — ton code : <b className="font-grotesk tracking-widest text-gold">{preview}</b>
@@ -187,8 +177,8 @@ function Login({ onAuthed }) {
                 </>
               )}
               {isNew && invite && (
-                <div className="mb-4 rounded-2xl bg-emerald-500/12 border border-emerald-500/30 px-4 py-2.5 text-sm flex items-center gap-2">
-                  <span className="text-lg">🎁</span> Invitation reçue — ton parrain gagne un bonus à ton inscription.
+                <div className="mb-4 rounded-2xl bg-success/12 border border-success/30 px-4 py-2.5 text-sm flex items-center gap-2">
+                  <Gift size={14} className="text-success shrink-0" /> Invitation reçue — ton parrain gagne un bonus à ton inscription.
                 </div>
               )}
               {error && <p className="text-xs text-destructive mb-2">{error}</p>}
@@ -204,21 +194,13 @@ function Login({ onAuthed }) {
     </div>
   )
 }
-const StepHead = ({ icon, title, sub }) => (
-  <div className="mb-6">
-    <div className="w-12 h-12 rounded-2xl grid place-items-center mb-4 bg-primary/10 text-primary">{icon}</div>
-    <h2 className="font-display text-3xl leading-tight mb-1.5">{title}</h2>
-    <p className="text-sm text-muted-foreground leading-relaxed">{sub}</p>
-  </div>
-)
 
 /* ============================= buttons ============================= */
 const PrimaryBtn = ({ children, onClick, full, disabled, gold }) => (
   <button onClick={onClick} disabled={disabled}
-    className={cx('press inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3.5 font-semibold text-white shadow-lg transition-opacity disabled:opacity-40',
-      full && 'w-full')}
-    style={{ background: gold ? 'linear-gradient(135deg,#F0CE7E,#E2AA2B,#B98514)' : 'linear-gradient(135deg,#4353F0,#2C39C7)',
-      color: gold ? '#14162B' : '#fff' }}>
+    className={cx('press inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3.5 font-semibold shadow-lg transition-opacity disabled:opacity-40',
+      gold ? 'grad-gold text-ink' : 'grad-primary text-white',
+      full && 'w-full')}>
     {children}
   </button>
 )
@@ -239,7 +221,6 @@ const TABS = [
   { id: 'profile', label: 'Profil', icon: User },
 ]
 function TabBar({ active, onChange }) {
-  const tap = (id) => { haptic('light'); onChange(id) }
   return (
     <div className="fixed bottom-0 inset-x-0 z-40 pb-[max(env(safe-area-inset-bottom),12px)] pt-2 px-3 pointer-events-none">
       <Glass strong className="mx-auto max-w-md flex items-end justify-around px-2 py-2 pointer-events-auto">
@@ -248,15 +229,14 @@ function TabBar({ active, onChange }) {
           const on = active === t.id
           if (t.center) {
             return (
-              <button key={t.id} onClick={() => tap(t.id)} aria-label={t.label}
-                className="press -mt-7 w-14 h-14 rounded-full grid place-items-center text-white glow-primary"
-                style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}>
+              <button key={t.id} onClick={() => onChange(t.id)} aria-label={t.label}
+                className="press -mt-7 w-14 h-14 rounded-full grid place-items-center text-white glow-primary grad-primary">
                 <Icon size={24} />
               </button>
             )
           }
           return (
-            <button key={t.id} onClick={() => tap(t.id)} aria-label={t.label} aria-current={on}
+            <button key={t.id} onClick={() => onChange(t.id)} aria-label={t.label} aria-current={on}
               className={cx('press flex flex-col items-center gap-1 px-3 py-1.5 rounded-2xl min-w-[56px] transition-colors', on ? 'text-primary bg-primary/10' : 'text-muted-foreground')}>
               <Icon size={21} strokeWidth={on ? 2.4 : 2} />
               <span className={cx('text-[10px]', on ? 'font-semibold' : 'font-medium')}>{t.label}</span>
@@ -272,17 +252,11 @@ function TabBar({ active, onChange }) {
 function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
   const hour = new Date().getHours()
   const greet = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bel après-midi' : 'Bonsoir'
-  const money = showMoneyWallet()
-  const actions = money ? [
-    { id: 'send', label: 'Envoyer', icon: ArrowUpRight, c: '#4353F0' },
-    { id: 'receive', label: 'Recevoir', icon: ArrowDownLeft, c: '#3FB68B' },
-    { id: 'qr', label: 'QR', icon: QrCode, c: '#9B5DE5' },
-    { id: 'enveloppe', label: 'Enveloppe', icon: Gift, c: '#E2AA2B' },
-  ] : [
-    { id: 'network', label: 'Réseau', icon: Users, c: '#4353F0' },
-    { id: 'dating', label: 'Rencontres', icon: Heart, c: '#E5488B' },
-    { id: 'arcade', label: 'Arcade', icon: Zap, c: '#9B5DE5' },
-    { id: 'eclats', label: 'Éclats', icon: Sparkles, c: '#E2AA2B' },
+  const actions = [
+    { id: 'send', label: 'Envoyer', icon: ArrowUpRight, g: 'grad-primary' },
+    { id: 'receive', label: 'Recevoir', icon: ArrowDownLeft, g: 'grad-success' },
+    { id: 'qr', label: 'QR', icon: QrCode, g: 'grad-violet' },
+    { id: 'enveloppe', label: 'Enveloppe', icon: Gift, g: 'grad-gold' },
   ]
   return (
     <Screen>
@@ -298,51 +272,34 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
           <NotificationBell onOpen={onNotif} />
         </div>
 
-        {/* balance hero — carte premium. iOS : carte Éclats (pas d'argent réel). */}
-        {money ? (
-          <div className="card-hero p-6 glow-primary">
-            <div className="relative flex items-center justify-between mb-1">
-              <span className="text-sm text-white/70">Solde disponible</span>
-              <button onClick={() => setMask((m) => !m)} aria-label="Mode Confiance"
-                className="press w-8 h-8 grid place-items-center rounded-full bg-white/15 text-white/90 backdrop-blur">
-                {mask ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-            <div className="relative flex items-end gap-2 mb-4">
-              <Amount cents={wallet?.balanceCents || 0} mask={mask} className="text-5xl text-white" />
-              <span className="font-display text-3xl mb-1 text-gold">€</span>
-            </div>
-            <div className="relative flex items-center justify-between">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Pill className="bg-white/15 text-white backdrop-blur"><Zap size={12} /> SEPA Instant</Pill>
-                <Pill className="bg-white/15 text-white backdrop-blur"><Shield size={12} /> Protégé</Pill>
-              </div>
-              <span className="font-display text-lg text-white/40 tracking-wide select-none">DIVARC</span>
-            </div>
+        {/* balance hero — carte premium */}
+        <div className="card-hero p-6 glow-primary">
+          <div className="relative flex items-center justify-between mb-1">
+            <span className="text-sm text-white/70">Solde disponible</span>
+            <button onClick={() => setMask((m) => !m)} aria-label="Mode Confiance"
+              className="press w-8 h-8 grid place-items-center rounded-full bg-white/15 text-white/90 backdrop-blur">
+              {mask ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
           </div>
-        ) : (
-          <button onClick={() => onAction('network')} className="card-hero p-6 glow-primary w-full text-left">
-            <div className="relative flex items-center justify-between mb-1">
-              <span className="text-sm text-white/70">Bienvenue sur</span>
-              <Sparkles size={18} className="text-gold" />
+          <div className="relative flex items-end gap-2 mb-4">
+            <Amount cents={wallet?.balanceCents || 0} mask={mask} className="text-5xl text-white" />
+            <span className="font-display text-3xl mb-1 text-gold">€</span>
+          </div>
+          <div className="relative flex items-center justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Pill className="bg-white/15 text-white backdrop-blur"><Zap size={12} /> SEPA Instant</Pill>
+              <Pill className="bg-white/15 text-white backdrop-blur"><Shield size={12} /> Protégé</Pill>
             </div>
-            <div className="relative mb-4">
-              <div className="font-display text-4xl text-white leading-none">DIVARC</div>
-              <div className="text-white/80 text-sm mt-2">Ton réseau, tes rencontres, ta communauté.</div>
-            </div>
-            <div className="relative flex items-center justify-between">
-              <Pill className="bg-white/15 text-white backdrop-blur"><Users size={12} /> Ouvrir le Réseau</Pill>
-              <span className="font-display text-lg text-white/40 tracking-wide select-none">DIVARC</span>
-            </div>
-          </button>
-        )}
+            <span className="font-display text-lg text-white/40 tracking-wide select-none">DIVARC</span>
+          </div>
+        </div>
 
         {/* quick actions */}
         <div className="grid grid-cols-4 gap-3">
           {actions.map((a) => (
             <button key={a.id} onClick={() => onAction(a.id)} className="press flex flex-col items-center gap-2">
               <Glass className="w-full aspect-square grid place-items-center hairline">
-                <span className="w-11 h-11 rounded-2xl grid place-items-center text-white shadow-md" style={{ background: `linear-gradient(140deg, ${a.c}, ${a.c}c8)` }}>
+                <span className={cx('w-11 h-11 rounded-2xl grid place-items-center text-white shadow-md', a.g)}>
                   <a.icon size={20} />
                 </span>
               </Glass>
@@ -356,7 +313,7 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
 
         {/* carbon */}
         <Glass className="p-4 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-2xl grid place-items-center bg-green-500/12 text-green-600 dark:text-green-400"><Leaf size={20} /></div>
+          <div className="w-11 h-11 rounded-2xl grid place-items-center bg-success/12 text-success"><Leaf size={20} /></div>
           <div className="flex-1">
             <div className="text-sm font-semibold">Empreinte carbone</div>
             <div className="text-xs text-muted-foreground">{wallet?.carbonMonthKg || 0} kg CO₂ ce mois</div>
@@ -368,9 +325,9 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
         <div>
           <SectionTitle title="Mini-apps" action="Tout voir" onAction={() => onTab('discover')} />
           <div className="grid grid-cols-4 gap-3">
-            {MINIAPPS.filter(miniappVisible).slice(0, 4).map((m) => (
+            {MINIAPPS.slice(0, 4).map((m) => (
               <button key={m.id} onClick={() => onTab('discover')} className="press flex flex-col items-center gap-1.5">
-                <div className="w-full aspect-square rounded-2xl grid place-items-center text-white shadow" style={{ background: m.grad }}>
+                <div className="w-full aspect-square rounded-inner grid place-items-center text-white shadow" style={{ background: m.grad }}>
                   <m.icon size={22} />
                 </div>
                 <span className="text-[10px] font-medium text-center leading-tight">{m.name}</span>
@@ -379,40 +336,25 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
           </div>
         </div>
 
-        {/* recent activity — transactions € (masquées dans la version App Store) */}
-        {money && (
-          <div>
-            <SectionTitle title="Activité récente" action="Wallet" onAction={() => onTab('wallet')} />
-            <Glass className="divide-y divide-border/60">
-              {txs?.slice(0, 4).map((t) => <TxRow key={t.id} t={t} mask={mask} />)}
-            </Glass>
-          </div>
-        )}
+        {/* recent activity */}
+        <div>
+          <SectionTitle title="Activité récente" action="Wallet" onAction={() => onTab('wallet')} />
+          <Glass className="divide-y divide-border/60">
+            {txs?.slice(0, 4).map((t) => <TxRow key={t.id} t={t} mask={mask} />)}
+          </Glass>
+        </div>
 
-        {/* teaser — web : DIVARC Social (bientôt) ; iOS : Réseau (fonctionnel, sans placeholder) */}
-        {money ? (
-          <button onClick={() => onTab('social')} className="press w-full text-left">
-            <Glass sheen className="p-5 flex items-center gap-4 relative overflow-hidden">
-              <div className="w-12 h-12 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#F15BB5,#9B5DE5)' }}><Play size={20} /></div>
-              <div className="flex-1">
-                <div className="font-semibold">DIVARC Social</div>
-                <div className="text-xs text-muted-foreground">Vidéos, algorithme transparent, achats en 1 tap</div>
-              </div>
-              <Pill className="bg-gold/15 text-gold">Bientôt</Pill>
-            </Glass>
-          </button>
-        ) : (
-          <button onClick={() => onAction('network')} className="press w-full text-left">
-            <Glass sheen className="p-5 flex items-center gap-4 relative overflow-hidden">
-              <div className="w-12 h-12 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#F15BB5,#9B5DE5)' }}><Users size={20} /></div>
-              <div className="flex-1">
-                <div className="font-semibold">Réseau DIVARC</div>
-                <div className="text-xs text-muted-foreground">Publie, suis, discute · fil transparent</div>
-              </div>
-              <ChevronRight size={18} className="text-muted-foreground" />
-            </Glass>
-          </button>
-        )}
+        {/* social teaser */}
+        <button onClick={() => onTab('social')} className="press w-full text-left">
+          <Glass sheen className="p-5 flex items-center gap-4 relative overflow-hidden">
+            <div className="w-12 h-12 rounded-2xl grid place-items-center text-white grad-love"><Play size={20} /></div>
+            <div className="flex-1">
+              <div className="font-semibold">DIVARC Social</div>
+              <div className="text-xs text-muted-foreground">Vidéos, algorithme transparent, achats en 1 tap</div>
+            </div>
+            <Pill className="bg-gold/15 text-gold">Bientôt</Pill>
+          </Glass>
+        </button>
       </div>
     </Screen>
   )
@@ -449,7 +391,7 @@ function Wallet({ wallet, txs, mask, setMask, onAction }) {
         <div className="grid grid-cols-5 gap-2">
           {actions.map((a) => (
             <button key={a.id} onClick={() => onAction(a.id)} className="press flex flex-col items-center gap-1.5">
-              <Glass className="w-full aspect-square grid place-items-center hairline"><span className="w-10 h-10 rounded-2xl grid place-items-center text-white shadow-md" style={{ background: 'linear-gradient(140deg,#5A67FF,#3A48D8)' }}><a.icon size={18} /></span></Glass>
+              <Glass className="w-full aspect-square grid place-items-center hairline"><span className="w-10 h-10 rounded-2xl grid place-items-center text-white shadow-md grad-primary"><a.icon size={18} /></span></Glass>
               <span className="text-[10px] font-medium">{a.label}</span>
             </button>
           ))}
@@ -510,7 +452,7 @@ const TxRow = ({ t, mask, showRoute }) => (
       </div>
     </div>
     <div className="text-right">
-      <div className={cx('font-display tabular text-sm', t.amountCents > 0 ? 'text-green-600 dark:text-green-400' : 'text-foreground')}>
+      <div className={cx('font-display tabular text-sm', t.amountCents > 0 ? 'text-success' : 'text-foreground')}>
         <Amount cents={t.amountCents} mask={mask} sign /> €
       </div>
       {t.carbonKg > 0 && <div className="text-[10px] text-muted-foreground flex items-center justify-end gap-0.5"><Leaf size={9} /> {t.carbonKg} kg</div>}
@@ -540,7 +482,7 @@ function SendSheet({ contacts, wallet, onClose, onSent }) {
       idempotencyKey: `${target?.handle}-${amount}-${Date.now()}`,
     }) })
     setBusy(false)
-    if (r.error) { alert(r.error); return }
+    if (r.error) { toast(r.error, 'error'); return }
     setResult(r)
     setPhase('success')
     onSent(r)
@@ -606,11 +548,11 @@ function SendSheet({ contacts, wallet, onClose, onSent }) {
         {phase === 'success' && (
           <motion.div key="s" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-8">
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 200, damping: 12 }}
-              className="w-24 h-24 rounded-full grid place-items-center mx-auto mb-6 text-white" style={{ background: 'linear-gradient(135deg,#3FB68B,#2E9370)' }}>
+              className="w-24 h-24 rounded-full grid place-items-center mx-auto mb-6 text-white grad-success">
               <Check size={44} strokeWidth={3} />
             </motion.div>
             <div className="font-display text-4xl mb-2">{eur(amount)} € envoyés</div>
-            <p className="text-muted-foreground mb-8">À {target?.name} · reçu en ~8s ⚡</p>
+            <p className="text-muted-foreground mb-8">À {target?.name} · reçu en ~8s</p>
             <PrimaryBtn onClick={onClose} full>Terminé</PrimaryBtn>
           </motion.div>
         )}
@@ -621,10 +563,15 @@ function SendSheet({ contacts, wallet, onClose, onSent }) {
 
 const Keypad = ({ onPress }) => {
   const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9, '00', 0, 'del']
+  const press = (k) => {
+    if (k === 'del') return onPress('del')
+    if (k === '00') { onPress(0); onPress(0); return }
+    onPress(Number(k))
+  }
   return (
     <div className="grid grid-cols-3 gap-2">
       {keys.map((k) => (
-        <button key={k} onClick={() => onPress(k === 'del' ? 'del' : k === '00' ? 0 : Number(k)) || (k === '00' && onPress(0))}
+        <button key={k} onClick={() => press(k)}
           className="press h-14 rounded-2xl bg-card/60 border border-border font-display text-2xl grid place-items-center">
           {k === 'del' ? <Delete size={22} /> : k}
         </button>
@@ -647,7 +594,7 @@ function EnveloppeSheet({ wallet, onClose, onDone }) {
     setBusy(true)
     const r = await api('/enveloppe/create', { method: 'POST', body: JSON.stringify({ totalCents: total, count, message: msg }) })
     setBusy(false)
-    if (r.error) { alert(r.error); return }
+    if (r.error) { toast(r.error, 'error'); return }
     setEnv(r.enveloppe)
     onDone(r)
     setPhase('created')
@@ -672,7 +619,7 @@ function EnveloppeSheet({ wallet, onClose, onDone }) {
               <span className="font-display text-5xl tabular">{eur(total)}</span><span className="gold-text font-display text-3xl">€</span>
             </div>
             <input type="range" min="500" max="20000" step="500" value={total} onChange={(e) => setTotal(Number(e.target.value))}
-              className="w-full accent-[#E2AA2B]" />
+              className="w-full accent-gold" />
             <label className="text-xs text-muted-foreground block mt-5 mb-2">Nombre de parts</label>
             <div className="flex gap-2">
               {[1, 3, 5, 8].map((n) => (
@@ -727,14 +674,14 @@ function EnveloppeSheet({ wallet, onClose, onDone }) {
 function HongbaoCard({ message, onOpen, opening }) {
   return (
     <button onClick={onOpen} disabled={opening} className="press relative mx-auto block" style={{ width: 220, height: 300 }}>
-      <div className="absolute inset-0 rounded-[26px] shadow-2xl overflow-hidden"
+      <div className="absolute inset-0 rounded-lg shadow-2xl overflow-hidden"
         style={{ background: 'linear-gradient(160deg,#B98514,#E2AA2B 40%,#F0CE7E)' }}>
         <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(circle at 50% 30%, rgba(255,255,255,.6), transparent 60%)' }} />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-white/25 grid place-items-center text-3xl">🧧</div>
         <div className="absolute bottom-6 inset-x-0 text-center text-ink/80 text-sm font-medium px-4">{message}</div>
       </div>
       {/* flap */}
-      <motion.div className="absolute top-0 inset-x-0 origin-top rounded-t-[26px]" style={{ height: 150, background: 'linear-gradient(160deg,#D89A1E,#B98514)', transformStyle: 'preserve-3d' }}
+      <motion.div className="absolute top-0 inset-x-0 origin-top rounded-t-lg" style={{ height: 150, background: 'linear-gradient(160deg,#D89A1E,#B98514)', transformStyle: 'preserve-3d' }}
         animate={opening ? { rotateX: -160 } : { rotateX: 0 }} transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}>
         <div className="absolute inset-0 grid place-items-center text-4xl">✨</div>
       </motion.div>
@@ -820,12 +767,12 @@ function QRReceive({ user }) {
       <div>
         <label className="text-xs text-muted-foreground">Montant (€) — optionnel</label>
         <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="ex : 12,50"
-          className="w-full mt-1 rounded-xl border border-border bg-card/60 px-4 py-3 text-lg" />
+          className="w-full mt-1 rounded-inner border border-border bg-card/60 px-4 py-3 text-lg" />
       </div>
       <div>
         <label className="text-xs text-muted-foreground">Note — optionnel</label>
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="ex : Déjeuner"
-          className="w-full mt-1 rounded-xl border border-border bg-card/60 px-4 py-2.5 text-sm" />
+          className="w-full mt-1 rounded-inner border border-border bg-card/60 px-4 py-2.5 text-sm" />
       </div>
       <PrimaryBtn onClick={generate} full disabled={busy}>
         {busy ? <RefreshCw className="animate-spin" size={16} /> : <><QrCode size={16} /> Générer le QR</>}
@@ -871,7 +818,7 @@ function QRPay({ onDone, initialCode, onConsumed }) {
   if (done) {
     return (
       <Glass sheen className="p-8 text-center">
-        <div className="w-16 h-16 mx-auto rounded-full grid place-items-center bg-green-500/15 text-green-600 dark:text-green-400 mb-3"><Check size={32} /></div>
+        <div className="w-16 h-16 mx-auto rounded-full grid place-items-center bg-success/15 text-success mb-3"><Check size={32} /></div>
         <div className="font-display text-2xl">Paiement envoyé !</div>
         <div className="text-muted-foreground mt-1">{money(done.amountCents)} à {done.payee}</div>
         <div className="text-sm text-muted-foreground mt-3">Nouveau solde : {money(done.balanceCents)}</div>
@@ -893,10 +840,10 @@ function QRPay({ onDone, initialCode, onConsumed }) {
           <div>
             <label className="text-xs text-muted-foreground">Montant à envoyer (€)</label>
             <input value={payAmount} onChange={(e) => setPayAmount(e.target.value)} inputMode="decimal" autoFocus placeholder="0,00"
-              className="w-full mt-1 rounded-xl border border-border bg-card/60 px-4 py-3 text-lg text-center" />
+              className="w-full mt-1 rounded-inner border border-border bg-card/60 px-4 py-3 text-lg text-center" />
           </div>
         )}
-        {error && <div className="text-sm text-rose-500">{error}</div>}
+        {error && <div className="text-sm text-danger">{error}</div>}
         <div className="flex gap-2">
           <GhostBtn onClick={() => { setDetail(null); setError('') }}>Annuler</GhostBtn>
           <PrimaryBtn onClick={pay} full disabled={busy || (!detail.amountCents && !payAmount)}>
@@ -910,13 +857,13 @@ function QRPay({ onDone, initialCode, onConsumed }) {
     <Glass className="p-6 space-y-4">
       <p className="text-sm text-muted-foreground">Saisis le code du QR à payer (8 caractères).</p>
       <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={8} placeholder="ABCD1234"
-        className="w-full rounded-xl border border-border bg-card/60 px-4 py-3 text-center text-2xl font-mono tracking-[0.3em]" />
-      {error && <div className="text-sm text-rose-500 text-center">{error}</div>}
+        className="w-full rounded-inner border border-border bg-card/60 px-4 py-3 text-center text-2xl font-mono tracking-[0.3em]" />
+      {error && <div className="text-sm text-danger text-center">{error}</div>}
       <PrimaryBtn onClick={check} full disabled={busy || code.trim().length < 8}>
         {busy ? <RefreshCw className="animate-spin" size={16} /> : <>Continuer <ChevronRight size={16} /></>}
       </PrimaryBtn>
-      <Glass className="p-3 flex items-center gap-3 !bg-green-500/10">
-        <Shield size={18} className="text-green-600 dark:text-green-400" />
+      <Glass className="p-3 flex items-center gap-3 !bg-success/10">
+        <Shield size={18} className="text-success" />
         <div className="text-xs"><b>Scam shield</b> — le bénéficiaire et le montant s’affichent avant tout paiement.</div>
       </Glass>
     </Glass>
@@ -924,12 +871,6 @@ function QRPay({ onDone, initialCode, onConsumed }) {
 }
 
 /* ============================= DISCOVER ============================= */
-// Sur iOS (App Store V1), on n'affiche QUE les mini-apps réellement fonctionnelles
-// (Apple rejette les fonctions « Bientôt »/placeholder — règle 2.1). Le marketplace est
-// masqué car son paiement passe par le wallet € (masqué sur iOS).
-const IOS_MINIAPPS = new Set(['messages', 'assistant'])
-const miniappVisible = (m) => showMoneyWallet() || IOS_MINIAPPS.has(m.id)
-
 const MINIAPPS = [
   { id: 'delivery', name: 'Livraison', cat: 'Repas', icon: Utensils, grad: 'linear-gradient(135deg,#F15BB5,#F97C4E)', why: 'Souvent utilisée le midi' },
   { id: 'messages', name: 'Messages', cat: 'Social', icon: MessageCircle, grad: 'linear-gradient(135deg,#4353F0,#6E7BF5)', why: 'Ta messagerie DIVARC' },
@@ -944,7 +885,7 @@ function Discover({ onTab, onOpenDating, onOpenArcade, onOpenNetwork }) {
   const [why, setWhy] = useState(null)
   const cats = ['Tout', 'Repas', 'Transport', 'Shopping', 'Événements', 'Santé']
   const [cat, setCat] = useState('Tout')
-  const list = MINIAPPS.filter((m) => miniappVisible(m) && (cat === 'Tout' || m.cat === cat))
+  const list = MINIAPPS.filter((m) => cat === 'Tout' || m.cat === cat)
   return (
     <Screen>
       <div className="cascade space-y-5">
@@ -953,7 +894,7 @@ function Discover({ onTab, onOpenDating, onOpenArcade, onOpenNetwork }) {
           <Glass className="w-10 h-10 grid place-items-center press"><Search size={18} /></Glass>
         </div>
         {/* Rencontres — vedette */}
-        <button onClick={onOpenDating} className="press w-full text-left rounded-[var(--radius)] p-5 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#EF476F,#9B5DE5)' }}>
+        <button onClick={onOpenDating} className="press w-full text-left rounded-[var(--radius)] p-5 relative overflow-hidden grad-love">
           <div className="relative flex items-center gap-4 text-white">
             <div className="w-14 h-14 rounded-2xl grid place-items-center bg-white/15 backdrop-blur"><Heart size={26} fill="#fff" /></div>
             <div className="flex-1 min-w-0">
@@ -965,7 +906,7 @@ function Discover({ onTab, onOpenDating, onOpenArcade, onOpenNetwork }) {
         </button>
 
         {/* Réseau (nouveau) */}
-        <button onClick={onOpenNetwork} className="press w-full text-left rounded-[var(--radius)] p-5 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+        <button onClick={onOpenNetwork} className="press w-full text-left rounded-[var(--radius)] p-5 relative overflow-hidden grad-primary">
           <div className="relative flex items-center gap-4 text-white">
             <div className="w-14 h-14 rounded-2xl grid place-items-center bg-white/15 backdrop-blur"><Users size={26} /></div>
             <div className="flex-1 min-w-0">
@@ -1004,7 +945,7 @@ function Discover({ onTab, onOpenDating, onOpenArcade, onOpenNetwork }) {
           {list.map((m) => (
             <div key={m.id} className="flex flex-col items-center gap-2">
               <div onClick={() => { if (m.id === 'shops') onTab && onTab('market'); else if (m.id === 'messages') onTab && onTab('messages'); else if (m.id === 'wallet') onTab && onTab('wallet'); else if (m.id === 'assistant') onTab && onTab('ai'); else setWhy(m) }}
-                className="press cursor-pointer w-full aspect-square rounded-3xl grid place-items-center text-white shadow-lg relative" style={{ background: m.grad }}>
+                className="press cursor-pointer w-full aspect-square rounded-inner grid place-items-center text-white shadow-lg relative" style={{ background: m.grad }}>
                 <m.icon size={28} />
                 <button onClick={(e) => { e.stopPropagation(); setWhy(m) }} aria-label="Pourquoi cette app"
                   className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-card border border-border grid place-items-center text-[10px] font-bold text-primary shadow">?</button>
@@ -1015,14 +956,14 @@ function Discover({ onTab, onOpenDating, onOpenArcade, onOpenNetwork }) {
         </div>
         <button onClick={() => onTab && onTab('market')} className="press w-full text-left">
           <Glass sheen className="p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#9B5DE5,#4353F0)' }}><ShoppingBag size={20} /></div>
+            <div className="w-12 h-12 rounded-2xl grid place-items-center text-white grad-violet"><ShoppingBag size={20} /></div>
             <div className="flex-1"><div className="font-semibold">Marketplace</div><div className="text-xs text-muted-foreground">Vends & achète · paiement au wallet</div></div>
             <ChevronRight size={18} className="text-muted-foreground" />
           </Glass>
         </button>
         <button onClick={() => onTab && onTab('store')} className="press w-full text-left">
           <Glass sheen className="p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#00BBF9,#4353F0)' }}><Compass size={20} /></div>
+            <div className="w-12 h-12 rounded-2xl grid place-items-center text-white grad-cyan"><Compass size={20} /></div>
             <div className="flex-1"><div className="font-semibold">App Store</div><div className="text-xs text-muted-foreground">Connecte tes apps · identité cloisonnée</div></div>
             <ChevronRight size={18} className="text-muted-foreground" />
           </Glass>
@@ -1048,7 +989,7 @@ function Discover({ onTab, onOpenDating, onOpenArcade, onOpenNetwork }) {
         {why && (
           <Sheet onClose={() => setWhy(null)} title="Pourquoi cette app ?">
             <div className="text-center py-4">
-              <div className="w-16 h-16 rounded-3xl grid place-items-center text-white mx-auto mb-4" style={{ background: why.grad }}><why.icon size={30} /></div>
+              <div className="w-16 h-16 rounded-inner grid place-items-center text-white mx-auto mb-4" style={{ background: why.grad }}><why.icon size={30} /></div>
               <div className="font-semibold text-lg mb-2">{why.name}</div>
               <p className="text-sm text-muted-foreground mb-4">Recommandée car : <b className="text-foreground">{why.why}</b>. Aucun paiement pour être mieux classée.</p>
               <GhostBtn onClick={() => setWhy(null)}><Settings2 size={15} /> Régler mes préférences</GhostBtn>
@@ -1062,7 +1003,7 @@ function Discover({ onTab, onOpenDating, onOpenArcade, onOpenNetwork }) {
 const SocialTeaser = () => (
   <Glass sheen className="p-5 relative overflow-hidden">
     <div className="flex items-center gap-3 mb-3">
-      <div className="w-11 h-11 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#F15BB5,#9B5DE5)' }}><Play size={20} /></div>
+      <div className="w-11 h-11 rounded-2xl grid place-items-center text-white grad-love"><Play size={20} /></div>
       <div><div className="font-semibold">DIVARC Social</div><div className="text-xs text-muted-foreground">Réseau vidéo · algorithme transparent</div></div>
     </div>
     <p className="text-sm text-muted-foreground">Vidéos achetables en 1 tap, pourboires au créateur, « Pourquoi cette vidéo ? » et flux chronologique au choix.</p>
@@ -1070,51 +1011,11 @@ const SocialTeaser = () => (
 )
 
 /* ============================= PROFILE ============================= */
-function FaceIdRow() {
-  const [avail, setAvail] = useState(false)
-  const [on, setOn] = useState(false)
-  useEffect(() => {
-    (async () => {
-      if (!isNative()) return
-      setAvail(await biometricAvailable())
-      setOn(localStorage.getItem('divarc_faceid_lock') === '1')
-    })()
-  }, [])
-  if (!avail) return null
-  const toggle = async () => {
-    if (!on) { const ok = await biometricVerify('Activer le verrouillage'); if (!ok) return }
-    const next = !on
-    setOn(next); localStorage.setItem('divarc_faceid_lock', next ? '1' : '0')
-  }
-  return (
-    <div className="flex items-center justify-between p-3.5">
-      <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><Fingerprint size={18} /></div><span className="font-medium text-sm">Verrouiller avec Face ID</span></div>
-      <Toggle on={on} onClick={toggle} />
-    </div>
-  )
-}
-
 function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout, onOpenPlus }) {
   const plusActive = !!(user?.plusUntil && new Date(user.plusUntil) > new Date())
   const [snd, setSnd] = useState(true)
   useEffect(() => { setSnd(soundEnabled()) }, [])
   const toggleSound = () => { const v = !snd; setSnd(v); setSoundEnabled(v); if (v) playPing() }
-  const exportData = async () => {
-    const d = await api('/net/me/export')
-    if (d?.error) return alert("Export indisponible pour le moment.")
-    const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = 'mes-donnees-divarc.json'; a.click()
-    URL.revokeObjectURL(url)
-  }
-  const deleteAccount = async () => {
-    const t = prompt('Cette action est IRRÉVERSIBLE : ton compte DIVARC et toutes tes données seront définitivement supprimés.\n\nÉcris SUPPRIMER pour confirmer :')
-    if (t !== 'SUPPRIMER') return
-    const r = await api('/account/delete', { method: 'POST', body: JSON.stringify({ confirm: 'SUPPRIMER' }) })
-    if (r?.error) return alert(r.error)
-    clearToken(); setUser(null)
-    alert('Ton compte a été supprimé. À bientôt.')
-  }
 
   // Notifications push (système) : état + activation
   const [push, setPush] = useState({ supported: true, permission: 'default', subscribed: false })
@@ -1207,7 +1108,6 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout, onOp
               <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><EyeOff size={18} /></div><span className="font-medium text-sm">Mode Confiance (masquer montants)</span></div>
               <Toggle on={mask} onClick={() => setMask((m) => !m)} />
             </div>
-            <FaceIdRow />
             <div className="p-3.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60"><Bell size={18} /></div>
@@ -1228,23 +1128,16 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout, onOp
         <div>
           <SectionTitle title="Mes données (RGPD)" />
           <div className="grid grid-cols-2 gap-3">
-            <GhostBtn onClick={exportData}><Download size={16} /> Exporter</GhostBtn>
-            <button onClick={deleteAccount} className="press inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 font-medium border border-destructive/30 bg-destructive/10 text-destructive">
-              <Trash2 size={16} /> Supprimer le compte
+            <GhostBtn onClick={() => {}}><Download size={16} /> Exporter</GhostBtn>
+            <button className="press inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 font-medium border border-destructive/30 bg-destructive/10 text-destructive">
+              <Trash2 size={16} /> Supprimer
             </button>
           </div>
         </div>
         <button onClick={onLogout} className="press w-full inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 font-medium border border-border bg-card/60 text-muted-foreground">
           <ArrowLeft size={16} /> Se déconnecter
         </button>
-        <div className="text-center text-xs text-muted-foreground pb-2 space-y-1">
-          <div className="flex items-center justify-center gap-3">
-            <a href="https://www.divarc.fr/confidentialite" target="_blank" rel="noreferrer" className="underline">Confidentialité</a>
-            <span>·</span>
-            <a href="https://www.divarc.fr/conditions" target="_blank" rel="noreferrer" className="underline">Conditions</a>
-          </div>
-          <div>DIVARC · Hébergé dans l’UE · divarc.fr</div>
-        </div>
+        <div className="text-center text-xs text-muted-foreground pb-2">DIVARC · Hébergé dans l\u2019UE · divarc.fr</div>
       </div>
     </Screen>
   )
@@ -1309,7 +1202,7 @@ function DiscoverySettings({ user, setUser }) {
               className="flex-1 bg-transparent outline-none text-sm disabled:opacity-60" />
             {handleChanged && !locked && (checking
               ? <RefreshCw size={15} className="animate-spin text-muted-foreground" />
-              : avail === true ? <Check size={15} className="text-green-500" />
+              : avail === true ? <Check size={15} className="text-success" />
               : avail === false ? <span className="text-[11px] text-destructive">indispo</span> : null)}
           </div>
           <p className="text-[11px] text-muted-foreground mt-1">
@@ -1322,7 +1215,7 @@ function DiscoverySettings({ user, setUser }) {
           <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" inputMode="tel" placeholder="06 12 34 56 78"
             className="w-full rounded-2xl border border-border bg-card/60 px-3 py-2.5 mt-1.5 text-sm focus:border-primary outline-none transition-colors" />
         </div>
-        {msg && <p className={cx('text-xs', msg.includes('✓') ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground')}>{msg}</p>}
+        {msg && <p className={cx('text-xs', msg.includes('✓') ? 'text-success' : 'text-muted-foreground')}>{msg}</p>}
         <PrimaryBtn onClick={save} full disabled={busy}>
           {busy ? <RefreshCw className="animate-spin" size={16} /> : <>Enregistrer</>}
         </PrimaryBtn>
@@ -1350,97 +1243,9 @@ const Row = ({ icon, title, sub, ok }) => (
   <div className="flex items-center gap-3 p-3.5">
     <div className="w-10 h-10 rounded-2xl grid place-items-center bg-muted/60 text-muted-foreground">{icon}</div>
     <div className="flex-1"><div className="font-medium text-sm">{title}</div><div className="text-xs text-muted-foreground">{sub}</div></div>
-    {ok ? <Pill className="bg-green-500/12 text-green-600 dark:text-green-400"><Check size={11} /> OK</Pill> : <ChevronRight size={18} className="text-muted-foreground" />}
+    {ok ? <Pill className="bg-success/12 text-success"><Check size={11} /> OK</Pill> : <ChevronRight size={18} className="text-muted-foreground" />}
   </div>
 )
-const Toggle = ({ on, onClick }) => (
-  <button onClick={onClick} role="switch" aria-checked={on}
-    className={cx('press w-12 h-7 rounded-full p-0.5 transition-colors', on ? 'bg-primary' : 'bg-muted')}>
-    <motion.div className="w-6 h-6 rounded-full bg-white shadow" animate={{ x: on ? 20 : 0 }} transition={{ type: 'spring', stiffness: 500, damping: 30 }} />
-  </button>
-)
-
-/* ============================= MESSAGES ============================= */
-function Messages({ contacts }) {
-  const [active, setActive] = useState(null)
-  const convos = (contacts || []).map((c, i) => ({
-    ...c,
-    last: ['On se voit à 20h ? 🍕', 'Je t\u2019envoie ma part', 'Merci pour l\u2019enveloppe 🧧', 'Ok parfait', 'À demain !'][i % 5],
-    time: ['12:40', '11:02', 'Hier', 'Lun', 'Dim'][i % 5],
-    unread: i === 0 ? 2 : 0,
-  }))
-  useEffect(() => { if (contacts?.length && !active) setActive(convos[0]) }, [contacts])
-  return (
-    <div className="min-h-[100dvh] bg-app-gradient">
-      <div className="mx-auto max-w-5xl px-4 pt-6 pb-40 grid md:grid-cols-[320px_1fr] gap-4">
-        {/* list */}
-        <div className={cx(active && 'hidden md:block')}>
-          <h1 className="font-display text-3xl mb-4">Messages</h1>
-          <Glass className="p-2 space-y-1">
-            {convos.map((c) => (
-              <button key={c.id} onClick={() => setActive(c)}
-                className={cx('press w-full flex items-center gap-3 p-2.5 rounded-2xl text-left', active?.id === c.id && 'bg-primary/10')}>
-                <Avatar c={c} size={46} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1 font-medium text-sm">{c.name.split(' ')[0]} {c.verified && <BadgeCheck size={13} className="text-primary" />}</div>
-                  <div className="text-xs text-muted-foreground truncate">{c.last}</div>
-                </div>
-                <div className="text-right"><div className="text-[10px] text-muted-foreground">{c.time}</div>{c.unread > 0 && <div className="mt-1 inline-grid place-items-center w-5 h-5 rounded-full bg-primary text-white text-[10px]">{c.unread}</div>}</div>
-              </button>
-            ))}
-          </Glass>
-        </div>
-        {/* chat */}
-        <div className={cx(!active && 'hidden md:block')}>
-          {active && <ChatView c={active} onBack={() => setActive(null)} />}
-        </div>
-      </div>
-    </div>
-  )
-}
-function ChatView({ c, onBack }) {
-  const [msgs, setMsgs] = useState([
-    { me: false, t: 'Salut ! Tu as vu le resto ?' },
-    { me: true, t: 'Oui carrément, on y va ce soir 🍕' },
-    { pay: true, amount: 2500, status: 'reçu' },
-    { me: false, t: 'Merci pour ta part ⚡' },
-  ])
-  const [input, setInput] = useState('')
-  const ref = useRef()
-  useEffect(() => { ref.current?.scrollTo(0, ref.current.scrollHeight) }, [msgs])
-  const send = () => { if (!input.trim()) return; setMsgs((m) => [...m, { me: true, t: input }]); setInput('') }
-  return (
-    <Glass className="flex flex-col h-[calc(100dvh-120px)] md:h-[calc(100dvh-64px)]">
-      <div className="flex items-center gap-3 p-4 border-b border-border/60">
-        <button onClick={onBack} className="md:hidden press"><ArrowLeft size={20} /></button>
-        <Avatar c={c} size={40} />
-        <div className="flex-1"><div className="font-medium text-sm flex items-center gap-1">{c.name} {c.verified && <BadgeCheck size={13} className="text-primary" />}</div><div className="text-xs text-green-600 dark:text-green-400">en ligne</div></div>
-        <Lock size={16} className="text-muted-foreground" title="Chiffré de bout en bout" />
-      </div>
-      <div ref={ref} className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
-        {msgs.map((m, i) => m.pay ? (
-          <div key={i} className="flex justify-center">
-            <Glass className="p-3 !bg-gold/10 max-w-[220px] text-center">
-              <div className="text-xs text-muted-foreground mb-1">Paiement reçu</div>
-              <div className="font-display text-2xl">{eur(m.amount)} €</div>
-              <Pill className="bg-green-500/15 text-green-600 dark:text-green-400 mt-1"><Zap size={11} /> Encaissé ⚡8s</Pill>
-            </Glass>
-          </div>
-        ) : (
-          <div key={i} className={cx('flex', m.me ? 'justify-end' : 'justify-start')}>
-            <div className={cx('max-w-[75%] px-4 py-2.5 rounded-2xl text-sm', m.me ? 'bg-primary text-white rounded-br-md' : 'bg-card border border-border rounded-bl-md')}>{m.t}</div>
-          </div>
-        ))}
-      </div>
-      <div className="p-3 border-t border-border/60 flex items-center gap-2">
-        <button className="press w-10 h-10 rounded-full grid place-items-center bg-muted/60 text-primary"><Plus size={20} /></button>
-        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()}
-          placeholder="Message…" className="flex-1 rounded-full border border-border bg-card/60 px-4 py-2.5 text-sm" />
-        <button onClick={send} className="press w-10 h-10 rounded-full grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}><SendIcon size={18} /></button>
-      </div>
-    </Glass>
-  )
-}
 
 /* ============================= shells ============================= */
 const Screen = ({ children }) => (
@@ -1477,7 +1282,6 @@ function Sheet({ children, onClose, title, gold }) {
 function App() {
   const { theme, setTheme } = useTheme()
   const [booted, setBooted] = useState(false)
-  const [locked, setLocked] = useState(false)
   const [tab, setTab] = useState('hub')
   const [mask, setMask] = useState(false)
   const [mktImmersive, setMktImmersive] = useState(false)
@@ -1503,7 +1307,7 @@ function App() {
       case 'contact': // demande de contact / acceptation -> panneau Découverte & Demandes
         setPendingDiscovery(true); goTab('messages'); break
       case 'payment':
-        goTab(showMoneyWallet() ? 'wallet' : 'hub'); break
+        goTab('wallet'); break
       case 'sale': case 'offer':
         goTab('market'); break
       case 'social':
@@ -1537,7 +1341,7 @@ function App() {
     (async () => {
       if (getToken()) {
         const me = await api('/auth/me')
-        if (!me.error) { setUser(me); await load(); registerPush() }
+        if (!me.error) { setUser(me); await load() }
         else clearToken()
       }
       setBooted(true)
@@ -1611,57 +1415,33 @@ function App() {
     return () => window.removeEventListener('storage', onStorage)
   }, [load])
 
-  const onAuthed = async (u) => { setUser(u); setTab('hub'); await load(); registerPush() }
+  const onAuthed = async (u) => { setUser(u); setTab('hub'); await load() }
   const logout = async () => { await api('/auth/logout', { method: 'POST' }); clearToken(); setUser(null); setWallet(null); setTxs([]); setContacts([]) }
 
   const handleAction = (id) => {
-    // Actions sociales (Hub iOS)
-    if (id === 'network') return setOverlay('network')
-    if (id === 'dating') return setOverlay('dating')
-    if (id === 'arcade') return setOverlay('arcade')
-    if (id === 'eclats') return setOverlay('eclats')
-    // Actions argent réel : indisponibles dans la version App Store (conformité Apple)
-    if (!showMoneyWallet()) return
     if (id === 'send') return setOverlay('send')
     if (id === 'enveloppe') return setOverlay('enveloppe')
     if (id === 'qr' || id === 'receive') return setTab('qr')
     if (id === 'split') return setOverlay('send')
     if (id === 'coffre') return setOverlay('coffre')
+    if (id === 'eclats') return setOverlay('eclats')
   }
   const goTab = (t) => { setMktImmersive(false); setTab(t) }
 
-  // Verrouillage biométrique (Face ID / Touch ID) — natif uniquement, si activé par l'utilisateur.
-  const unlock = useCallback(async () => {
-    const ok = await biometricVerify('Déverrouille DIVARC')
-    if (ok) setLocked(false)
-  }, [])
-  useEffect(() => {
-    if (isNative() && localStorage.getItem('divarc_faceid_lock') === '1') setLocked(true)
-  }, [])
-  useEffect(() => { if (locked) unlock() }, [locked, unlock])
-
   if (!booted) return <Boot />
   if (!user) return <Login onAuthed={onAuthed} />
-  if (locked) return (
-    <div className="min-h-[100dvh] bg-app-gradient grid place-items-center p-6 text-center">
-      <div>
-        <div className="w-16 h-16 rounded-3xl grid place-items-center mx-auto mb-4 text-white" style={{ background: 'linear-gradient(135deg,#5A67FF,#2C39C7)' }}><Lock size={28} /></div>
-        <div className="font-display text-2xl mb-1">DIVARC est verrouillé</div>
-        <div className="text-sm text-muted-foreground mb-5">Déverrouille avec Face ID pour continuer.</div>
-        <button onClick={unlock} className="press px-6 py-3 rounded-full font-semibold text-white" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>Déverrouiller</button>
-      </div>
-    </div>
-  )
 
   return (
     <div className="font-body text-foreground">
       <AnimatePresence>
         <OfflineBanner online={online} syncing={syncing} />
+        <ToastHost />
+        <ConfirmHost />
       </AnimatePresence>
       <AnimatePresence initial={false}>
         <motion.div key={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
           {tab === 'hub' && <Hub user={user} wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} onTab={goTab} onNotif={handleNotif} />}
-          {tab === 'wallet' && showMoneyWallet() && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
+          {tab === 'wallet' && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
           {tab === 'messages' && <Messaging me={user} openConvId={pendingConv} onConsumed={() => setPendingConv(null)} openDiscovery={pendingDiscovery} onDiscoveryConsumed={() => setPendingDiscovery(false)} />}
           {tab === 'qr' && <QRScreen user={user} onDone={() => load()} initialCode={pendingPay} onConsumed={() => setPendingPay(null)} />}
           {tab === 'discover' && <Discover onTab={goTab} onOpenDating={() => setOverlay('dating')} onOpenArcade={() => setOverlay('arcade')} onOpenNetwork={() => setOverlay('network')} />}
@@ -1677,8 +1457,7 @@ function App() {
 
       {tab !== 'social' && tab !== 'ai' && !(tab === 'market' && mktImmersive) && (
         <button onClick={() => setTab('ai')} aria-label="Ouvrir DIVA, l'assistant IA"
-          className="press fixed right-4 bottom-24 z-40 w-14 h-14 rounded-full grid place-items-center text-white shadow-xl ring-4 ring-background"
-          style={{ background: 'linear-gradient(135deg,#4353F0,#9B5DE5)' }}>
+          className="press fixed right-4 bottom-24 z-40 w-14 h-14 rounded-full grid place-items-center text-white shadow-xl ring-4 ring-background grad-diva">
           <Sparkles size={24} />
           <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-gold border-2 border-background" />
         </button>
@@ -1709,7 +1488,7 @@ const ComingSoon = () => (
 const Boot = () => (
   <div className="min-h-[100dvh] bg-app-gradient grid place-items-center">
     <div className="text-center">
-      <div className="w-16 h-16 rounded-3xl grid place-items-center mx-auto mb-4 float-slow" style={{ background: 'linear-gradient(135deg,#4353F0,#2C39C7)' }}>
+      <div className="w-16 h-16 rounded-3xl grid place-items-center mx-auto mb-4 float-slow grad-primary">
         <span className="font-display italic text-gold text-4xl">D</span>
       </div>
       <div className="font-display text-2xl">DIVARC</div>
