@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { X, Star, Check, RefreshCw, Heart, Eye, Zap, ShieldOff, Sparkles, Infinity as InfinityIcon } from 'lucide-react'
 import { api } from '@/lib/api'
+import { showPaidPlans } from '@/lib/platform'
 
 const eur = (c) => (c / 100).toFixed(2).replace('.', ',')
 const PERK_ICONS = [InfinityIcon, Eye, ShieldOff, Zap, Sparkles, Heart]
@@ -79,6 +80,13 @@ export default function PlusSheet({ onClose }) {
               <div className="text-center text-sm text-muted-foreground mb-3">Ne se renouvellera pas automatiquement.</div>
             )}
           </>
+        ) : !showPaidPlans() ? (
+          // iOS App Store V1 : pas de vente hors achats intégrés Apple -> on présente les
+          // avantages sans CTA d'achat (conforme règle 3.1.1). Achat dispo sur divarc.fr.
+          <div className="text-center text-sm text-muted-foreground mb-4 rounded-2xl border border-border bg-card/60 p-4">
+            L'abonnement DIVARC+ n'est pas encore disponible à l'achat dans l'app.
+            <br />Retrouve tous ces avantages prochainement.
+          </div>
         ) : (
           <>
             {!data.trialUsed && (

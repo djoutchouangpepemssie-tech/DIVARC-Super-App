@@ -12,6 +12,7 @@ import {
   Landmark, CreditCard, Settings2, Trash2, Download, Users, Play, AtSign, Phone
 } from 'lucide-react'
 import { api, getToken, setToken, clearToken, flushQueue, pendingCount } from '@/lib/api'
+import { isAppStoreBuild, showMoneyWallet } from '@/lib/platform'
 import { connectRealtime, disconnectRealtime, onRealtime } from '@/lib/realtime'
 import { installAudioUnlock, playPing, soundEnabled, setSoundEnabled } from '@/lib/sound'
 import { registerServiceWorker, getPushStatus, enablePush, disablePush } from '@/lib/push'
@@ -269,11 +270,17 @@ function TabBar({ active, onChange }) {
 function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
   const hour = new Date().getHours()
   const greet = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bel après-midi' : 'Bonsoir'
-  const actions = [
+  const money = showMoneyWallet()
+  const actions = money ? [
     { id: 'send', label: 'Envoyer', icon: ArrowUpRight, c: '#4353F0' },
     { id: 'receive', label: 'Recevoir', icon: ArrowDownLeft, c: '#3FB68B' },
     { id: 'qr', label: 'QR', icon: QrCode, c: '#9B5DE5' },
     { id: 'enveloppe', label: 'Enveloppe', icon: Gift, c: '#E2AA2B' },
+  ] : [
+    { id: 'network', label: 'Réseau', icon: Users, c: '#4353F0' },
+    { id: 'dating', label: 'Rencontres', icon: Heart, c: '#E5488B' },
+    { id: 'arcade', label: 'Arcade', icon: Zap, c: '#9B5DE5' },
+    { id: 'eclats', label: 'Éclats', icon: Sparkles, c: '#E2AA2B' },
   ]
   return (
     <Screen>
@@ -289,27 +296,44 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
           <NotificationBell onOpen={onNotif} />
         </div>
 
-        {/* balance hero — carte premium */}
-        <div className="card-hero p-6 glow-primary">
-          <div className="relative flex items-center justify-between mb-1">
-            <span className="text-sm text-white/70">Solde disponible</span>
-            <button onClick={() => setMask((m) => !m)} aria-label="Mode Confiance"
-              className="press w-8 h-8 grid place-items-center rounded-full bg-white/15 text-white/90 backdrop-blur">
-              {mask ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </div>
-          <div className="relative flex items-end gap-2 mb-4">
-            <Amount cents={wallet?.balanceCents || 0} mask={mask} className="text-5xl text-white" />
-            <span className="font-display text-3xl mb-1 text-gold">€</span>
-          </div>
-          <div className="relative flex items-center justify-between">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Pill className="bg-white/15 text-white backdrop-blur"><Zap size={12} /> SEPA Instant</Pill>
-              <Pill className="bg-white/15 text-white backdrop-blur"><Shield size={12} /> Protégé</Pill>
+        {/* balance hero — carte premium. iOS : carte Éclats (pas d'argent réel). */}
+        {money ? (
+          <div className="card-hero p-6 glow-primary">
+            <div className="relative flex items-center justify-between mb-1">
+              <span className="text-sm text-white/70">Solde disponible</span>
+              <button onClick={() => setMask((m) => !m)} aria-label="Mode Confiance"
+                className="press w-8 h-8 grid place-items-center rounded-full bg-white/15 text-white/90 backdrop-blur">
+                {mask ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
-            <span className="font-display text-lg text-white/40 tracking-wide select-none">DIVARC</span>
+            <div className="relative flex items-end gap-2 mb-4">
+              <Amount cents={wallet?.balanceCents || 0} mask={mask} className="text-5xl text-white" />
+              <span className="font-display text-3xl mb-1 text-gold">€</span>
+            </div>
+            <div className="relative flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Pill className="bg-white/15 text-white backdrop-blur"><Zap size={12} /> SEPA Instant</Pill>
+                <Pill className="bg-white/15 text-white backdrop-blur"><Shield size={12} /> Protégé</Pill>
+              </div>
+              <span className="font-display text-lg text-white/40 tracking-wide select-none">DIVARC</span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <button onClick={() => onAction('network')} className="card-hero p-6 glow-primary w-full text-left">
+            <div className="relative flex items-center justify-between mb-1">
+              <span className="text-sm text-white/70">Bienvenue sur</span>
+              <Sparkles size={18} className="text-gold" />
+            </div>
+            <div className="relative mb-4">
+              <div className="font-display text-4xl text-white leading-none">DIVARC</div>
+              <div className="text-white/80 text-sm mt-2">Ton réseau, tes rencontres, ta communauté.</div>
+            </div>
+            <div className="relative flex items-center justify-between">
+              <Pill className="bg-white/15 text-white backdrop-blur"><Users size={12} /> Ouvrir le Réseau</Pill>
+              <span className="font-display text-lg text-white/40 tracking-wide select-none">DIVARC</span>
+            </div>
+          </button>
+        )}
 
         {/* quick actions */}
         <div className="grid grid-cols-4 gap-3">
@@ -342,7 +366,7 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
         <div>
           <SectionTitle title="Mini-apps" action="Tout voir" onAction={() => onTab('discover')} />
           <div className="grid grid-cols-4 gap-3">
-            {MINIAPPS.slice(0, 4).map((m) => (
+            {MINIAPPS.filter((m) => money || m.id !== 'wallet').slice(0, 4).map((m) => (
               <button key={m.id} onClick={() => onTab('discover')} className="press flex flex-col items-center gap-1.5">
                 <div className="w-full aspect-square rounded-2xl grid place-items-center text-white shadow" style={{ background: m.grad }}>
                   <m.icon size={22} />
@@ -353,13 +377,15 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
           </div>
         </div>
 
-        {/* recent activity */}
-        <div>
-          <SectionTitle title="Activité récente" action="Wallet" onAction={() => onTab('wallet')} />
-          <Glass className="divide-y divide-border/60">
-            {txs?.slice(0, 4).map((t) => <TxRow key={t.id} t={t} mask={mask} />)}
-          </Glass>
-        </div>
+        {/* recent activity — transactions € (masquées dans la version App Store) */}
+        {money && (
+          <div>
+            <SectionTitle title="Activité récente" action="Wallet" onAction={() => onTab('wallet')} />
+            <Glass className="divide-y divide-border/60">
+              {txs?.slice(0, 4).map((t) => <TxRow key={t.id} t={t} mask={mask} />)}
+            </Glass>
+          </div>
+        )}
 
         {/* social teaser */}
         <button onClick={() => onTab('social')} className="press w-full text-left">
@@ -897,7 +923,7 @@ function Discover({ onTab, onOpenDating, onOpenArcade, onOpenNetwork }) {
   const [why, setWhy] = useState(null)
   const cats = ['Tout', 'Repas', 'Transport', 'Shopping', 'Événements', 'Santé']
   const [cat, setCat] = useState('Tout')
-  const list = MINIAPPS.filter((m) => cat === 'Tout' || m.cat === cat)
+  const list = MINIAPPS.filter((m) => (showMoneyWallet() || m.id !== 'wallet') && (cat === 'Tout' || m.cat === cat))
   return (
     <Screen>
       <div className="cascade space-y-5">
@@ -1407,7 +1433,7 @@ function App() {
       case 'contact': // demande de contact / acceptation -> panneau Découverte & Demandes
         setPendingDiscovery(true); goTab('messages'); break
       case 'payment':
-        goTab('wallet'); break
+        goTab(showMoneyWallet() ? 'wallet' : 'hub'); break
       case 'sale': case 'offer':
         goTab('market'); break
       case 'social':
@@ -1519,12 +1545,18 @@ function App() {
   const logout = async () => { await api('/auth/logout', { method: 'POST' }); clearToken(); setUser(null); setWallet(null); setTxs([]); setContacts([]) }
 
   const handleAction = (id) => {
+    // Actions sociales (Hub iOS)
+    if (id === 'network') return setOverlay('network')
+    if (id === 'dating') return setOverlay('dating')
+    if (id === 'arcade') return setOverlay('arcade')
+    if (id === 'eclats') return setOverlay('eclats')
+    // Actions argent réel : indisponibles dans la version App Store (conformité Apple)
+    if (!showMoneyWallet()) return
     if (id === 'send') return setOverlay('send')
     if (id === 'enveloppe') return setOverlay('enveloppe')
     if (id === 'qr' || id === 'receive') return setTab('qr')
     if (id === 'split') return setOverlay('send')
     if (id === 'coffre') return setOverlay('coffre')
-    if (id === 'eclats') return setOverlay('eclats')
   }
   const goTab = (t) => { setMktImmersive(false); setTab(t) }
 
@@ -1539,7 +1571,7 @@ function App() {
       <AnimatePresence initial={false}>
         <motion.div key={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
           {tab === 'hub' && <Hub user={user} wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} onTab={goTab} onNotif={handleNotif} />}
-          {tab === 'wallet' && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
+          {tab === 'wallet' && showMoneyWallet() && <Wallet wallet={wallet} txs={txs} mask={mask} setMask={setMask} onAction={handleAction} />}
           {tab === 'messages' && <Messaging me={user} openConvId={pendingConv} onConsumed={() => setPendingConv(null)} openDiscovery={pendingDiscovery} onDiscoveryConsumed={() => setPendingDiscovery(false)} />}
           {tab === 'qr' && <QRScreen user={user} onDone={() => load()} initialCode={pendingPay} onConsumed={() => setPendingPay(null)} />}
           {tab === 'discover' && <Discover onTab={goTab} onOpenDating={() => setOverlay('dating')} onOpenArcade={() => setOverlay('arcade')} onOpenNetwork={() => setOverlay('network')} />}
