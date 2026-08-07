@@ -144,6 +144,77 @@ async def auth_logout(request: Request):
     return ok({"ok": True})
 
 
+# Suppression de COMPTE (exigée par Apple, règle 5.1.1(v)) : efface le compte + toutes les
+# données personnelles associées (Mongo) + le réseau social (Postgres). Irréversible.
+_DELETE_BY_USERID = [
+    "wallets", "eclats_wallets", "eclats_ledger", "coffres", "enveloppes", "transactions",
+    "ledger", "payment_requests", "notifications", "push_subscriptions", "ai_messages",
+    "contacts_list", "interests", "invites", "dating_profiles", "arcade_scores",
+    "arcade_sessions", "app_connections", "admin_connections", "admin_documents",
+    "posts", "comments", "post_likes", "post_saves", "market_favorites", "campaigns",
+]
+
+
+@router.post("/account/delete")
+async def delete_account(request: Request, me: dict = Depends(require_user)):
+    body = await body_of(request)
+    if body.get("confirm") != "SUPPRIMER":
+        return err('Confirmation requise : envoie {"confirm":"SUPPRIMER"}.', 400)
+    db = get_db()
+    uid_ = me["id"]
+    # 1) Documents possédés par l'utilisateur (une passe par collection)
+    for coll in _DELETE_BY_USERID:
+        try:
+            await db[coll].delete_many({"userId": uid_})
+        except Exception:  # noqa: BLE001
+            pass
+    # 2) Relations & contenus multi-acteurs (l'utilisateur d'un côté OU de l'autre)
+    pairs = [
+        ("messages", {"$or": [{"senderId": uid_}, {"userId": uid_}]}),
+        ("conversations", {"memberIds": uid_}),
+        ("market_threads", {"memberIds": uid_}),
+        ("market_messages", {"senderId": uid_}),
+        ("listings", {"sellerId": uid_}),
+        ("orders", {"$or": [{"buyerId": uid_}, {"sellerId": uid_}]}),
+        ("friendships", {"$or": [{"userId": uid_}, {"a": uid_}, {"b": uid_}, {"members": uid_}]}),
+        ("follows", {"$or": [{"followerId": uid_}, {"authorId": uid_}]}),
+        ("blocks", {"$or": [{"userId": uid_}, {"targetId": uid_}, {"blockerId": uid_}, {"blockedId": uid_}]}),
+        ("contact_requests", {"$or": [{"fromUserId": uid_}, {"toUserId": uid_}, {"from": uid_}, {"to": uid_}, {"userId": uid_}, {"targetId": uid_}]}),
+        ("dating_swipes", {"$or": [{"userId": uid_}, {"targetId": uid_}]}),
+        ("dating_matches", {"$or": [{"userId": uid_}, {"a": uid_}, {"b": uid_}, {"members": uid_}]}),
+        ("dating_reports", {"$or": [{"reporterId": uid_}, {"targetId": uid_}]}),
+        ("reports", {"$or": [{"reporterId": uid_}, {"targetId": uid_}, {"userId": uid_}]}),
+        ("nearby_pings", {"$or": [{"userId": uid_}, {"targetId": uid_}]}),
+        ("social_notif_prefs", {"userId": uid_}),
+        ("social_wellbeing_prefs", {"userId": uid_}),
+    ]
+    for coll, filt in pairs:
+        try:
+            await db[coll].delete_many(filt)
+        except Exception:  # noqa: BLE001
+            pass
+    # 3) Réseau social (Postgres) : droit à l'oubli complet
+    try:
+        from ..config import settings
+        if settings.social_enabled:
+            from ..social.adapters.persistence.uow import SqlAlchemyUnitOfWork
+            from ..social.application import privacy as rgpd
+            async with SqlAlchemyUnitOfWork() as uow:
+                await rgpd.erase_my_data(uow, uid_)
+    except Exception:  # noqa: BLE001
+        pass
+    # 4) Auth : sessions + OTP + le compte lui-même
+    try:
+        email = (me.get("email") or "").lower()
+        await db.sessions.delete_many({"userId": uid_})
+        if email:
+            await db.otp_codes.delete_many({"email": email})
+        await db.users.delete_one({"id": uid_})
+    except Exception:  # noqa: BLE001
+        pass
+    return ok({"deleted": True})
+
+
 @router.patch("/users/me")
 async def update_me(request: Request, me: dict = Depends(require_user)):
     db = get_db()

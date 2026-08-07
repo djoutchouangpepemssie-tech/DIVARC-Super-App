@@ -1,0 +1,25 @@
+<!-- Clés à AJOUTER dans ios/App/App/Info.plist (Phase 4).
+     Textes d'autorisation (obligatoires : sinon crash/rejet quand l'API est appelée).
+     Adapte les libellés ; ils sont montrés à l'utilisateur dans la pop-up de permission. -->
+
+<key>NSCameraUsageDescription</key>
+<string>DIVARC utilise l'appareil photo pour ajouter des photos à tes publications et à ton profil.</string>
+
+<key>NSPhotoLibraryUsageDescription</key>
+<string>DIVARC accède à tes photos pour illustrer tes publications et ton profil.</string>
+
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>DIVARC enregistre des images dans ta photothèque à ta demande.</string>
+
+<key>NSFaceIDUsageDescription</key>
+<string>DIVARC utilise Face ID pour verrouiller et protéger l'accès à ton compte.</string>
+
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>DIVARC utilise ta position approximative (jamais exacte) pour te proposer des rencontres et contenus proches.</string>
+
+<key>NSMicrophoneUsageDescription</key>
+<string>DIVARC utilise le micro pour les appels audio et vidéo dans les Rencontres et la messagerie.</string>
+
+<!-- Conformité chiffrement export : l'app n'utilise que le chiffrement standard (HTTPS). -->
+<key>ITSAppUsesNonExemptEncryption</key>
+<false/>

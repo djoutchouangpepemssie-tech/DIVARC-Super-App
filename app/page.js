@@ -368,7 +368,7 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
         <div>
           <SectionTitle title="Mini-apps" action="Tout voir" onAction={() => onTab('discover')} />
           <div className="grid grid-cols-4 gap-3">
-            {MINIAPPS.filter((m) => money || m.id !== 'wallet').slice(0, 4).map((m) => (
+            {MINIAPPS.filter(miniappVisible).slice(0, 4).map((m) => (
               <button key={m.id} onClick={() => onTab('discover')} className="press flex flex-col items-center gap-1.5">
                 <div className="w-full aspect-square rounded-2xl grid place-items-center text-white shadow" style={{ background: m.grad }}>
                   <m.icon size={22} />
@@ -389,17 +389,30 @@ function Hub({ user, wallet, txs, mask, setMask, onAction, onTab, onNotif }) {
           </div>
         )}
 
-        {/* social teaser */}
-        <button onClick={() => onTab('social')} className="press w-full text-left">
-          <Glass sheen className="p-5 flex items-center gap-4 relative overflow-hidden">
-            <div className="w-12 h-12 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#F15BB5,#9B5DE5)' }}><Play size={20} /></div>
-            <div className="flex-1">
-              <div className="font-semibold">DIVARC Social</div>
-              <div className="text-xs text-muted-foreground">Vidéos, algorithme transparent, achats en 1 tap</div>
-            </div>
-            <Pill className="bg-gold/15 text-gold">Bientôt</Pill>
-          </Glass>
-        </button>
+        {/* teaser — web : DIVARC Social (bientôt) ; iOS : Réseau (fonctionnel, sans placeholder) */}
+        {money ? (
+          <button onClick={() => onTab('social')} className="press w-full text-left">
+            <Glass sheen className="p-5 flex items-center gap-4 relative overflow-hidden">
+              <div className="w-12 h-12 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#F15BB5,#9B5DE5)' }}><Play size={20} /></div>
+              <div className="flex-1">
+                <div className="font-semibold">DIVARC Social</div>
+                <div className="text-xs text-muted-foreground">Vidéos, algorithme transparent, achats en 1 tap</div>
+              </div>
+              <Pill className="bg-gold/15 text-gold">Bientôt</Pill>
+            </Glass>
+          </button>
+        ) : (
+          <button onClick={() => onAction('network')} className="press w-full text-left">
+            <Glass sheen className="p-5 flex items-center gap-4 relative overflow-hidden">
+              <div className="w-12 h-12 rounded-2xl grid place-items-center text-white" style={{ background: 'linear-gradient(135deg,#F15BB5,#9B5DE5)' }}><Users size={20} /></div>
+              <div className="flex-1">
+                <div className="font-semibold">Réseau DIVARC</div>
+                <div className="text-xs text-muted-foreground">Publie, suis, discute · fil transparent</div>
+              </div>
+              <ChevronRight size={18} className="text-muted-foreground" />
+            </Glass>
+          </button>
+        )}
       </div>
     </Screen>
   )
@@ -911,6 +924,12 @@ function QRPay({ onDone, initialCode, onConsumed }) {
 }
 
 /* ============================= DISCOVER ============================= */
+// Sur iOS (App Store V1), on n'affiche QUE les mini-apps réellement fonctionnelles
+// (Apple rejette les fonctions « Bientôt »/placeholder — règle 2.1). Le marketplace est
+// masqué car son paiement passe par le wallet € (masqué sur iOS).
+const IOS_MINIAPPS = new Set(['messages', 'assistant'])
+const miniappVisible = (m) => showMoneyWallet() || IOS_MINIAPPS.has(m.id)
+
 const MINIAPPS = [
   { id: 'delivery', name: 'Livraison', cat: 'Repas', icon: Utensils, grad: 'linear-gradient(135deg,#F15BB5,#F97C4E)', why: 'Souvent utilisée le midi' },
   { id: 'messages', name: 'Messages', cat: 'Social', icon: MessageCircle, grad: 'linear-gradient(135deg,#4353F0,#6E7BF5)', why: 'Ta messagerie DIVARC' },
@@ -925,7 +944,7 @@ function Discover({ onTab, onOpenDating, onOpenArcade, onOpenNetwork }) {
   const [why, setWhy] = useState(null)
   const cats = ['Tout', 'Repas', 'Transport', 'Shopping', 'Événements', 'Santé']
   const [cat, setCat] = useState('Tout')
-  const list = MINIAPPS.filter((m) => (showMoneyWallet() || m.id !== 'wallet') && (cat === 'Tout' || m.cat === cat))
+  const list = MINIAPPS.filter((m) => miniappVisible(m) && (cat === 'Tout' || m.cat === cat))
   return (
     <Screen>
       <div className="cascade space-y-5">
@@ -1080,6 +1099,22 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout, onOp
   const [snd, setSnd] = useState(true)
   useEffect(() => { setSnd(soundEnabled()) }, [])
   const toggleSound = () => { const v = !snd; setSnd(v); setSoundEnabled(v); if (v) playPing() }
+  const exportData = async () => {
+    const d = await api('/net/me/export')
+    if (d?.error) return alert("Export indisponible pour le moment.")
+    const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'mes-donnees-divarc.json'; a.click()
+    URL.revokeObjectURL(url)
+  }
+  const deleteAccount = async () => {
+    const t = prompt('Cette action est IRRÉVERSIBLE : ton compte DIVARC et toutes tes données seront définitivement supprimés.\n\nÉcris SUPPRIMER pour confirmer :')
+    if (t !== 'SUPPRIMER') return
+    const r = await api('/account/delete', { method: 'POST', body: JSON.stringify({ confirm: 'SUPPRIMER' }) })
+    if (r?.error) return alert(r.error)
+    clearToken(); setUser(null)
+    alert('Ton compte a été supprimé. À bientôt.')
+  }
 
   // Notifications push (système) : état + activation
   const [push, setPush] = useState({ supported: true, permission: 'default', subscribed: false })
@@ -1193,16 +1228,23 @@ function Profile({ user, setUser, theme, setTheme, mask, setMask, onLogout, onOp
         <div>
           <SectionTitle title="Mes données (RGPD)" />
           <div className="grid grid-cols-2 gap-3">
-            <GhostBtn onClick={() => {}}><Download size={16} /> Exporter</GhostBtn>
-            <button className="press inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 font-medium border border-destructive/30 bg-destructive/10 text-destructive">
-              <Trash2 size={16} /> Supprimer
+            <GhostBtn onClick={exportData}><Download size={16} /> Exporter</GhostBtn>
+            <button onClick={deleteAccount} className="press inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 font-medium border border-destructive/30 bg-destructive/10 text-destructive">
+              <Trash2 size={16} /> Supprimer le compte
             </button>
           </div>
         </div>
         <button onClick={onLogout} className="press w-full inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 font-medium border border-border bg-card/60 text-muted-foreground">
           <ArrowLeft size={16} /> Se déconnecter
         </button>
-        <div className="text-center text-xs text-muted-foreground pb-2">DIVARC · Hébergé dans l\u2019UE · divarc.fr</div>
+        <div className="text-center text-xs text-muted-foreground pb-2 space-y-1">
+          <div className="flex items-center justify-center gap-3">
+            <a href="https://www.divarc.fr/confidentialite" target="_blank" rel="noreferrer" className="underline">Confidentialité</a>
+            <span>·</span>
+            <a href="https://www.divarc.fr/conditions" target="_blank" rel="noreferrer" className="underline">Conditions</a>
+          </div>
+          <div>DIVARC · Hébergé dans l’UE · divarc.fr</div>
+        </div>
       </div>
     </Screen>
   )
