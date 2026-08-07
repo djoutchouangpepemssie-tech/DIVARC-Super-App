@@ -5,11 +5,12 @@
 
 [build]
 builder = "NIXPACKS"
-# Nixpacks détecte Node/yarn via package.json et exécute `yarn install` + `yarn build`.
+# Build déterministe avec npm (voir nixpacks.toml : npm ci + npm run build, Node 20).
+# Le repo est géré par npm (package-lock.json) ; on n'utilise plus yarn pour éviter les
+# échecs de résolution après ajout de dépendances.
 
 [deploy]
-# `yarn start` lance `next start -H 0.0.0.0 -p ${PORT:-3000}` (voir package.json).
-# Railway injecte automatiquement la variable PORT.
-startCommand = "yarn start"
+# `npm run start` lance `next start -H 0.0.0.0` ; Next lit la variable PORT injectée par Railway.
+startCommand = "npm run start"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3

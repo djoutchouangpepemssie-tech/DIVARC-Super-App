@@ -1,0 +1,16 @@
+# Force un build déterministe avec npm (le repo a un package-lock.json, pas de yarn.lock).
+# Évite les échecs de résolution yarn après ajout de dépendances. Node 20 (requis par
+# Capacitor 6 et cross-env 10).
+providers = ["node"]
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm run start"
