@@ -1,0 +1,62 @@
+# Pipeline de build iOS DIVARC sur macOS cloud (Codemagic) — aucun Mac requis de ton côté.
+# Génère le projet iOS depuis le front Next.js exporté, configure la conformité Apple,
+# compile, signe et publie sur TestFlight/App Store.
+#
+# Prérequis (une seule fois, cf. IOS_SUBMISSION_GUIDE.md) :
+#  - Compte Apple Developer + app créée dans App Store Connect (bundle id: fr.divarc.app)
+#  - Intégration "App Store Connect API key" ajoutée dans Codemagic (Teams > Integrations)
+#  - Variable NEXT_PUBLIC_API_BASE (URL backend, ex: https://www.divarc.fr) dans le groupe "divarc".
+workflows:
+  ios-appstore:
+    name: DIVARC iOS – App Store
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: DIVARC ASC Key    # nom de l'intégration créée dans Codemagic
+    environment:
+      groups:
+        - divarc                            # contient NEXT_PUBLIC_API_BASE
+      vars:
+        BUNDLE_ID: "fr.divarc.app"
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+        APP_STORE_APPLE_ID: 0000000000       # <- remplace par l'Apple ID numérique de l'app (App Store Connect)
+      node: 20
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Installer les dépendances JS
+        script: npm ci
+      - name: Exporter le front (build natif)
+        script: npm run build:native
+      - name: Générer / synchroniser le projet iOS
+        script: |
+          [ -d ios ] || npx cap add ios
+          npx cap sync ios
+      - name: Configurer iOS (permissions, privacy manifest, push)
+        script: bash scripts/ios-configure.sh
+      - name: Icônes & écran de lancement
+        script: npx capacitor-assets generate --ios --iconBackgroundColor '#0e1020' --splashBackgroundColor '#0e1020' --splashBackgroundColorDark '#0e1020' || true
+      - name: Pods
+        script: cd ios/App && pod install
+      - name: Définir le bundle id + version
+        script: |
+          cd ios/App
+          agvtool new-marketing-version 1.0.0
+          agvtool new-version -all $(($BUILD_NUMBER + 1))
+      - name: Signature automatique (App Store Connect)
+        script: |
+          xcode-project use-profiles
+      - name: Compiler l'IPA
+        script: |
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true      # envoie sur TestFlight automatiquement
+        # submit_to_app_store: false    # passe à true quand tu es prêt pour la review App Store

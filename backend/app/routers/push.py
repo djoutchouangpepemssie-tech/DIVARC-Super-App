@@ -42,6 +42,25 @@ async def push_subscribe(request: Request, me: dict = Depends(require_user)):
     return ok({"ok": True})
 
 
+@router.post("/push/register-native")
+async def push_register_native(request: Request, me: dict = Depends(require_user)):
+    """Enregistre un jeton natif (APNs iOS / FCM Android) pour les notifications natives.
+    L'ENVOI réel APNs se configure côté serveur (clé APNs .p8) ultérieurement."""
+    db = get_db()
+    body = await body_of(request)
+    token = (body.get("token") or "").strip()
+    platform = body.get("platform") or "ios"
+    if not token:
+        return err("Jeton manquant")
+    await db.push_native_tokens.update_one(
+        {"token": token},
+        {"$set": {"token": token, "platform": platform, "userId": me["id"], "updatedAt": now()},
+         "$setOnInsert": {"createdAt": now()}},
+        upsert=True,
+    )
+    return ok({"ok": True})
+
+
 @router.post("/push/unsubscribe")
 async def push_unsubscribe(request: Request, me: dict = Depends(require_user)):
     db = get_db()

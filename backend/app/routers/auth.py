@@ -148,7 +148,7 @@ async def auth_logout(request: Request):
 # données personnelles associées (Mongo) + le réseau social (Postgres). Irréversible.
 _DELETE_BY_USERID = [
     "wallets", "eclats_wallets", "eclats_ledger", "coffres", "enveloppes", "transactions",
-    "ledger", "payment_requests", "notifications", "push_subscriptions", "ai_messages",
+    "ledger", "payment_requests", "notifications", "push_subscriptions", "push_native_tokens", "ai_messages",
     "contacts_list", "interests", "invites", "dating_profiles", "arcade_scores",
     "arcade_sessions", "app_connections", "admin_connections", "admin_documents",
     "posts", "comments", "post_likes", "post_saves", "market_favorites", "campaigns",
