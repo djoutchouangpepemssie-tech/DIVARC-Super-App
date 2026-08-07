@@ -29,6 +29,8 @@ workflows:
         script: npm ci
       - name: Exporter le front (build natif)
         script: npm run build:native
+      - name: Outils mobiles (installés seulement ici, pas sur le déploiement web)
+        script: npm install --no-save @capacitor/ios@6 @capacitor/assets
       - name: Générer / synchroniser le projet iOS
         script: |
           [ -d ios ] || npx cap add ios
